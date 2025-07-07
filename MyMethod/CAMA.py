@@ -1,4 +1,8 @@
 from GraphUtils_ChengDu import *
+# 本地匹配算法
+# 计算路径和报价
+# 对于本地平台无法满足或者大于阈值的任务，进入跨平台匹配集合，进入下一阶段的匹配
+# 其他快递员的任务，直接进行本地匹配
 
 def check_threshold(courier, task, u, time_count):
     start = NodeModel()
@@ -17,6 +21,8 @@ def check_threshold(courier, task, u, time_count):
         return False
 
 # FBP_BaseC函数是基础的快递员任务匹配函数，使用了简单的路径计算和报价计算。
+
+
 def FBP_BaseC(courier, task, u, time_count):
     temp_task_set = []
     # start_time2 = time.time()
@@ -144,10 +150,10 @@ def FBP_BaseC1(courier, task, u, time_count):
 
 
 def list_of_groups(init_list, children_list_len):
-    list_of_groups = zip(*(iter(init_list),) *children_list_len)
+    list_of_groups = zip(*(iter(init_list),) * children_list_len)
     end_list = [list(i) for i in list_of_groups]
     count = len(init_list) % children_list_len
-    end_list.append(init_list[-count:]) if count !=0 else end_list
+    end_list.append(init_list[-count:]) if count != 0 else end_list
     return end_list
 
 
@@ -179,7 +185,7 @@ def FBP_cKMB(courier, task, u, time_count):
                     flag = False
             else:
                 if t.dis_next_point != 0 and min_detour_rate < (2 * lengt / t.dis_next_point) - 1:
-                        flag = False
+                    flag = False
 
         if flag:
             task_index = courier.re_schedule.index(t)
@@ -209,20 +215,23 @@ def FBP_cKMB(courier, task, u, time_count):
             else:
                 detour_rate = lengt_after / lengt_before
             temp_bidding = 2 * task.task_num + (courier.w * (task.weight / (courier.max_weight - courier.re_weight)) +
-                                courier.c * detour_rate) * u * task.fare
+                                                courier.c * detour_rate) * u * task.fare
             if temp_bidding > 2 * task.task_num + u * task.fare:
                 temp_bidding = 2 * task.task_num + u * task.fare
             if temp_bidding < min_bidding:
                 min_bidding = temp_bidding
                 min_detour_rate = detour_rate
                 best_insert_prepoint = t
-                cost_extime = (lengt_after - lengt_before) / (VELOCITY * 1000) + task.extime
+                cost_extime = (lengt_after - lengt_before) / \
+                    (VELOCITY * 1000) + task.extime
     if best_insert_prepoint == "":
         return "a", "b", "c"
     return best_insert_prepoint, round(min_bidding, 4), cost_extime
 
 # Batch Matching
 # 该函数是批量匹配的核心函数，使用了KM算法来进行任务和快递员的匹配。
+
+
 def BM_cKMB(temp_courier_pool, pick_task_pool, time_count, u):
     count_bidding_num = 0
     count_task_num = 0
@@ -231,14 +240,16 @@ def BM_cKMB(temp_courier_pool, pick_task_pool, time_count, u):
     bidding_matrix = []
     # start = time.time()
     match_list = []
-    match_pair = {"t.num": 0, "c.num": 0, "result_pre": "", "result_bid": 0, "ex_time": 0}
+    match_pair = {"t.num": 0, "c.num": 0,
+                  "result_pre": "", "result_bid": 0, "ex_time": 0}
     # print("任务池长度为%s，快递员池长度为%s" % (len(pick_task_pool), len(temp_courier_pool)))
     for t in pick_task_pool:
         count_task_num += t.task_num
         t.temp_bidding_set = []
         for c in temp_courier_pool:
             if (c.max_weight - c.re_weight) > t.weight:
-                result_pre, result_bid, result_extime = FBP_cKMB(c, t, u, time_count)
+                result_pre, result_bid, result_extime = FBP_cKMB(
+                    c, t, u, time_count)
                 if result_pre != "a":
                     match_pair["t.num"] = t.num
                     match_pair["c.num"] = c.num
@@ -283,16 +294,22 @@ def BM_cKMB(temp_courier_pool, pick_task_pool, time_count, u):
                 # print(temp_courier_pool[x[1]])
                 # print(f'长度是{len(pick_task_pool)}')
                 if pick_task_pool[x[0] - i_count].num == m_p["t.num"] and temp_courier_pool[x[1]].num == m_p["c.num"]:
-                    insert_index = temp_courier_pool[x[1]].re_schedule.index(m_p["result_pre"])
-                    temp_courier_pool[x[1]].re_schedule.insert(insert_index + 1, pick_task_pool[x[0] - i_count])
+                    insert_index = temp_courier_pool[x[1]].re_schedule.index(
+                        m_p["result_pre"])
+                    temp_courier_pool[x[1]].re_schedule.insert(
+                        insert_index + 1, pick_task_pool[x[0] - i_count])
                     temp_courier_pool[x[1]].sum_useful_time -= m_p["ex_time"]
                     size_reschedule = len(temp_courier_pool[x[1]].re_schedule)
                     for i in range((insert_index + 2), size_reschedule):
-                        temp_courier_pool[x[1]].re_schedule[i].reach_time += m_p["ex_time"]
-                    temp_courier_pool[x[1]].re_weight += pick_task_pool[x[0] - i_count].weight
-                    temp_courier_pool[x[1]].max_weight -= pick_task_pool[x[0] - i_count].weight
+                        temp_courier_pool[x[1]
+                                          ].re_schedule[i].reach_time += m_p["ex_time"]
+                    temp_courier_pool[x[1]
+                                      ].re_weight += pick_task_pool[x[0] - i_count].weight
+                    temp_courier_pool[x[1]
+                                      ].max_weight -= pick_task_pool[x[0] - i_count].weight
                     # print("%s分配给了%s" % (pick_task_pool[x[0] - i_count].num, temp_courier_pool[x[1]].num))
-                    count_bidding_num += pick_task_pool[x[0] - i_count].task_num
+                    count_bidding_num += pick_task_pool[x[0] -
+                                                        i_count].task_num
                     sum_bidding1 += m_p["result_bid"]
                     sum_route_cost += m_p["ex_time"]
                     pick_task_pool.remove(pick_task_pool[x[0] - i_count])
@@ -313,7 +330,8 @@ def Combin(task_set, w_th, pl):
     for t in task_set:
         for t1 in task_set:
             if t.num != t1.num:
-                Qcorr = min(abs(t.weight + t1.weight), abs(t.weight + t1.weight - w_th))
+                Qcorr = min(abs(t.weight + t1.weight),
+                            abs(t.weight + t1.weight - w_th))
                 start = NodeModel()
                 start.nodeId = t.l_node
                 end = NodeModel()
@@ -548,13 +566,15 @@ def BM_KM(temp_courier_pool, pick_task_pool, time_count, u):
     bidding_matrix = []
     # start = time.time()
     match_list = []
-    match_pair = {"t.num": 0, "c.num": 0, "result_pre": "", "result_bid": 0, "ex_time": 0}
+    match_pair = {"t.num": 0, "c.num": 0,
+                  "result_pre": "", "result_bid": 0, "ex_time": 0}
     # print("任务池长度为%s，快递员池长度为%s" % (len(pick_task_pool), len(temp_courier_pool)))
     for t in pick_task_pool:
         t.temp_bidding_set = []
         for c in temp_courier_pool:
             if (c.max_weight - c.re_weight) > t.weight:
-                result_pre, result_bid, result_extime = FBP_KM(c, t, u, time_count)
+                result_pre, result_bid, result_extime = FBP_KM(
+                    c, t, u, time_count)
                 if result_pre != "a":
                     match_pair["t.num"] = t.num
                     match_pair["c.num"] = c.num
@@ -599,14 +619,19 @@ def BM_KM(temp_courier_pool, pick_task_pool, time_count, u):
                 # print(temp_courier_pool[x[1]])
                 # print(f'长度是{len(pick_task_pool)}')
                 if pick_task_pool[x[0] - i_count].num == m_p["t.num"] and temp_courier_pool[x[1]].num == m_p["c.num"]:
-                    insert_index = temp_courier_pool[x[1]].re_schedule.index(m_p["result_pre"])
-                    temp_courier_pool[x[1]].re_schedule.insert(insert_index + 1, pick_task_pool[x[0] - i_count])
+                    insert_index = temp_courier_pool[x[1]].re_schedule.index(
+                        m_p["result_pre"])
+                    temp_courier_pool[x[1]].re_schedule.insert(
+                        insert_index + 1, pick_task_pool[x[0] - i_count])
                     temp_courier_pool[x[1]].sum_useful_time -= m_p["ex_time"]
                     size_reschedule = len(temp_courier_pool[x[1]].re_schedule)
                     for i in range((insert_index + 2), size_reschedule):
-                        temp_courier_pool[x[1]].re_schedule[i].reach_time += m_p["ex_time"]
-                    temp_courier_pool[x[1]].re_weight += pick_task_pool[x[0] - i_count].weight
-                    temp_courier_pool[x[1]].max_weight -= pick_task_pool[x[0] - i_count].weight
+                        temp_courier_pool[x[1]
+                                          ].re_schedule[i].reach_time += m_p["ex_time"]
+                    temp_courier_pool[x[1]
+                                      ].re_weight += pick_task_pool[x[0] - i_count].weight
+                    temp_courier_pool[x[1]
+                                      ].max_weight -= pick_task_pool[x[0] - i_count].weight
                     # print("%s分配给了%s" % (pick_task_pool[x[0] - i_count].num, temp_courier_pool[x[1]].num))
                     count_bidding_num += 1
                     sum_bidding1 += m_p["result_bid"]
