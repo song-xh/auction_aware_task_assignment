@@ -15,18 +15,20 @@ def list_of_groups(init_list, children_list_len):
     return end_list
 
 
+# def compute_utility(courier, task, detour_rate, gamma):
+#     '''
+#     计算效用函数
+#     '''
+#     if courier.max_weight > 0:
+#         delta_weight = 1-(task.weight / courier.max_weight)
+#     else:
+#         delta_weight = 0
+#     utility = gamma*delta_weight+(1-gamma)*(1-detour_rate)
+#     return utility
+
 def compute_utility(courier, task, detour_rate, gamma):
-    '''
-    计算效用函数
-    '''
-    if courier.max_weight > 0:
-        delta_weight = 1-(task.weight / courier.max_weight)
-    else:
-        delta_weight = 0
-    utility = gamma*delta_weight+(1-gamma)*(1-detour_rate)
-    return utility
-
-
+    delta_weight = 1 - (task.weight + courier.re_weight) / courier.max_weight if courier.max_weight > 0 else 0
+    
 def find_best_insert(courier, task, u, time_count):
     """
     返回: 最优插入点, 最小报价, 额外时间, 效用
@@ -38,24 +40,25 @@ def find_best_insert(courier, task, u, time_count):
     best_utility = -float('inf')
 
     for t in courier.re_schedule:
+        gamma = 0.5  # 效用权重
         flag = True
         start = NodeModel()
         start.nodeId = t.l_node
         end = NodeModel()
         end.nodeId = task.l_node
         paths = g.getShortPath(start, end, s)
-        lengt = sum(p.length for p in paths)
+        length_sum = sum(p.length for p in paths)
         temp_cost_time = t.reach_time
         courier.temp_location = courier.location
 
         # 可行性判定
-        if lengt / (VELOCITY * 1000) + task.extime <= 0.5 * courier.sum_useful_time and \
-           lengt / (VELOCITY * 1000) <= float(task.d_time) - time_count - float(temp_cost_time):
-            if lengt < t.dis_next_point:
+        if length_sum / (VELOCITY * 1000) + task.extime <= 0.5 * courier.sum_useful_time and \
+           length_sum / (VELOCITY * 1000) <= float(task.d_time) - time_count - float(temp_cost_time):
+            if length_sum < t.dis_next_point:
                 if min_detour_rate <= 1:
                     flag = False
             else:
-                if t.dis_next_point != 0 and min_detour_rate < (2 * lengt / t.dis_next_point) - 1:
+                if t.dis_next_point != 0 and min_detour_rate < (2 * length_sum / t.dis_next_point) - 1:
                     flag = False
 
         if flag:
@@ -68,12 +71,12 @@ def find_best_insert(courier, task, u, time_count):
                 last.nodeId = t.l_node
             courier.re_schedule.remove(task)
 
-            lengt_before = t.dis_next_point
-            lengt_after = lengt
+            length_before = t.dis_next_point
+            length_after = length_sum
             for p in g.getShortPath(end, last, s):
-                lengt_after += p.length
+                length_after += p.length
 
-            detour_rate = lengt_after / lengt_before if lengt_before != 0 else 0
+            detour_rate = length_after / length_before if length_before != 0 else 0
             temp_bidding = 2 * task.task_num + (courier.w * (task.weight / max(1e-5, (courier.max_weight - courier.re_weight))) +
                                                 courier.c * detour_rate) * u * task.fare
             if temp_bidding > 2 * task.task_num + u * task.fare:
@@ -81,16 +84,16 @@ def find_best_insert(courier, task, u, time_count):
 
             # 效用（可根据实际设计）
             if (courier.max_weight - courier.re_weight) > 0:
-                utility = (task.weight / (courier.max_weight -
-                           courier.re_weight)) - detour_rate
+                delta_weight = 1 - (task.weight / courier.max_weight)
             else:
-                utility = -detour_rate
+                delta_weight = 0
+            utility = gamma * delta_weight + (1 - gamma) * (1 - detour_rate)
 
             if temp_bidding < min_bidding:
                 min_bidding = temp_bidding
                 min_detour_rate = detour_rate
                 best_insert_prepoint = t
-                cost_extime = (lengt_after - lengt_before) / \
+                cost_extime = (length_after - length_before) / \
                     (VELOCITY * 1000) + task.extime
                 best_utility = utility
 
@@ -102,7 +105,7 @@ def find_best_insert(courier, task, u, time_count):
 # 该函数是批量匹配的核心函数，使用了KM算法来进行任务和快递员的匹配。
 
 
-def BM_cKMB(temp_courier_pool, pick_task_pool, time_count, u):
+def batch_match_km(temp_courier_pool, pick_task_pool, time_count, u):
     count_bidding_num = 0
     count_task_num = 0
     sum_bidding1 = 0
@@ -110,15 +113,14 @@ def BM_cKMB(temp_courier_pool, pick_task_pool, time_count, u):
     bidding_matrix = []
     # start = time.time()
     match_list = []
-    match_pair = {"t.num": 0, "c.num": 0,
-                  "result_pre": "", "result_bid": 0, "ex_time": 0}
+    match_pair = {"t.num": 0, "c.num": 0, "result_pre": "", "result_bid": 0, "ex_time": 0}
     # print("任务池长度为%s，快递员池长度为%s" % (len(pick_task_pool), len(temp_courier_pool)))
     for t in pick_task_pool:
         count_task_num += t.task_num
         t.temp_bidding_set = []
         for c in temp_courier_pool:
             if (c.max_weight - c.re_weight) > t.weight:
-                result_pre, result_bid, result_extime = FBP_cKMB(
+                result_pre, result_bid, result_extime = find_best_insert(
                     c, t, u, time_count)
                 if result_pre != "a":
                     match_pair["t.num"] = t.num
@@ -140,29 +142,22 @@ def BM_cKMB(temp_courier_pool, pick_task_pool, time_count, u):
             sum += i
         if sum != 0:
             bidding_matrix.append(t.temp_bidding_set)
-        # for x in bidding_matrix:
-        #     for y in x:
-        #         print('%s' % y, end=' ')
-        #     print()
-    # end = time.time()
-    # print("生成矩阵时间", (end - start))
-    # start = time.time()
-    # print(np.shape(bidding_matrix))
-    # print(bidding_matrix)
     if len(bidding_matrix) != 0:
         matcher = KMMatcher(bidding_matrix)
         sum, temp_match_pair = matcher.solve(verbose=True)
-    # pick_task_pool[x[0] - i_count]就是任务
-    # temp_courier_pool[x[1]]就是快递员
-    #     print(f'匹配对是{temp_match_pair}')
-        # print(match_list)
+
+        # 计算动态阈值
+        total_utility = 0
+        total_pairs = len(temp_match_pair)
+        for x in temp_match_pair:
+            for m_p in match_list:
+                if pick_task_pool[x[0]].num == m_p["t.num"] and temp_courier_pool[x[1]].num == m_p["c.num"]:
+                    total_utility += m_p["result_bid"]
+        threshold = 0.5 * total_utility / total_pairs if total_pairs > 0 else 0
+
         i_count = 0
         for x in temp_match_pair:
             for m_p in match_list:
-                # print(x[0], x[1])
-                # print(pick_task_pool[x[0] - i_count])
-                # print(temp_courier_pool[x[1]])
-                # print(f'长度是{len(pick_task_pool)}')
                 if pick_task_pool[x[0] - i_count].num == m_p["t.num"] and temp_courier_pool[x[1]].num == m_p["c.num"]:
                     insert_index = temp_courier_pool[x[1]].re_schedule.index(
                         m_p["result_pre"])
@@ -171,15 +166,11 @@ def BM_cKMB(temp_courier_pool, pick_task_pool, time_count, u):
                     temp_courier_pool[x[1]].sum_useful_time -= m_p["ex_time"]
                     size_reschedule = len(temp_courier_pool[x[1]].re_schedule)
                     for i in range((insert_index + 2), size_reschedule):
-                        temp_courier_pool[x[1]
-                                          ].re_schedule[i].reach_time += m_p["ex_time"]
-                    temp_courier_pool[x[1]
-                                      ].re_weight += pick_task_pool[x[0] - i_count].weight
-                    temp_courier_pool[x[1]
-                                      ].max_weight -= pick_task_pool[x[0] - i_count].weight
+                        temp_courier_pool[x[1]].re_schedule[i].reach_time += m_p["ex_time"]
+                    temp_courier_pool[x[1]].re_weight += pick_task_pool[x[0] - i_count].weight
+                    temp_courier_pool[x[1]].max_weight -= pick_task_pool[x[0] - i_count].weight
                     # print("%s分配给了%s" % (pick_task_pool[x[0] - i_count].num, temp_courier_pool[x[1]].num))
-                    count_bidding_num += pick_task_pool[x[0] -
-                                                        i_count].task_num
+                    count_bidding_num += pick_task_pool[x[0] - i_count].task_num
                     sum_bidding1 += m_p["result_bid"]
                     sum_route_cost += m_p["ex_time"]
                     pick_task_pool.remove(pick_task_pool[x[0] - i_count])
@@ -207,10 +198,10 @@ def Combin(task_set, w_th, pl):
                 end = NodeModel()
                 end.nodeId = t1.l_node
                 paths = g.getShortPath(start, end, s)
-                lengt = 0
+                length_sum = 0
                 for p in paths:
-                    lengt += p.length
-                Pcorr = abs(lengt)
+                    length_sum += p.length
+                Pcorr = abs(length_sum)
                 Dcorr = abs(int(t.d_time) - int(t1.d_time)) / 3600
                 # print(Qcorr, Pcorr, Dcorr)
                 com = 1 / (1 + math.sqrt(Qcorr + Pcorr + Dcorr))
