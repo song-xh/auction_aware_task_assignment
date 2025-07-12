@@ -28,7 +28,8 @@ def list_of_groups(init_list, children_list_len):
 
 def compute_utility(courier, task, detour_rate, gamma):
     delta_weight = 1 - (task.weight + courier.re_weight) / courier.max_weight if courier.max_weight > 0 else 0
-    
+
+# for local_platform
 def find_best_insert(courier, task, u, time_count):
     """
     返回: 最优插入点, 最小报价, 额外时间, 效用
@@ -185,6 +186,9 @@ def batch_match_km(temp_courier_pool, pick_task_pool, time_count, u):
     # print("应该返回的报价", sum_bidding1)
     return sum_bidding1, sum_route_cost, count_bidding_num, count_task_num
 
+# def fpas(cross_platform_set, cross_task_set, time_count, u):
+#     # 1.初始化参数
+#     # 2.对每一个platform进行遍历，搜索所有可以匹配的工人（可能调用find_best_insert）
 
 def Combin(task_set, w_th, pl):
     flag = 0
