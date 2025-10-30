@@ -157,7 +157,12 @@ def FBP_cKMB(courier, task, u, time_count):
 
         if flag:
             task_index = courier.re_schedule.index(t)
-            # print(task_index)
+            # store next node before inserting the new task
+            if task_index + 1 < len(courier.re_schedule):
+                next_node_id = courier.re_schedule[task_index + 1].l_node
+            else:
+                next_node_id = t.l_node
+
             courier.re_schedule.insert(task_index + 1, task)
 
             # task_index1 = courier.re_schedule.index(task)
@@ -165,10 +170,7 @@ def FBP_cKMB(courier, task, u, time_count):
             # print(len(courier.re_schedule))
 
             last = NodeModel()
-            if len(courier.re_schedule) <= task_index + 1:
-                last.nodeId = courier.re_schedule[task_index + 2].l_node
-            else:
-                last.nodeId = t.l_node
+            last.nodeId = next_node_id
             courier.re_schedule.remove(task)
 
             lengt_before = t.dis_next_point
@@ -342,7 +344,12 @@ def FBP_GA(courier, task, u, time_count):
                 lengt / (VELOCITY * 1000) <= float(task.d_time) - time_count - float(temp_cost_time):
 
             task_index = courier.re_schedule.index(t)
-            # print(task_index)
+            # record the node following t before inserting
+            if task_index + 1 < len(courier.re_schedule):
+                next_node_id = courier.re_schedule[task_index + 1].l_node
+            else:
+                next_node_id = t.l_node
+
             courier.re_schedule.insert(task_index + 1, task)
 
             # task_index1 = courier.re_schedule.index(task)
@@ -350,10 +357,7 @@ def FBP_GA(courier, task, u, time_count):
             # print(len(courier.re_schedule))
 
             last = NodeModel()
-            if len(courier.re_schedule) <= task_index + 1:
-                last.nodeId = courier.re_schedule[task_index + 2].l_node
-            else:
-                last.nodeId = t.l_node
+            last.nodeId = next_node_id
             courier.re_schedule.remove(task)
             paths1 = g.getShortPath(start, last, s)
             lengt_before = 0
@@ -405,7 +409,12 @@ def FBP_GA1(courier, task, u, time_count):
                 lengt / (VELOCITY * 1000) <= float(task.d_time) - time_count - float(temp_cost_time):
 
             task_index = courier.re_schedule.index(t)
-            # print(task_index)
+            # remember the original next node before inserting
+            if task_index + 1 < len(courier.re_schedule):
+                next_node_id = courier.re_schedule[task_index + 1].l_node
+            else:
+                next_node_id = t.l_node
+
             courier.re_schedule.insert(task_index + 1, task)
 
             # task_index1 = courier.re_schedule.index(task)
@@ -413,10 +422,7 @@ def FBP_GA1(courier, task, u, time_count):
             # print(len(courier.re_schedule))
 
             last = NodeModel()
-            if len(courier.re_schedule) <= task_index + 1:
-                last.nodeId = courier.re_schedule[task_index + 2].l_node
-            else:
-                last.nodeId = t.l_node
+            last.nodeId = next_node_id
             courier.re_schedule.remove(task)
             paths1 = g.getShortPath(start, last, s)
             lengt_before = 0
@@ -475,7 +481,12 @@ def FBP_KM(courier, task, u, time_count):
 
         if flag:
             task_index = courier.re_schedule.index(t)
-            # print(task_index)
+            # store the node after t before insertion
+            if task_index + 1 < len(courier.re_schedule):
+                next_node_id = courier.re_schedule[task_index + 1].l_node
+            else:
+                next_node_id = t.l_node
+
             courier.re_schedule.insert(task_index + 1, task)
 
             # task_index1 = courier.re_schedule.index(task)
@@ -483,10 +494,7 @@ def FBP_KM(courier, task, u, time_count):
             # print(len(courier.re_schedule))
 
             last = NodeModel()
-            if len(courier.re_schedule) <= task_index + 1:
-                last.nodeId = courier.re_schedule[task_index + 2].l_node
-            else:
-                last.nodeId = t.l_node
+            last.nodeId = next_node_id
             courier.re_schedule.remove(task)
 
             lengt_before = t.dis_next_point
