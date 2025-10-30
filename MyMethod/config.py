@@ -1,44 +1,48 @@
-# config.py
-# 论文关键参数与全局开关
+# ===================== CONFIG 
+# 效用与阈值
+GAMMA_UTILITY: float = 0.5
+OMEGA_THRESHOLD: float = 0.85
 
-# -------- CAMA（本地匹配） ----------
-# 效用：u(τ,c) = γ * Δw + (1-γ) * Δd
-GAMMA_UTILITY: float = 0.5         # γ
-OMEGA_THRESHOLD: float = 1.0       # ω, 动态阈值敏感系数
+# 收益与竞拍参数
+MU_1: float = 0.8     # 本地平台“可见价”比例（合作侧可见）
+MU_2: float = 0.12    # 平台间加权系数
+ZETA_LOCAL_PAYMENT_RATIO: float = 0.7   # 本地支付给骑手比例
+COOP_QUALITY = {2: 1.0, 3: 0.9, 4: 0.8}  # 合作平台质量（可配置）
 
-# KM 指派使用的权重：True 用 utility 做最大权匹配；False 用“收益/报价”矩阵
-KM_USE_UTILITY: bool = True
+# 批窗口与小步
+BATCH_SECONDS: int = 10 * 60
+STEP_SECONDS: int = 60                 # 每小步 60s
 
-# -------- DLAM（双层拍卖） ----------
-# 外露运费：p'_τ = μ1 * p_τ
-MU_1: float = 0.8
-# 平台间奖励/补偿项：μ2 * p_τ（乘以合作质量 f(P)）
-MU_2: float = 0.1
+# 平台规模
+NUM_STATIONS_LOCAL = 6
+COURIERS_PER_STATION = 40
+NUM_PARTNER_PLATFORMS = 2
+PARTNER_COURIERS_PER_PLATFORM = 40
 
-# FPSA（平台内快递员）出价：BF(c,τ) = p_min + (α * Δd + β * g(c)) * γ_share * p'_τ
-ALPHA_DETOUR: float = 0.7   # α
-BETA_PERF: float = 0.3      # β
-COURIER_SHARE_GAMMA: float = 0.8     # γ_share（合作平台分成比例，控制一价上界）
+# 数据与工程开关
+REMAP_TASKS_TO_LCC: bool = True
+WARMUP_BATCHES_FOR_SEEDING: int = 1
+KMEANS_MAX_ITERS: int = 15
+ENABLE_BACKLOG: bool = True
+RUN_BASELINE_LOCAL_ONLY: bool = True
 
-# 底价（可按需要更细化到任务/平台）
-COURIER_BID_FLOOR: float = 0.0
+# 候选规模与缓存
+K_NEAREST_COURIERS: int = 120
+LRU_DIST_CACHE_SIZE: int = 100_000
 
-# -------- 本地付款 R_c（给本地快递员） ----------
-# R_c(τ,c) = ζ * p_τ
-ZETA_LOCAL_PAYMENT_RATIO: float = 0.7
+# 进度打印心跳（每处理 N 条或每 T 秒打印一次）
+PRINT_HEARTBEAT_N = 200
+PRINT_HEARTBEAT_SEC = 0.3
 
-# -------- 合作质量 f(P)（平台间 RVA 中使用，≤1） ----------
-# 可在运行时覆盖
-COOP_QUALITY = {
-    # platform_id: quality in [0,1]
-    2: 1.0,
-    3: 0.8,
-    4: 0.6,
-}
+# 每步/每批内的限制（防爆内存/时间）
+MAX_TASKS_PER_STEP: int = 4000
+MAX_ASSIGN_ROUNDS_PER_STEP: int = 2
+MAX_TASKS_PER_COURIER_PER_BATCH: int = 6
 
-# -------- 其他运行参数 ----------
-# 是否在跨平台插入时重算最优插入点（或复用本地阶段计算结果）
-RECOMPUTE_INSERT_AT_PARTNER: bool = True
+# 骑手边际成本（FPSA 报价）
+LAMBDA_D = 0.002   # /meter
+LAMBDA_T = 0.10    # /second
+THETA_BID = 0.9
 
-# 日志/调试
-VERBOSE: bool = True
+# 本地阶段是否用 KM；False 则用候选贪心
+USE_KM_FOR_LOCAL: bool = False
