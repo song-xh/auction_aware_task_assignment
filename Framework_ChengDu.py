@@ -1,5 +1,6 @@
 from MethodUtils_ChengDu import *
 from Tasks_ChengDu import *
+from baselines.greedy import safe_average
 import sys  # 导入sys模块
 import random
 import time
@@ -389,7 +390,7 @@ def Greedy(station_set, f_courier_set, ff_pick_task_set, time_window, u, realtim
                                             f_result_bid = result_bid
                                             f_result_extime = result_extime
                                             best_courier = c
-                                            if result_bid <= avg_bidding / sucess_num:
+                                            if result_bid <= safe_average(avg_bidding, sucess_num):
                                                 break
                             if result_pre == "a":
                                 failed_num += 1
@@ -436,13 +437,13 @@ def Greedy(station_set, f_courier_set, ff_pick_task_set, time_window, u, realtim
             WalkAlongRoute(courier, realtime, courier.location, 0, 0, time_count, f_courier_set, station_set)
     endtime = time.time()
     avg_time = Decimal((sum_time_count / len(ff_pick_task_set)) * 1000).quantize(Decimal('0.00'))
-    avg_time1 = Decimal((sum_time_count / sucess_num) * 1000).quantize(Decimal('0.00'))
+    avg_time1 = Decimal(safe_average(sum_time_count, sucess_num) * 1000).quantize(Decimal('0.00'))
     sum_time1 = Decimal(sum_time_count * 1000).quantize(Decimal('0.00'))
     sum_time2 = Decimal(sum_time_count / (14400 / time_window) * 1000).quantize(Decimal('0.00'))
     sucess_rate = Decimal((sucess_num / len(ff_pick_task_set)) * 100).quantize(Decimal('0.00'))
     time_cost = Decimal((endtime - starttime)).quantize(Decimal('0.00'))
     f_sum_bidding = Decimal(sum_bidding).quantize(Decimal('0.00'))
-    each_bidding = Decimal((sum_bidding / sucess_num)).quantize(Decimal('0.00'))
+    each_bidding = Decimal(safe_average(sum_bidding, sucess_num)).quantize(Decimal('0.00'))
     print("\rGreedy Result:-------------------------")
     print("程序总耗时:%-10s,完成任务个数:%-5s,总失败个数:%-5s,任务完成率:%-5s%%,"
           "所有均耗时:%-8sms,成功均耗时:%-8sms,所有总耗时:%-10sms,批处理耗时:%-8sms,"

@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
-from baselines.greedy import parse_greedy_metrics
+from baselines.greedy import parse_greedy_metrics, safe_average
 from baselines.gta import (
     GTABid,
     select_idle_courier_for_task,
@@ -106,6 +106,26 @@ class BaselineRunnerTests(unittest.TestCase):
         self.assertEqual(metrics["TR"], 2.29)
         self.assertEqual(metrics["CR"], 0.2)
         self.assertEqual(metrics["delivered_parcels"], 2)
+
+    def test_parse_greedy_metrics_accepts_zero_success_spacing(self) -> None:
+        """The parser should accept the zero-success summary format emitted by the legacy framework."""
+        output = (
+            "Greedy Result:-------------------------\n"
+            "程序总耗时:0.08      ,完成任务个数:0    ,总失败个数:5    ,任务完成率:0.00 %,"
+            "所有均耗时:0.00    ms,成功均耗时:0.00    ms,所有总耗时:0.00      ms,批处理耗时:0.00    ms,"
+            "任务均报价:0.00 ,平台总报价:0.00      ,平台总收益:0.00      \n"
+        )
+
+        metrics = parse_greedy_metrics(output)
+
+        self.assertEqual(metrics["TR"], 0.0)
+        self.assertEqual(metrics["CR"], 0.0)
+        self.assertEqual(metrics["delivered_parcels"], 0)
+
+    def test_safe_average_returns_zero_for_empty_success_count(self) -> None:
+        """Greedy aggregate logging should not divide by zero when no task is completed."""
+        self.assertEqual(safe_average(10.0, 0), 0.0)
+        self.assertEqual(safe_average(10.0, 2), 5.0)
 
     def test_run_chengdu_greedy_baseline_writes_summary(self) -> None:
         """The Greedy baseline helper should persist a summary with unified metric keys."""

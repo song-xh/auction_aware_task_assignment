@@ -9,10 +9,17 @@ from typing import Any
 
 
 GREEDY_RESULT_PATTERN = re.compile(
-    r"完成任务个数:\s*(?P<completed>[0-9.]+)\s*,\s*总失败个数:\s*(?P<failed>[0-9.]+)\s*,\s*任务完成率:\s*(?P<cr>[0-9.]+)%.*?"
+    r"完成任务个数:\s*(?P<completed>[0-9.]+)\s*,\s*总失败个数:\s*(?P<failed>[0-9.]+)\s*,\s*任务完成率:\s*(?P<cr>[0-9.]+)\s*%.*?"
     r"批处理耗时:\s*(?P<bpt>[0-9.]+)\s*ms,\s*任务均报价:\s*(?P<avg_bid>[0-9.]+)\s*,\s*平台总报价:\s*(?P<platform_bid>[0-9.]+)\s*,\s*平台总收益:\s*(?P<tr>[0-9.]+)",
     re.DOTALL,
 )
+
+
+def safe_average(total: float, count: float) -> float:
+    """Return a zero-safe average for legacy Greedy aggregate statistics."""
+    if count == 0:
+        return 0.0
+    return total / count
 
 
 def parse_greedy_metrics(output: str) -> dict[str, float]:
