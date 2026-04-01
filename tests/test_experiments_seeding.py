@@ -232,6 +232,68 @@ class ExperimentsSeedingTests(unittest.TestCase):
 
         self.assertEqual(build_calls, [0.5, 1.5])
 
+    def test_compare_runner_kwargs_do_not_pass_batch_size_to_basegta(self) -> None:
+        """Shared-environment comparisons should not send unsupported kwargs to BaseGTA runners."""
+        from experiments.compare import run_comparison_sweep
+
+        observed_runner_kwargs: list[tuple[str, dict[str, object]]] = []
+
+        def build_environment(**kwargs) -> ChengduEnvironment:
+            return ChengduEnvironment(
+                tasks=[],
+                local_couriers=[],
+                partner_couriers_by_platform={},
+                station_set=[],
+                travel_model=None,
+                platform_base_prices={},
+                platform_sharing_rates={},
+                platform_qualities={},
+            )
+
+        class FakeRunner:
+            """Return a normalized summary for compare-kwargs tests."""
+
+            def __init__(self, algorithm_name: str) -> None:
+                """Store the algorithm name for the normalized summary."""
+                self._algorithm_name = algorithm_name
+
+            def run(self, environment: ChengduEnvironment, output_dir: Path | None = None) -> dict[str, object]:
+                """Return a minimal normalized summary."""
+                return {
+                    "algorithm": self._algorithm_name,
+                    "metrics": {
+                        "TR": 1.0,
+                        "CR": 0.5,
+                        "BPT": 0.1,
+                    },
+                }
+
+        def build_runner(name: str, **kwargs) -> FakeRunner:
+            """Record runner kwargs so the test can verify per-algorithm mapping."""
+            observed_runner_kwargs.append((name, dict(kwargs)))
+            return FakeRunner(name)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            run_comparison_sweep(
+                algorithms=["basegta", "mra"],
+                output_dir=Path(tmpdir),
+                sweep_parameter="num_parcels",
+                sweep_values=[10],
+                fixed_config={
+                    "data_dir": Path("Data"),
+                    "num_parcels": 10,
+                    "local_couriers": 2,
+                    "platforms": 1,
+                    "couriers_per_platform": 1,
+                    "batch_size": 300,
+                },
+                environment_builder=build_environment,
+                runner_builder=build_runner,
+            )
+
+        self.assertEqual(observed_runner_kwargs[0], ("basegta", {}))
+        self.assertEqual(observed_runner_kwargs[1], ("mra", {"batch_size": 300}))
+
 
 if __name__ == "__main__":
     unittest.main()
