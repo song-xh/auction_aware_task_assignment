@@ -1,0 +1,164 @@
+"""Tests for the legacy-environment-backed Chengdu CAPA runner."""
+
+import tempfile
+import unittest
+from pathlib import Path
+
+from capa import CAPAConfig, DistanceMatrixTravelModel, Parcel
+from capa.models import CooperatingPlatform
+
+
+class FakeTask:
+    """Minimal legacy task stub for Chengdu runner tests."""
+
+    def __init__(self, num: str, node: str, s_time: int, d_time: int, weight: float, fare: float) -> None:
+        """Store the task attributes required by the adapter layer."""
+        self.num = num
+        self.l_node = node
+        self.s_time = s_time
+        self.d_time = d_time
+        self.weight = weight
+        self.fare = fare
+
+
+class FakeStation:
+    """Minimal station stub exposing the destination node expected by legacy couriers."""
+
+    def __init__(self, num: int, node: str) -> None:
+        """Persist the station identifier and node."""
+        self.num = num
+        self.l_node = node
+
+
+class FakeLegacyCourier:
+    """Minimal legacy courier stub compatible with the adapter tests."""
+
+    def __init__(self, num: int, location: str, station: FakeStation, schedule=None, load: float = 0.0) -> None:
+        """Populate the legacy courier fields read by the Chengdu adapter layer."""
+        self.num = num
+        self.location = location
+        self.station = station
+        self.station_num = station.num
+        self.re_schedule = list(schedule or [])
+        self.re_weight = load
+        self.max_weight = 10.0
+        self.sum_useful_time = 1000.0
+        self.batch_take = 0
+        self.service_score = 0.9
+        self.w = 0.4
+        self.c = 0.6
+
+
+class ChengduRunnerTests(unittest.TestCase):
+    """Validate the legacy-environment adapters and runner integration."""
+
+    def setUp(self) -> None:
+        """Create deterministic fixtures shared by the Chengdu runner tests."""
+        self.travel = DistanceMatrixTravelModel(
+            distances={
+                ("L0", "T1"): 2.0,
+                ("L0", "T2"): 8.0,
+                ("T1", "S"): 2.0,
+                ("T2", "S"): 6.0,
+                ("L0", "S"): 4.0,
+                ("P0", "T2"): 2.0,
+                ("P0", "T1"): 8.0,
+                ("T2", "PS"): 2.0,
+                ("T1", "PS"): 6.0,
+                ("P0", "PS"): 4.0,
+            },
+            speed=1.0,
+        )
+        self.config = CAPAConfig(
+            batch_size=60,
+            utility_balance_gamma=0.5,
+            threshold_omega=1.0,
+            local_payment_ratio_zeta=0.2,
+            local_sharing_rate_mu1=0.5,
+            cross_platform_sharing_rate_mu2=0.4,
+        )
+
+    def test_legacy_courier_snapshot_preserves_route_state(self) -> None:
+        """Legacy couriers should convert into CAPA couriers without losing route semantics."""
+        from capa.chengdu_env import legacy_courier_to_capa
+
+        station = FakeStation(1, "S")
+        courier = FakeLegacyCourier(
+            num=7,
+            location="L0",
+            station=station,
+            schedule=[FakeTask("seed", "T1", 0, 100, 1.0, 0.0)],
+            load=3.0,
+        )
+
+        snapshot = legacy_courier_to_capa(courier, courier_id="local-7")
+
+        self.assertEqual(snapshot.courier_id, "local-7")
+        self.assertEqual(snapshot.current_location, "L0")
+        self.assertEqual(snapshot.depot_location, "S")
+        self.assertEqual(snapshot.route_locations, ["T1"])
+        self.assertEqual(snapshot.current_load, 3.0)
+        self.assertEqual(snapshot.capacity, 10.0)
+
+    def test_apply_assignment_to_legacy_courier_inserts_into_schedule(self) -> None:
+        """Accepted assignments should be written back into the legacy route buffer."""
+        from capa.chengdu_env import apply_assignment_to_legacy_courier
+
+        station = FakeStation(1, "S")
+        seed_task = FakeTask("seed", "T1", 0, 100, 1.0, 0.0)
+        new_task = FakeTask("new", "T2", 0, 100, 2.0, 8.0)
+        courier = FakeLegacyCourier(num=7, location="L0", station=station, schedule=[seed_task], load=1.0)
+
+        apply_assignment_to_legacy_courier(new_task, courier, insertion_index=0)
+
+        self.assertEqual([task.num for task in courier.re_schedule], ["new", "seed"])
+        self.assertEqual(courier.re_weight, 3.0)
+        self.assertEqual(courier.batch_take, 1)
+
+    def test_time_stepped_runner_advances_couriers_and_reports_metrics(self) -> None:
+        """The Chengdu runner should call the movement hook and emit aggregate metrics."""
+        from capa.chengdu_env import run_time_stepped_chengdu_batches
+
+        local_station = FakeStation(1, "S")
+        partner_station = FakeStation(2, "PS")
+        local_courier = FakeLegacyCourier(num=1, location="L0", station=local_station)
+        partner_courier = FakeLegacyCourier(num=2, location="P0", station=partner_station)
+        partner_platform = CooperatingPlatform(
+            platform_id="P1",
+            couriers=[],
+            base_price=1.0,
+            sharing_rate_gamma=0.4,
+            historical_quality=1.0,
+        )
+        tasks = [
+            FakeTask("t1", "T1", 0, 30, 1.0, 10.0),
+            FakeTask("t2", "T2", 0, 30, 1.0, 10.0),
+        ]
+        move_calls = []
+
+        def movement_callback(local_couriers, partner_couriers, step_seconds, station_set) -> None:
+            move_calls.append((len(local_couriers), len(partner_couriers), step_seconds, len(station_set)))
+
+        result = run_time_stepped_chengdu_batches(
+            tasks=tasks,
+            local_couriers=[local_courier],
+            partner_couriers_by_platform={"P1": [partner_courier]},
+            station_set=[local_station, partner_station],
+            travel_model=self.travel,
+            config=self.config,
+            batch_seconds=60,
+            step_seconds=60,
+            platform_base_prices={"P1": 1.0},
+            platform_sharing_rates={"P1": 0.4},
+            platform_qualities={"P1": 1.0},
+            movement_callback=movement_callback,
+        )
+
+        self.assertGreaterEqual(len(move_calls), 1)
+        self.assertEqual(len(result.matching_plan), 2)
+        self.assertAlmostEqual(result.metrics.completion_rate, 1.0)
+        self.assertGreaterEqual(result.metrics.total_revenue, 0.0)
+
+
+if __name__ == "__main__":
+    unittest.main()

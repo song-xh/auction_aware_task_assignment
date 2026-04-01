@@ -118,3 +118,31 @@ The following are not implemented in this phase:
 - RamCOM / MRA experiments
 
 These remain for later phases.
+
+## 8. Chengdu experiment adapter assumptions
+
+The official Chengdu experiment path in `capa.experiments` now runs through the repository's legacy simulation environment instead of synthesizing couriers from parcel nodes.
+
+Specifically:
+
+- station generation comes from `Framework_ChengDu.GenerateStation`
+- seeded courier schedules come from `Framework_ChengDu.GenerateOriginSchedule`
+- courier movement comes from `Framework_ChengDu.WalkAlongRoute`
+- CAPA only replaces the assignment decision logic inside the batch loop
+- travel distance still comes from the actual Chengdu road graph through `GraphUtils_ChengDu`
+
+One ambiguity remains:
+
+- the repository does not include a separate real-world cross-platform courier dataset
+
+To keep the base simulation model consistent, the current Chengdu runner seeds one larger legacy courier pool from the original framework and partitions that pool into the local platform plus cooperating platforms.
+
+This preserves:
+
+- real task locations
+- real station anchors
+- seeded initial courier routes
+- time-stepped road-network movement
+- route-buffer insertion semantics
+
+But it does not prove that the cooperating platforms correspond to distinct real operators in the source data. That limitation remains documented here rather than hidden behind a synthetic environment.

@@ -2,6 +2,7 @@
 
 from .cama import run_cama
 from .dapa import run_dapa
+from .experiments import run_chengdu_experiment
 from .models import CAPAConfig, CAPAResult, CooperatingPlatform, Courier, Parcel
 from .runner import run_capa
 from .travel import DistanceMatrixTravelModel
@@ -15,5 +16,6 @@ __all__ = [
     "Parcel",
     "run_cama",
     "run_capa",
+    "run_chengdu_experiment",
     "run_dapa",
 ]

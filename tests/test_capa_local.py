@@ -56,6 +56,30 @@ class CAPALocalTests(unittest.TestCase):
         threshold = calculate_threshold([0.9, 0.6, 0.3], omega=0.5)
         self.assertAlmostEqual(threshold, 0.3)
 
+    def test_calculate_utility_handles_zero_detour_same_node_case(self) -> None:
+        """A parcel already on the courier node should be treated as zero extra detour."""
+        courier = Courier(
+            courier_id="c1",
+            current_location="A",
+            depot_location="A",
+            capacity=10.0,
+            current_load=1.0,
+        )
+        parcel = Parcel(
+            parcel_id="p1",
+            location="A",
+            arrival_time=0,
+            deadline=20,
+            weight=2.0,
+            fare=10.0,
+        )
+        config = CAPAConfig(utility_balance_gamma=0.25)
+
+        utility = calculate_utility(parcel, courier, self.travel, config)
+
+        self.assertAlmostEqual(utility.detour_ratio, 1.0)
+        self.assertAlmostEqual(utility.value, 0.925)
+
     def test_run_cama_splits_local_and_cross_by_threshold(self) -> None:
         """CAMA should keep only high-utility candidate-best pairs locally."""
         config = CAPAConfig(utility_balance_gamma=0.5, threshold_omega=1.0)

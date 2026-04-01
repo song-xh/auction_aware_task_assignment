@@ -35,8 +35,9 @@ def find_best_local_insertion(
         base_distance = travel_model.distance(start, end)
         detour_distance = travel_model.distance(start, parcel.location) + travel_model.distance(parcel.location, end)
         if detour_distance <= 0:
-            raise ValueError("Detour distance must be positive.")
-        ratio = base_distance / detour_distance
+            ratio = 1.0
+        else:
+            ratio = base_distance / detour_distance
         if ratio > best_ratio:
             best_ratio = ratio
             best_index = index
