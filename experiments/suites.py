@@ -7,25 +7,7 @@ from pathlib import Path
 from typing import Any, Callable, Sequence
 
 from .compare import run_comparison_sweep
-
-SUITE_PRESETS: dict[str, dict[str, dict[str, list[int]]]] = {
-    "paper-main": {
-        "smoke": {
-            "num_parcels": [20, 50],
-            "local_couriers": [2, 4],
-            "service_radius": [0.5, 1.5],
-            "platforms": [1, 2],
-            "batch_size": [60, 300],
-        },
-        "chengdu-formal": {
-            "num_parcels": [100, 200, 500],
-            "local_couriers": [10, 20, 30],
-            "service_radius": [0.5, 1.0, 1.5, 2.0, 2.5],
-            "platforms": [1, 2, 4],
-            "batch_size": [60, 300, 600],
-        },
-    }
-}
+from .paper_config import PAPER_SUITE_PRESETS
 
 
 def run_experiment_suite(
@@ -74,11 +56,11 @@ def run_experiment_suite(
     return summary
 
 
-def _get_suite_axes(suite_name: str, preset_name: str) -> dict[str, list[int]]:
+def _get_suite_axes(suite_name: str, preset_name: str) -> dict[str, list[float]]:
     """Return the predefined sweep axes for one supported suite and preset combination."""
-    if suite_name not in SUITE_PRESETS:
+    if suite_name not in PAPER_SUITE_PRESETS:
         raise ValueError(f"Unsupported experiment suite `{suite_name}`.")
-    suite_presets = SUITE_PRESETS[suite_name]
+    suite_presets = PAPER_SUITE_PRESETS[suite_name]
     if preset_name not in suite_presets:
         raise ValueError(f"Unsupported preset `{preset_name}` for suite `{suite_name}`.")
     return suite_presets[preset_name]
