@@ -334,7 +334,7 @@ class GraphUtils(object):
             edList = self.DFSSearch(nMap, eMap, nList[0], sContext)
             # 依次遍历深度优先搜索后的边的列表中的每一条边
             num = 0
-            for i in range(len(eList)):
+            for i in range(len(edList)):
                 e = edList[i]
                 # 获取边的起点和终点
                 nStart = e.startNode

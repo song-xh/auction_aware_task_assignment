@@ -13,6 +13,73 @@ from .models import Assignment, BatchReport, CAPAConfig, CAPAResult, Cooperating
 from .utility import find_best_local_insertion
 
 
+def limit_legacy_tasks(
+    pick_tasks: Sequence[Any],
+    delivery_tasks: Sequence[Any],
+    num_parcels: int,
+    required_couriers: int,
+) -> tuple[list[Any], list[Any]]:
+    """Trim legacy pick-up and delivery inputs to the volume required by the requested run."""
+    if num_parcels <= 0:
+        raise ValueError("The requested parcel count must be positive.")
+    if required_couriers <= 0:
+        raise ValueError("The requested courier count must be positive.")
+    ordered_pick = sort_legacy_tasks(pick_tasks)
+    ordered_delivery = sort_legacy_tasks(delivery_tasks)
+    limited_pick = ordered_pick[:num_parcels]
+    limited_delivery = ordered_delivery[:required_couriers]
+    if len(limited_pick) < num_parcels:
+        raise ValueError(f"Only {len(limited_pick)} pick-up tasks are available, fewer than the requested {num_parcels}.")
+    if len(limited_delivery) < required_couriers:
+        raise ValueError(
+            f"Only {len(limited_delivery)} delivery tasks are available, fewer than the required {required_couriers} courier seeds."
+        )
+    return limited_pick, limited_delivery
+
+
+def iter_delivery_seed_counts(required_couriers: int, total_delivery_tasks: int) -> Iterable[int]:
+    """Yield progressively larger delivery-task budgets until the full dataset is exhausted."""
+    if required_couriers <= 0:
+        raise ValueError("The requested courier count must be positive.")
+    if total_delivery_tasks <= 0:
+        raise ValueError("At least one delivery task is required.")
+    current = min(required_couriers, total_delivery_tasks)
+    while True:
+        yield current
+        if current >= total_delivery_tasks:
+            break
+        current = min(total_delivery_tasks, current * 2)
+
+
+def sort_legacy_tasks(tasks: Sequence[Any]) -> list[Any]:
+    """Return legacy tasks sorted by request time, deadline, and identifier."""
+    return sorted(
+        tasks,
+        key=lambda item: (float(getattr(item, "s_time")), float(getattr(item, "d_time")), str(getattr(item, "num"))),
+    )
+
+
+def select_station_pick_tasks(station_set: Sequence[Any], ordered_pick_tasks: Sequence[Any], num_parcels: int) -> list[Any]:
+    """Assign pick-up tasks to legacy stations using the original rectangular station ranges."""
+    if num_parcels <= 0:
+        raise ValueError("The requested parcel count must be positive.")
+    for station in station_set:
+        station.f_pick_task_set = []
+    selected: list[Any] = []
+    for task in ordered_pick_tasks:
+        for station in station_set:
+            station_range = getattr(station, "station_range", None)
+            if not station_range or len(station_range) != 4:
+                continue
+            if station_range[0] <= float(getattr(task, "l_lng")) < station_range[1] and station_range[2] <= float(getattr(task, "l_lat")) < station_range[3]:
+                station.f_pick_task_set.append(task)
+                selected.append(task)
+                break
+        if len(selected) >= num_parcels:
+            break
+    return selected
+
+
 def legacy_task_to_parcel(task: Any) -> Parcel:
     """Convert a legacy Chengdu task object into the CAPA parcel model."""
     return Parcel(
@@ -310,32 +377,43 @@ def build_framework_chengdu_environment(
     from Tasks_ChengDu import readTask
 
     pick_task_set, delivery_task_set = readTask()
-    framework.pick_task_set = pick_task_set
-    framework.delivery_task_set = delivery_task_set
-    framework.fw_ff_pick_task_set1 = []
+    required_couriers = local_courier_count + (cooperating_platform_count * couriers_per_platform)
+    ordered_pick = sort_legacy_tasks(pick_task_set)
+    ordered_delivery = sort_legacy_tasks(delivery_task_set)
     framework.parameter_task_num = num_parcels
-    framework.parameter_courier_num = local_courier_count + (cooperating_platform_count * couriers_per_platform)
     framework.parameter_capacity = 75
     framework.parameter_capacity_c = 75
 
-    generator = framework.GenerateStation(str(data_dir / "map_ChengDu"), str(data_dir / "order_20161101_deal"), 11)
-    station_set = generator.get_station()
-    station_by_num = {station.num: station for station in station_set}
-    seeded_couriers = framework.GenerateOriginSchedule(station_set, 0.5)
-    for courier in seeded_couriers:
-        ensure_legacy_courier_station(courier, station_by_num)
-        courier.batch_take = 0
+    station_set = []
+    seeded_couriers: list[Any] = []
+    station_by_num: dict[int, Any] = {}
+    tasks: list[Any] = []
+    framework.pick_task_set = []
+    for delivery_seed_count in iter_delivery_seed_counts(required_couriers, len(ordered_delivery)):
+        framework.delivery_task_set = ordered_delivery[:delivery_seed_count]
+        framework.fw_ff_pick_task_set1 = []
+        framework.fw_sum_time = 0
+        generator = framework.GenerateStation(str(data_dir / "map_ChengDu"), str(data_dir / "order_20161101_deal"), 11)
+        station_set = generator.get_station()
+        available_seed_count = sum(len(getattr(station, "station_task_set", [])) for station in station_set)
+        framework.parameter_courier_num = min(required_couriers, available_seed_count)
+        station_by_num = {station.num: station for station in station_set}
+        seeded_couriers = framework.GenerateOriginSchedule(station_set, 0.5)
+        for courier in seeded_couriers:
+            ensure_legacy_courier_station(courier, station_by_num)
+            courier.batch_take = 0
+        tasks = select_station_pick_tasks(station_set, ordered_pick, num_parcels)
+        if len(seeded_couriers) >= required_couriers and len(tasks) >= num_parcels:
+            break
 
-    required_couriers = local_courier_count + (cooperating_platform_count * couriers_per_platform)
     if len(seeded_couriers) < required_couriers:
         raise ValueError(
             f"Legacy framework produced only {len(seeded_couriers)} seeded couriers, fewer than the required {required_couriers}."
         )
-
-    tasks = sorted(
-        [task for station in station_set for task in getattr(station, "f_pick_task_set", [])],
-        key=lambda item: (float(getattr(item, "s_time")), float(getattr(item, "d_time")), str(getattr(item, "num"))),
-    )[:num_parcels]
+    if len(tasks) < num_parcels:
+        raise ValueError(
+            f"Legacy framework produced only {len(tasks)} pick-up tasks inside station bounds, fewer than the requested {num_parcels}."
+        )
 
     local_couriers = seeded_couriers[:local_courier_count]
     partner_couriers_by_platform: Dict[str, List[Any]] = {}

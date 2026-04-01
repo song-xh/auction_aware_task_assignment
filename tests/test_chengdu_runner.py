@@ -115,6 +115,48 @@ class ChengduRunnerTests(unittest.TestCase):
         self.assertEqual(courier.re_weight, 3.0)
         self.assertEqual(courier.batch_take, 1)
 
+    def test_limit_legacy_tasks_trims_pick_and_delivery_inputs(self) -> None:
+        """Preprocessing should only keep the task volume required by the requested experiment size."""
+        from capa.chengdu_env import limit_legacy_tasks
+
+        pick_tasks = [FakeTask(f"p{i}", f"N{i}", i, i + 100, 1.0, 10.0) for i in range(10)]
+        delivery_tasks = [FakeTask(f"d{i}", f"M{i}", i, i + 100, 1.0, 0.0) for i in range(10)]
+
+        limited_pick, limited_delivery = limit_legacy_tasks(
+            pick_tasks=pick_tasks,
+            delivery_tasks=delivery_tasks,
+            num_parcels=3,
+            required_couriers=2,
+        )
+
+        self.assertEqual([task.num for task in limited_pick], ["p0", "p1", "p2"])
+        self.assertEqual([task.num for task in limited_delivery], ["d0", "d1"])
+
+    def test_iter_delivery_seed_counts_doubles_until_full_dataset(self) -> None:
+        """Delivery seed expansion should grow geometrically until all candidates are exhausted."""
+        from capa.chengdu_env import iter_delivery_seed_counts
+
+        self.assertEqual(list(iter_delivery_seed_counts(required_couriers=3, total_delivery_tasks=20)), [3, 6, 12, 20])
+
+    def test_select_station_pick_tasks_uses_station_ranges(self) -> None:
+        """Pick-task selection should follow the same station-range rule as the legacy framework."""
+        from capa.chengdu_env import select_station_pick_tasks
+
+        station = FakeStation(1, "S")
+        station.station_range = [0.0, 10.0, 0.0, 10.0]
+        station.f_pick_task_set = []
+        inside = FakeTask("p1", "N1", 0, 100, 1.0, 10.0)
+        inside.l_lng = 5.0
+        inside.l_lat = 5.0
+        outside = FakeTask("p2", "N2", 0, 100, 1.0, 10.0)
+        outside.l_lng = 15.0
+        outside.l_lat = 15.0
+
+        selected = select_station_pick_tasks([station], [inside, outside], num_parcels=1)
+
+        self.assertEqual([task.num for task in selected], ["p1"])
+        self.assertEqual([task.num for task in station.f_pick_task_set], ["p1"])
+
     def test_time_stepped_runner_advances_couriers_and_reports_metrics(self) -> None:
         """The Chengdu runner should call the movement hook and emit aggregate metrics."""
         from capa.chengdu_env import run_time_stepped_chengdu_batches
