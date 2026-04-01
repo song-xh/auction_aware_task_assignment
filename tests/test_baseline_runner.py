@@ -8,7 +8,10 @@ from unittest.mock import patch
 from baselines.greedy import parse_greedy_metrics, safe_average
 from baselines.gta import (
     GTABid,
+    count_available_couriers,
     is_idle_courier_feasible,
+    legacy_courier_ready_state,
+    select_available_courier_for_task,
     select_idle_courier_for_task,
     settle_aim_auction,
     should_bid_outer_platform_impgta,
@@ -69,6 +72,31 @@ class BaselineRunnerTests(unittest.TestCase):
                 service_radius_meters=3.0,
             )
         )
+
+    def test_available_courier_selection_can_use_route_tail_state(self) -> None:
+        """The Chengdu GTA adapter should evaluate couriers from their next available route state."""
+        task = SimpleNamespace(l_node=12, d_time=100, weight=1.0)
+        busy_courier = SimpleNamespace(
+            num=1,
+            location=0,
+            re_schedule=[SimpleNamespace(l_node=10, reach_time=5.0)],
+            re_weight=1.0,
+            max_weight=5.0,
+        )
+        idle_courier = SimpleNamespace(num=2, location=20, re_schedule=[], re_weight=0.0, max_weight=5.0)
+
+        ready_time, ready_location = legacy_courier_ready_state(busy_courier, now=0)
+        bid = select_available_courier_for_task(
+            task=task,
+            couriers=[idle_courier, busy_courier],
+            travel_model=_LinearTravelModel(),
+            now=0,
+        )
+
+        self.assertEqual((ready_time, ready_location), (5.0, 10))
+        self.assertIsNotNone(bid)
+        self.assertEqual(bid.courier.num, 1)
+        self.assertEqual(count_available_couriers([busy_courier, idle_courier], now=0, window_seconds=10), 2)
 
     def test_greedy_wrapper_forwards_service_radius_to_legacy_entrypoint(self) -> None:
         """The unified Greedy wrapper should forward the environment service radius into the legacy entrypoint."""

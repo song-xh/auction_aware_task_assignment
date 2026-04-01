@@ -16,10 +16,14 @@ class ExperimentsSeedingTests(unittest.TestCase):
         """Cloned environments should start identical while remaining independently mutable."""
         from experiments.seeding import build_environment_seed, clone_environment_from_seed
 
-        station = {"station_id": "s1"}
+        station = {"station_id": "s1", "courier_set": [], "f_pick_task_set": []}
+        local_courier = {"courier_id": "c1", "route": ["A"], "station": station, "station_num": "s1"}
+        task = {"task_id": "t1"}
+        station["courier_set"].append(local_courier)
+        station["f_pick_task_set"].append(task)
         environment = ChengduEnvironment(
-            tasks=[{"task_id": "t1"}],
-            local_couriers=[{"courier_id": "c1", "route": ["A"], "station": station, "station_num": "s1"}],
+            tasks=[task],
+            local_couriers=[local_courier],
             partner_couriers_by_platform={"P1": [{"courier_id": "p1", "route": ["B"]}]},
             station_set=[station],
             travel_model=object(),
@@ -32,8 +36,8 @@ class ExperimentsSeedingTests(unittest.TestCase):
         clone_a = clone_environment_from_seed(seed)
         clone_b = clone_environment_from_seed(seed)
 
-        self.assertEqual(clone_a.tasks, clone_b.tasks)
-        self.assertEqual(clone_a.local_couriers, clone_b.local_couriers)
+        self.assertEqual(clone_a.tasks[0]["task_id"], clone_b.tasks[0]["task_id"])
+        self.assertEqual(clone_a.local_couriers[0]["courier_id"], clone_b.local_couriers[0]["courier_id"])
         self.assertIs(clone_a.travel_model, clone_b.travel_model)
 
         clone_a.tasks.append({"task_id": "t2"})
@@ -43,6 +47,10 @@ class ExperimentsSeedingTests(unittest.TestCase):
         self.assertEqual(clone_b.local_couriers[0]["route"], ["A"])
         self.assertIs(clone_a.local_couriers[0]["station"], clone_a.station_set[0])
         self.assertIs(clone_b.local_couriers[0]["station"], clone_b.station_set[0])
+        self.assertIs(clone_a.station_set[0]["courier_set"][0], clone_a.local_couriers[0])
+        self.assertIs(clone_b.station_set[0]["courier_set"][0], clone_b.local_couriers[0])
+        self.assertIs(clone_a.station_set[0]["f_pick_task_set"][0], clone_a.tasks[0])
+        self.assertIs(clone_b.station_set[0]["f_pick_task_set"][0], clone_b.tasks[0])
 
     def test_compare_runner_reuses_one_seeded_environment_per_sweep_value(self) -> None:
         """Comparison sweeps should build once per sweep point, then clone for each algorithm run."""

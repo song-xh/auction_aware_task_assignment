@@ -45,6 +45,16 @@ def is_idle_legacy_courier(courier: Any) -> bool:
     return not getattr(courier, "re_schedule", [])
 
 
+def legacy_courier_ready_state(courier: Any, now: int) -> tuple[float, Any]:
+    """Return the earliest ready time and service location for one legacy courier."""
+    schedule = list(getattr(courier, "re_schedule", []))
+    if not schedule:
+        return float(now), getattr(courier, "location")
+    last_task = schedule[-1]
+    ready_time = max(float(now), float(getattr(last_task, "reach_time")))
+    return ready_time, getattr(last_task, "l_node")
+
+
 def compute_dispatch_cost(
     task: Any,
     courier: Any,
@@ -53,6 +63,17 @@ def compute_dispatch_cost(
 ) -> float:
     """Compute the worker dispatch price using the [17] unit-price-per-kilometer setting."""
     distance_meters = float(travel_model.distance(getattr(courier, "location"), getattr(task, "l_node")))
+    return (distance_meters / 1000.0) * unit_price_per_km
+
+
+def compute_dispatch_cost_from_location(
+    task: Any,
+    start_location: Any,
+    travel_model: Any,
+    unit_price_per_km: float = DEFAULT_UNIT_PRICE_PER_KM,
+) -> float:
+    """Compute a dispatch cost from an explicit origin location."""
+    distance_meters = float(travel_model.distance(start_location, getattr(task, "l_node")))
     return (distance_meters / 1000.0) * unit_price_per_km
 
 
@@ -71,6 +92,29 @@ def is_idle_courier_feasible(
     if not is_within_service_radius(getattr(courier, "location"), getattr(task, "l_node"), travel_model, service_radius_meters):
         return False
     arrival_time = now + float(travel_model.travel_time(getattr(courier, "location"), getattr(task, "l_node")))
+    return arrival_time <= float(getattr(task, "d_time"))
+
+
+def is_available_courier_feasible(
+    task: Any,
+    courier: Any,
+    travel_model: Any,
+    now: int,
+    service_radius_meters: float | None = None,
+) -> bool:
+    """Check whether a legacy courier can serve the task after finishing its current route."""
+    ready_time, ready_location = legacy_courier_ready_state(courier, now)
+    if not is_idle_legacy_courier(courier) and float(getattr(courier, "max_weight")) < float(getattr(task, "weight")):
+        return False
+    if is_idle_legacy_courier(courier):
+        remaining_capacity = float(getattr(courier, "max_weight")) - float(getattr(courier, "re_weight", 0.0))
+    else:
+        remaining_capacity = float(getattr(courier, "max_weight"))
+    if remaining_capacity < float(getattr(task, "weight")):
+        return False
+    if not is_within_service_radius(ready_location, getattr(task, "l_node"), travel_model, service_radius_meters):
+        return False
+    arrival_time = ready_time + float(travel_model.travel_time(ready_location, getattr(task, "l_node")))
     return arrival_time <= float(getattr(task, "d_time"))
 
 
@@ -99,9 +143,57 @@ def select_idle_courier_for_task(
     return min(feasible_bids, key=lambda item: (item.dispatch_cost, getattr(item.courier, "num", 0)))
 
 
+def select_available_courier_for_task(
+    task: Any,
+    couriers: Sequence[Any],
+    travel_model: Any,
+    now: int,
+    unit_price_per_km: float = DEFAULT_UNIT_PRICE_PER_KM,
+    service_radius_meters: float | None = None,
+) -> GTABid | None:
+    """Select the cheapest feasible courier under the Chengdu route-backed availability model."""
+    feasible_bids: list[GTABid] = []
+    for courier in couriers:
+        if not is_available_courier_feasible(
+            task=task,
+            courier=courier,
+            travel_model=travel_model,
+            now=now,
+            service_radius_meters=service_radius_meters,
+        ):
+            continue
+        _, ready_location = legacy_courier_ready_state(courier, now)
+        feasible_bids.append(
+            GTABid(
+                platform_id="",
+                courier=courier,
+                dispatch_cost=compute_dispatch_cost_from_location(
+                    task=task,
+                    start_location=ready_location,
+                    travel_model=travel_model,
+                    unit_price_per_km=unit_price_per_km,
+                ),
+            )
+        )
+    if not feasible_bids:
+        return None
+    return min(feasible_bids, key=lambda item: (item.dispatch_cost, getattr(item.courier, "num", 0)))
+
+
 def count_idle_couriers(couriers: Sequence[Any]) -> int:
     """Count the number of idle workers available on one platform."""
     return sum(1 for courier in couriers if is_idle_legacy_courier(courier))
+
+
+def count_available_couriers(couriers: Sequence[Any], now: int, window_seconds: int = 0) -> int:
+    """Count couriers that are idle now or become idle within the requested time window."""
+    window_end = float(now + max(0, window_seconds))
+    count = 0
+    for courier in couriers:
+        ready_time, _ = legacy_courier_ready_state(courier, now)
+        if ready_time <= window_end:
+            count += 1
+    return count
 
 
 def expected_future_reward(future_tasks: Sequence[Any]) -> float:
@@ -221,7 +313,7 @@ def _run_gta_environment(
 
         for task in arrivals:
             started = perf_counter()
-            local_bid = select_idle_courier_for_task(
+            local_bid = select_available_courier_for_task(
                 task=task,
                 couriers=local_couriers,
                 travel_model=environment.travel_model,
@@ -232,7 +324,11 @@ def _run_gta_environment(
             if local_bid is not None:
                 if algorithm == "basegta" or should_dispatch_inner_task_impgta(
                     task=task,
-                    idle_worker_count=count_idle_couriers(local_couriers),
+                    idle_worker_count=count_available_couriers(
+                        local_couriers,
+                        current_time,
+                        prediction_window_seconds or 0,
+                    ),
                     future_tasks=local_future_tasks,
                 ):
                     apply_assignment_to_legacy_courier(task, local_bid.courier, len(getattr(local_bid.courier, "re_schedule")))
@@ -243,7 +339,7 @@ def _run_gta_environment(
 
             outer_bids: list[GTABid] = []
             for platform_id, partner_couriers in partner_couriers_by_platform.items():
-                partner_bid = select_idle_courier_for_task(
+                partner_bid = select_available_courier_for_task(
                     task=task,
                     couriers=partner_couriers,
                     travel_model=environment.travel_model,
@@ -256,7 +352,11 @@ def _run_gta_environment(
                 if algorithm == "impgta":
                     if not should_bid_outer_platform_impgta(
                         dispatch_cost=partner_bid.dispatch_cost,
-                        idle_worker_count=count_idle_couriers(partner_couriers),
+                        idle_worker_count=count_available_couriers(
+                            partner_couriers,
+                            current_time,
+                            prediction_window_seconds or 0,
+                        ),
                         future_tasks=[],
                     ):
                         continue
