@@ -1,6 +1,6 @@
 # Phase 4 Implementation Notes
 
-This document records the explicit implementation choices used for the repaired Phase 4 CAPA code path in `capa/`.
+This document records the explicit implementation choices used for the repaired Phase 4 CAPA code path and the reusable Chengdu environment package.
 
 ## 1. New Phase 4 code path
 
@@ -17,6 +17,13 @@ Instead, the repaired CAPA implementation lives in:
 - `capa/runner.py`
 
 This keeps CAPA logic reusable for later RL-CAPA work and testable without the Chengdu globals.
+
+The Chengdu environment integration now lives in:
+
+- `env/chengdu.py`
+- `env/__init__.py`
+
+The older duplicate runner path in `MyMethod/Auction_Framework_Chengdu.py` has been reduced to a compatibility wrapper that forwards to `capa.experiments`.
 
 ## 2. Eq.1 interpretation
 
@@ -121,7 +128,7 @@ These remain for later phases.
 
 ## 8. Chengdu experiment adapter assumptions
 
-The official Chengdu experiment path in `capa.experiments` now runs through the repository's legacy simulation environment instead of synthesizing couriers from parcel nodes.
+The official Chengdu experiment path in `capa.experiments` now runs through the reusable `env.chengdu` package, which in turn binds to the repository's legacy simulation environment instead of synthesizing couriers from parcel nodes.
 
 Specifically:
 
@@ -130,6 +137,12 @@ Specifically:
 - courier movement comes from `Framework_ChengDu.WalkAlongRoute`
 - CAPA only replaces the assignment decision logic inside the batch loop
 - travel distance still comes from the actual Chengdu road graph through `GraphUtils_ChengDu`
+
+The runner now also drains the simulation after the final batch window:
+
+- accepted parcels are not counted as completed until the environment has advanced until all accepted routes are empty
+- `CR` is therefore based on delivered parcels, not merely matched parcels
+- `TR` and `BPT` remain assignment-stage metrics as in Phase 4
 
 One ambiguity remains:
 

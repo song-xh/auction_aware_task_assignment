@@ -47,6 +47,7 @@ class FakeLegacyCourier:
         self.service_score = 0.9
         self.w = 0.4
         self.c = 0.6
+        self._deliver_after = {}
 
 
 class ChengduRunnerTests(unittest.TestCase):
@@ -80,7 +81,7 @@ class ChengduRunnerTests(unittest.TestCase):
 
     def test_legacy_courier_snapshot_preserves_route_state(self) -> None:
         """Legacy couriers should convert into CAPA couriers without losing route semantics."""
-        from capa.chengdu_env import legacy_courier_to_capa
+        from env.chengdu import legacy_courier_to_capa
 
         station = FakeStation(1, "S")
         courier = FakeLegacyCourier(
@@ -102,7 +103,7 @@ class ChengduRunnerTests(unittest.TestCase):
 
     def test_apply_assignment_to_legacy_courier_inserts_into_schedule(self) -> None:
         """Accepted assignments should be written back into the legacy route buffer."""
-        from capa.chengdu_env import apply_assignment_to_legacy_courier
+        from env.chengdu import apply_assignment_to_legacy_courier
 
         station = FakeStation(1, "S")
         seed_task = FakeTask("seed", "T1", 0, 100, 1.0, 0.0)
@@ -117,7 +118,7 @@ class ChengduRunnerTests(unittest.TestCase):
 
     def test_limit_legacy_tasks_trims_pick_and_delivery_inputs(self) -> None:
         """Preprocessing should only keep the task volume required by the requested experiment size."""
-        from capa.chengdu_env import limit_legacy_tasks
+        from env.chengdu import limit_legacy_tasks
 
         pick_tasks = [FakeTask(f"p{i}", f"N{i}", i, i + 100, 1.0, 10.0) for i in range(10)]
         delivery_tasks = [FakeTask(f"d{i}", f"M{i}", i, i + 100, 1.0, 0.0) for i in range(10)]
@@ -134,13 +135,13 @@ class ChengduRunnerTests(unittest.TestCase):
 
     def test_iter_delivery_seed_counts_doubles_until_full_dataset(self) -> None:
         """Delivery seed expansion should grow geometrically until all candidates are exhausted."""
-        from capa.chengdu_env import iter_delivery_seed_counts
+        from env.chengdu import iter_delivery_seed_counts
 
         self.assertEqual(list(iter_delivery_seed_counts(required_couriers=3, total_delivery_tasks=20)), [3, 6, 12, 20])
 
     def test_select_station_pick_tasks_uses_station_ranges(self) -> None:
         """Pick-task selection should follow the same station-range rule as the legacy framework."""
-        from capa.chengdu_env import select_station_pick_tasks
+        from env.chengdu import select_station_pick_tasks
 
         station = FakeStation(1, "S")
         station.station_range = [0.0, 10.0, 0.0, 10.0]
@@ -159,7 +160,7 @@ class ChengduRunnerTests(unittest.TestCase):
 
     def test_assign_delivery_tasks_to_stations_uses_station_ranges(self) -> None:
         """Delivery-task assignment should follow the same station-range rule as the legacy framework."""
-        from capa.chengdu_env import assign_delivery_tasks_to_stations
+        from env.chengdu import assign_delivery_tasks_to_stations
 
         station = FakeStation(1, "S")
         station.station_range = [0.0, 10.0, 0.0, 10.0]
@@ -177,7 +178,7 @@ class ChengduRunnerTests(unittest.TestCase):
 
     def test_time_stepped_runner_advances_couriers_and_reports_metrics(self) -> None:
         """The Chengdu runner should call the movement hook and emit aggregate metrics."""
-        from capa.chengdu_env import run_time_stepped_chengdu_batches
+        from env.chengdu import run_time_stepped_chengdu_batches
 
         local_station = FakeStation(1, "S")
         partner_station = FakeStation(2, "PS")
@@ -198,6 +199,12 @@ class ChengduRunnerTests(unittest.TestCase):
 
         def movement_callback(local_couriers, partner_couriers, step_seconds, station_set) -> None:
             move_calls.append((len(local_couriers), len(partner_couriers), step_seconds, len(station_set)))
+            for courier in [*local_couriers, *partner_couriers]:
+                if not courier.re_schedule:
+                    continue
+                head = courier.re_schedule.pop(0)
+                courier.location = head.l_node
+                courier.re_weight -= head.weight
 
         result = run_time_stepped_chengdu_batches(
             tasks=tasks,
@@ -218,6 +225,49 @@ class ChengduRunnerTests(unittest.TestCase):
         self.assertEqual(len(result.matching_plan), 2)
         self.assertAlmostEqual(result.metrics.completion_rate, 1.0)
         self.assertGreaterEqual(result.metrics.total_revenue, 0.0)
+
+    def test_time_stepped_runner_drains_routes_after_last_batch(self) -> None:
+        """The runner should keep stepping after the final batch until accepted parcels are physically delivered."""
+        from env.chengdu import run_time_stepped_chengdu_batches
+
+        local_station = FakeStation(1, "S")
+        local_courier = FakeLegacyCourier(num=1, location="L0", station=local_station)
+        task = FakeTask("t1", "T1", 40, 100, 1.0, 10.0)
+        move_calls = []
+
+        def delayed_delivery_callback(local_couriers, partner_couriers, step_seconds, station_set) -> None:
+            move_calls.append((len(local_couriers), len(partner_couriers), step_seconds, len(station_set)))
+            for courier in [*local_couriers, *partner_couriers]:
+                if not courier.re_schedule:
+                    continue
+                head = courier.re_schedule[0]
+                remaining = courier._deliver_after.get(head.num, 2)
+                remaining -= 1
+                courier._deliver_after[head.num] = remaining
+                if remaining <= 0:
+                    courier.location = head.l_node
+                    courier.re_weight -= head.weight
+                    courier.re_schedule.pop(0)
+
+        result = run_time_stepped_chengdu_batches(
+            tasks=[task],
+            local_couriers=[local_courier],
+            partner_couriers_by_platform={},
+            station_set=[local_station],
+            travel_model=self.travel,
+            config=self.config,
+            batch_seconds=60,
+            step_seconds=20,
+            platform_base_prices={},
+            platform_sharing_rates={},
+            platform_qualities={},
+            movement_callback=delayed_delivery_callback,
+        )
+
+        self.assertGreaterEqual(len(move_calls), 2)
+        self.assertEqual(local_courier.re_schedule, [])
+        self.assertEqual(result.metrics.delivered_parcel_count, 1)
+        self.assertAlmostEqual(result.metrics.completion_rate, 1.0)
 
 
 if __name__ == "__main__":

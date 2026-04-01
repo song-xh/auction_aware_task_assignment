@@ -9,9 +9,9 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Callable, Iterable, Sequence
 
-from .chengdu_env import build_framework_chengdu_environment, run_time_stepped_chengdu_batches
+from env.chengdu import LegacyChengduEnvironment, build_framework_chengdu_environment, run_time_stepped_chengdu_batches
 from .metrics import compute_completion_rate, compute_total_revenue
-from .models import BatchReport, CAPAConfig, CAPAResult, CooperatingPlatform, Courier, Parcel, RunMetrics
+from .models import BatchReport, CAPAConfig, CAPAResult, Parcel, RunMetrics
 
 
 def load_chengdu_pickup_parcels(data_dir: Path, limit: int | None = None) -> list[Parcel]:
@@ -41,62 +41,6 @@ def load_chengdu_pickup_parcels(data_dir: Path, limit: int | None = None) -> lis
     if limit is not None:
         return parcels[:limit]
     return parcels
-
-
-def build_entities_from_locations(
-    locations: Sequence[object],
-    local_courier_count: int,
-    cooperating_platform_count: int,
-    couriers_per_platform: int,
-) -> tuple[list[Courier], list[CooperatingPlatform]]:
-    """Construct deterministic couriers and cooperating platforms from sampled Chengdu nodes."""
-    if not locations:
-        raise ValueError("At least one location is required to construct experiment entities.")
-    unique_locations = list(dict.fromkeys(locations))
-
-    def location_for(index: int) -> object:
-        return unique_locations[index % len(unique_locations)]
-
-    local_couriers = [
-        Courier(
-            courier_id=f"local-{index}",
-            current_location=location_for(index),
-            depot_location=location_for(index),
-            capacity=50.0,
-            current_load=0.0,
-            alpha=0.4,
-            beta=0.6,
-            service_score=0.8,
-        )
-        for index in range(local_courier_count)
-    ]
-
-    platforms: list[CooperatingPlatform] = []
-    offset = local_courier_count
-    for platform_index in range(cooperating_platform_count):
-        couriers = [
-            Courier(
-                courier_id=f"cross-{platform_index}-{courier_index}",
-                current_location=location_for(offset + platform_index * couriers_per_platform + courier_index),
-                depot_location=location_for(offset + platform_index * couriers_per_platform + courier_index),
-                capacity=50.0,
-                current_load=0.0,
-                alpha=0.4,
-                beta=0.6,
-                service_score=max(0.5, 0.9 - 0.1 * platform_index),
-            )
-            for courier_index in range(couriers_per_platform)
-        ]
-        platforms.append(
-            CooperatingPlatform(
-                platform_id=f"P{platform_index + 1}",
-                couriers=couriers,
-                base_price=1.0,
-                sharing_rate_gamma=0.4,
-                historical_quality=max(0.5, 1.0 - 0.1 * platform_index),
-            )
-        )
-    return local_couriers, platforms
 
 
 class ChengduGraphTravelModel:
@@ -203,45 +147,48 @@ def run_chengdu_experiment(
     couriers_per_platform: int,
     batch_size: int,
     output_dir: Path,
-    env_builder: Callable[..., dict[str, Any]] | None = None,
+    env_builder: Callable[..., LegacyChengduEnvironment | dict[str, Any]] | None = None,
 ) -> CAPAResult:
     """Run a full Chengdu-backed CAPA experiment and persist plots plus a summary JSON report."""
     builder = env_builder or build_framework_chengdu_environment
-    environment = builder(
+    built_environment = builder(
         data_dir=data_dir,
         num_parcels=num_parcels,
         local_courier_count=local_courier_count,
         cooperating_platform_count=cooperating_platform_count,
         couriers_per_platform=couriers_per_platform,
     )
+    environment = built_environment if isinstance(built_environment, LegacyChengduEnvironment) else LegacyChengduEnvironment(**built_environment)
     config = build_default_chengdu_config(batch_size=batch_size)
     result = run_time_stepped_chengdu_batches(
-        tasks=environment["tasks"],
-        local_couriers=environment["local_couriers"],
-        partner_couriers_by_platform=environment["partner_couriers_by_platform"],
-        station_set=environment["station_set"],
-        travel_model=environment["travel_model"],
+        tasks=environment.tasks,
+        local_couriers=environment.local_couriers,
+        partner_couriers_by_platform=environment.partner_couriers_by_platform,
+        station_set=environment.station_set,
+        travel_model=environment.travel_model,
         config=config,
         batch_seconds=batch_size,
         step_seconds=60,
-        platform_base_prices=environment["platform_base_prices"],
-        platform_sharing_rates=environment["platform_sharing_rates"],
-        platform_qualities=environment["platform_qualities"],
-        movement_callback=environment.get("movement_callback"),
+        platform_base_prices=environment.platform_base_prices,
+        platform_sharing_rates=environment.platform_sharing_rates,
+        platform_qualities=environment.platform_qualities,
+        movement_callback=environment.movement_callback,
     )
 
     save_experiment_plots(result.batch_reports, result.metrics, output_dir)
 
     summary = {
-        "num_parcels": len(environment["tasks"]),
-        "local_courier_count": len(environment["local_couriers"]),
-        "cooperating_platform_count": len(environment["partner_couriers_by_platform"]),
+        "num_parcels": len(environment.tasks),
+        "local_courier_count": len(environment.local_couriers),
+        "cooperating_platform_count": len(environment.partner_couriers_by_platform),
         "couriers_per_platform": couriers_per_platform,
         "batch_size": batch_size,
         "metrics": {
             "TR": result.metrics.total_revenue,
             "CR": result.metrics.completion_rate,
             "BPT": result.metrics.batch_processing_time,
+            "delivered_parcels": result.metrics.delivered_parcel_count,
+            "accepted_assignments": result.metrics.accepted_parcel_count,
         },
         "plots": {
             "TR": str(output_dir / "tr_over_batches.png"),

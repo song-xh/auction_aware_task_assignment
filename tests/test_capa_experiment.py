@@ -3,30 +3,15 @@
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
 from capa import CAPAConfig, Parcel
-from capa.experiments import build_entities_from_locations, run_chengdu_experiment, save_experiment_plots
+from capa.experiments import run_chengdu_experiment, save_experiment_plots
 from capa.models import BatchReport, RunMetrics
+from env.chengdu import LegacyChengduEnvironment
 
 
 class CAPAExperimentTests(unittest.TestCase):
     """Validate experiment helper behavior without touching the Chengdu graph."""
-
-    def test_build_entities_from_locations_returns_requested_counts(self) -> None:
-        """The helper should deterministically create the requested courier counts."""
-        locations = ["n1", "n2", "n3", "n4", "n5", "n6"]
-
-        local_couriers, platforms = build_entities_from_locations(
-            locations=locations,
-            local_courier_count=3,
-            cooperating_platform_count=2,
-            couriers_per_platform=2,
-        )
-
-        self.assertEqual(len(local_couriers), 3)
-        self.assertEqual(len(platforms), 2)
-        self.assertEqual([len(platform.couriers) for platform in platforms], [2, 2])
 
     def test_save_experiment_plots_writes_png_files(self) -> None:
         """The experiment plot helper should materialize PNG files for the three metrics."""
@@ -72,31 +57,38 @@ class CAPAExperimentTests(unittest.TestCase):
         )
 
         def fake_builder(**_kwargs):
-            return {
-                "tasks": tasks,
-                "local_couriers": [local_courier],
-                "partner_couriers_by_platform": {"P1": [partner_courier]},
-                "station_set": [local_station, partner_station],
-                "travel_model": travel_model,
-                "platform_base_prices": {"P1": 1.0},
-                "platform_sharing_rates": {"P1": 0.4},
-                "platform_qualities": {"P1": 1.0},
-                "movement_callback": lambda local, partner, step, stations: None,
-            }
+            def movement_callback(local_couriers, partner_couriers, step, stations) -> None:
+                for courier in [*local_couriers, *partner_couriers]:
+                    if not courier.re_schedule:
+                        continue
+                    head = courier.re_schedule.pop(0)
+                    courier.location = head.l_node
+                    courier.re_weight -= head.weight
+
+            return LegacyChengduEnvironment(
+                tasks=tasks,
+                local_couriers=[local_courier],
+                partner_couriers_by_platform={"P1": [partner_courier]},
+                station_set=[local_station, partner_station],
+                travel_model=travel_model,
+                platform_base_prices={"P1": 1.0},
+                platform_sharing_rates={"P1": 0.4},
+                platform_qualities={"P1": 1.0},
+                movement_callback=movement_callback,
+            )
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             output_dir = Path(tmp_dir)
-            with patch("capa.experiments.build_entities_from_locations", side_effect=AssertionError("synthetic builder must not be used")):
-                result = run_chengdu_experiment(
-                    data_dir=Path("Data"),
-                    num_parcels=1,
-                    local_courier_count=1,
-                    cooperating_platform_count=1,
-                    couriers_per_platform=1,
-                    batch_size=60,
-                    output_dir=output_dir,
-                    env_builder=fake_builder,
-                )
+            result = run_chengdu_experiment(
+                data_dir=Path("Data"),
+                num_parcels=1,
+                local_courier_count=1,
+                cooperating_platform_count=1,
+                couriers_per_platform=1,
+                batch_size=60,
+                output_dir=output_dir,
+                env_builder=fake_builder,
+            )
 
             self.assertEqual(len(result.matching_plan), 1)
             self.assertTrue((output_dir / "summary.json").exists())

@@ -146,6 +146,8 @@ class RunMetrics:
     total_revenue: float
     completion_rate: float
     batch_processing_time: float
+    delivered_parcel_count: int = 0
+    accepted_parcel_count: int = 0
 
 
 @dataclass(frozen=True)
@@ -156,3 +158,4 @@ class CAPAResult:
     unassigned_parcels: Sequence[Parcel]
     batch_reports: Sequence[BatchReport]
     metrics: RunMetrics
+    delivered_parcels: Sequence[Parcel] = field(default_factory=list)

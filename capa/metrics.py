@@ -24,10 +24,18 @@ def compute_batch_processing_time(batch_reports: Sequence[BatchReport]) -> float
     return sum(report.processing_time_seconds for report in batch_reports)
 
 
-def build_run_metrics(assignments: Sequence[Assignment], total_parcels: int, batch_reports: Sequence[BatchReport]) -> RunMetrics:
-    """Assemble the three Phase 4 metrics into one immutable record."""
+def build_run_metrics(
+    assignments: Sequence[Assignment],
+    total_parcels: int,
+    batch_reports: Sequence[BatchReport],
+    delivered_parcel_count: int | None = None,
+) -> RunMetrics:
+    """Assemble the Phase 4 metrics, allowing delivery-based completion accounting."""
+    delivered_count = len(assignments) if delivered_parcel_count is None else delivered_parcel_count
     return RunMetrics(
         total_revenue=compute_total_revenue(assignments),
-        completion_rate=compute_completion_rate(assignments, total_parcels),
+        completion_rate=compute_completion_rate([None] * delivered_count, total_parcels),
         batch_processing_time=compute_batch_processing_time(batch_reports),
+        delivered_parcel_count=delivered_count,
+        accepted_parcel_count=len(assignments),
     )
