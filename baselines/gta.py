@@ -7,6 +7,7 @@ from statistics import fmean
 from time import perf_counter
 from typing import Any, Callable, Mapping, MutableSequence, Sequence
 
+from capa.constraints import is_within_service_radius
 from env.chengdu import (
     apply_assignment_to_legacy_courier,
     drain_legacy_routes,
@@ -55,11 +56,19 @@ def compute_dispatch_cost(
     return (distance_meters / 1000.0) * unit_price_per_km
 
 
-def is_idle_courier_feasible(task: Any, courier: Any, travel_model: Any, now: int) -> bool:
+def is_idle_courier_feasible(
+    task: Any,
+    courier: Any,
+    travel_model: Any,
+    now: int,
+    service_radius_meters: float | None = None,
+) -> bool:
     """Check whether an idle legacy courier can still reach the task before its deadline."""
     if not is_idle_legacy_courier(courier):
         return False
     if float(getattr(courier, "re_weight", 0.0)) + float(getattr(task, "weight")) > float(getattr(courier, "max_weight")):
+        return False
+    if not is_within_service_radius(getattr(courier, "location"), getattr(task, "l_node"), travel_model, service_radius_meters):
         return False
     arrival_time = now + float(travel_model.travel_time(getattr(courier, "location"), getattr(task, "l_node")))
     return arrival_time <= float(getattr(task, "d_time"))
@@ -71,11 +80,12 @@ def select_idle_courier_for_task(
     travel_model: Any,
     now: int,
     unit_price_per_km: float = DEFAULT_UNIT_PRICE_PER_KM,
+    service_radius_meters: float | None = None,
 ) -> GTABid | None:
     """Select the idle feasible courier with the minimum dispatch cost for one task."""
     feasible_bids: list[GTABid] = []
     for courier in couriers:
-        if not is_idle_courier_feasible(task, courier, travel_model, now):
+        if not is_idle_courier_feasible(task, courier, travel_model, now, service_radius_meters=service_radius_meters):
             continue
         feasible_bids.append(
             GTABid(
@@ -180,6 +190,7 @@ def _run_gta_environment(
         for platform_id, couriers in environment.partner_couriers_by_platform.items()
     }
     movement = environment.movement_callback or framework_movement_callback
+    service_radius_meters = None if getattr(environment, "service_radius_km", None) is None else float(environment.service_radius_km) * 1000.0
     current_time = int(float(getattr(tasks[0], "s_time")))
     task_index = 0
     total_profit = 0.0
@@ -216,6 +227,7 @@ def _run_gta_environment(
                 travel_model=environment.travel_model,
                 now=current_time,
                 unit_price_per_km=unit_price_per_km,
+                service_radius_meters=service_radius_meters,
             )
             if local_bid is not None:
                 if algorithm == "basegta" or should_dispatch_inner_task_impgta(
@@ -237,6 +249,7 @@ def _run_gta_environment(
                     travel_model=environment.travel_model,
                     now=current_time,
                     unit_price_per_km=unit_price_per_km,
+                    service_radius_meters=service_radius_meters,
                 )
                 if partner_bid is None:
                     continue

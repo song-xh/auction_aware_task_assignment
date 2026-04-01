@@ -40,6 +40,7 @@ class ChengduEnvironment:
     platform_sharing_rates: Mapping[str, float]
     platform_qualities: Mapping[str, float]
     movement_callback: Callable[[MutableSequence[Any], MutableSequence[Any], int, Sequence[Any]], None] | None = None
+    service_radius_km: float | None = None
 
     @classmethod
     def build(
@@ -49,6 +50,7 @@ class ChengduEnvironment:
         local_courier_count: int,
         cooperating_platform_count: int,
         couriers_per_platform: int,
+        service_radius_km: float | None = None,
     ) -> "ChengduEnvironment":
         """Build a Chengdu environment from the legacy framework inputs."""
         return build_framework_chengdu_environment(
@@ -57,6 +59,7 @@ class ChengduEnvironment:
             local_courier_count=local_courier_count,
             cooperating_platform_count=cooperating_platform_count,
             couriers_per_platform=couriers_per_platform,
+            service_radius_km=service_radius_km,
         )
 
     def all_partner_couriers(self) -> list[Any]:
@@ -81,6 +84,7 @@ class ChengduEnvironment:
             "platform_base_prices": dict(self.platform_base_prices),
             "platform_sharing_rates": dict(self.platform_sharing_rates),
             "platform_qualities": dict(self.platform_qualities),
+            "service_radius_km": self.service_radius_km,
         }
 
     def advance(self, seconds: int) -> None:
@@ -444,6 +448,7 @@ def run_time_stepped_chengdu_batches(
     platform_sharing_rates: Mapping[str, float],
     platform_qualities: Mapping[str, float],
     movement_callback: Callable[[MutableSequence[Any], MutableSequence[Any], int, Sequence[Any]], None] | None = None,
+    service_radius_km: float | None = None,
 ) -> CAPAResult:
     """Run CAPA over legacy Chengdu batches while preserving the original movement loop."""
     if step_seconds <= 0:
@@ -467,6 +472,7 @@ def run_time_stepped_chengdu_batches(
         )
 
     movement = movement_callback or framework_movement_callback
+    service_radius_meters = None if service_radius_km is None else float(service_radius_km) * 1000.0
     first_batch_start = int(float(getattr(min(tasks, key=lambda item: float(getattr(item, "s_time"))), "s_time")))
 
     for batch_index, bucket in enumerate(batches, start=1):
@@ -497,7 +503,14 @@ def run_time_stepped_chengdu_batches(
                 for courier in active_local_couriers
             ]
             arrived_parcels = [legacy_task_to_parcel(task) for task in arrived_tasks]
-            cama_result = run_cama(arrived_parcels, local_snapshots, travel_model, config, now=cursor)
+            cama_result = run_cama(
+                arrived_parcels,
+                local_snapshots,
+                travel_model,
+                config,
+                now=cursor,
+                service_radius_meters=service_radius_meters,
+            )
             best_local_pairs = _index_best_local_pairs(cama_result)
             task_lookup = {parcel.parcel_id: task for parcel, task in zip(arrived_parcels, arrived_tasks)}
             local_lookup = {f"local-{getattr(courier, 'num')}": courier for courier in active_local_couriers}
@@ -529,7 +542,14 @@ def run_time_stepped_chengdu_batches(
                     platform.platform_id: {courier.courier_id: courier for courier in platform.couriers}
                     for platform in partner_platforms
                 }
-                dapa_result = run_dapa(remaining_parcels, partner_platforms, travel_model, config, now=cursor)
+                dapa_result = run_dapa(
+                    remaining_parcels,
+                    partner_platforms,
+                    travel_model,
+                    config,
+                    now=cursor,
+                    service_radius_meters=service_radius_meters,
+                )
                 cross_task_lookup = {parcel.parcel_id: task for parcel, task in zip(remaining_parcels, remaining_tasks)}
 
                 for assignment in dapa_result.cross_assignments:
@@ -607,6 +627,7 @@ def build_framework_chengdu_environment(
     local_courier_count: int,
     cooperating_platform_count: int,
     couriers_per_platform: int,
+    service_radius_km: float | None = None,
 ) -> LegacyChengduEnvironment:
     """Build the official Chengdu experiment state from the repository's legacy framework."""
     import Framework_ChengDu as framework
@@ -677,4 +698,5 @@ def build_framework_chengdu_environment(
         platform_sharing_rates={f"P{index + 1}": 0.4 for index in range(cooperating_platform_count)},
         platform_qualities={f"P{index + 1}": max(0.5, 1.0 - 0.1 * index) for index in range(cooperating_platform_count)},
         movement_callback=framework_movement_callback,
+        service_radius_km=service_radius_km,
     )

@@ -326,7 +326,7 @@ def WalkAlongRoute(courier, time, c_location, a_lengt, time_cost, real_time, cou
                 courier_set1.remove(courier)
 
 
-def Greedy(station_set, f_courier_set, ff_pick_task_set, time_window, u, realtime):
+def Greedy(station_set, f_courier_set, ff_pick_task_set, time_window, u, realtime, service_radius_km=None):
     # print("Greedy开始")
     starttime = time.time()
     # 时间计数器
@@ -360,6 +360,8 @@ def Greedy(station_set, f_courier_set, ff_pick_task_set, time_window, u, realtim
                             lengt = 0
                             for p in paths:
                                 lengt += p.length
+                            if service_radius_km is not None and lengt > float(service_radius_km) * 1000:
+                                continue
                             if lengt <= (int(t.d_time) - time_count) * (VELOCITY * 1000) \
                                     and (c.max_weight - c.re_weight) > t.weight:
                                 can_do_courier_set.append(c)

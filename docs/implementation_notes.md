@@ -205,39 +205,27 @@ This preserves:
 
 But it does not prove that the cooperating platforms correspond to distinct real operators in the source data. That limitation remains documented here rather than hidden behind a synthetic environment.
 
-## 10. Service-radius analysis
+## 10. Service-radius interpretation
 
-The paper varies courier service radius `rad` in Table 2 and Exp-3. However, the current Chengdu environment does not expose a paper-faithful `service_radius` control.
+The paper varies courier service radius `rad` in Table 2 and Exp-3, but it does not provide a formal equation for how `rad` enters the feasibility checks.
 
-The concrete code evidence is:
+The current repository therefore makes one explicit inference from the experimental text:
 
-- `env/chengdu.py` builds environments from:
-  - parcel count
-  - local courier count
-  - cooperating platform count
-  - couriers per platform
-- `Framework_ChengDu.GenerateStation` partitions the map into rectangular station cells
-- `Framework_ChengDu.GenerateOriginSchedule` seeds couriers from delivery schedules
-- `Framework_ChengDu.TaskSchedule` and `WalkAlongRoute` use route time, capacity, and station return constraints
-- CAPA and baseline feasibility checks depend on:
-  - shortest-path travel time
-  - parcel deadlines
-  - courier capacity
+- `service_radius` is interpreted as the maximum shortest-path distance from a courier's current location to a pick-up parcel location
 
-What is missing is an explicit radius gate such as:
+This interpretation is motivated by the paper's explanation that enlarging `rad` lets couriers "access and fulfill more requests", which is most directly modeled as a courier-to-task reachability bound.
 
-- maximum courier-to-task reach distance
-- maximum service-area circle around a courier or station
-- candidate pruning by a configurable `rad`
+The unified Chengdu implementation now applies this inference consistently across:
 
-Therefore, `service_radius` cannot currently be added as a paper-faithful sweep axis by simply forwarding one more parameter into `runner.py`.
+- CAPA local matching feasibility
+- CAPA cross-platform bidding feasibility
+- Greedy candidate filtering
+- BaseGTA / ImpGTA idle-worker feasibility
 
-Doing it correctly would require one coherent definition applied across:
+This is deliberately implemented as one shared constraint rather than separate heuristics for each algorithm.
 
-- CAPA local-feasibility filtering
-- cross-platform bidding feasibility
-- Greedy feasibility
-- GTA feasibility
-- potentially the Chengdu environment's candidate task exposure semantics
+Important boundary:
 
-Until that definition is implemented consistently, the unified experiment layer raises an explicit `NotImplementedError` for `service_radius` rather than approximating it with a heuristic surrogate.
+- this is a paper-guided inference from the experimental section, not a formula explicitly rendered in the manuscript
+
+It is still more paper-faithful than the previous state, where `rad` was not modeled at all.

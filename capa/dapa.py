@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import List, Sequence
 
 from .cama import is_courier_available
+from .constraints import is_within_service_radius
 from .models import (
     Assignment,
     CAPAConfig,
@@ -23,11 +24,14 @@ def is_feasible_cross_match(
     courier: Courier,
     travel_model: DistanceMatrixTravelModel,
     now: int,
+    service_radius_meters: float | None = None,
 ) -> bool:
     """Check the validity condition required before a courier may enter FPSA."""
     if not is_courier_available(courier, now):
         return False
     if courier.current_load + parcel.weight > courier.capacity:
+        return False
+    if not is_within_service_radius(courier.current_location, parcel.location, travel_model, service_radius_meters):
         return False
     arrival_time = now + travel_model.travel_time(courier.current_location, parcel.location)
     return arrival_time <= parcel.deadline
@@ -101,6 +105,7 @@ def run_dapa(
     travel_model: DistanceMatrixTravelModel,
     config: CAPAConfig,
     now: int,
+    service_radius_meters: float | None = None,
 ) -> DAPAResult:
     """Run Algorithm 3 with explicit FPSA, RVA, and upper-limit filtering."""
     cross_assignments: List[Assignment] = []
@@ -112,7 +117,13 @@ def run_dapa(
         for platform in platforms:
             feasible_bids: List[tuple[Courier, float]] = []
             for courier in platform.couriers:
-                if not is_feasible_cross_match(parcel, courier, travel_model, now):
+                if not is_feasible_cross_match(
+                    parcel,
+                    courier,
+                    travel_model,
+                    now,
+                    service_radius_meters=service_radius_meters,
+                ):
                     continue
                 courier_bid = compute_fpsa_bid(parcel, courier, platform, travel_model, config)
                 feasible_bids.append((courier, courier_bid))

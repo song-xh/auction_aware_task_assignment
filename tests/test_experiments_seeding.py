@@ -175,6 +175,63 @@ class ExperimentsSeedingTests(unittest.TestCase):
         self.assertEqual(build_calls, [(10, 2), (20, 2)])
         self.assertEqual(runner_calls, [300, 300])
 
+    def test_service_radius_sweep_maps_into_environment_config(self) -> None:
+        """Service-radius sweeps should forward radius values into the unified environment builder."""
+        from experiments.sweep import run_parameter_sweep
+
+        build_calls: list[float] = []
+
+        def build_environment(**kwargs) -> ChengduEnvironment:
+            build_calls.append(kwargs["service_radius_km"])
+            return ChengduEnvironment(
+                tasks=[],
+                local_couriers=[],
+                partner_couriers_by_platform={},
+                station_set=[],
+                travel_model=None,
+                platform_base_prices={},
+                platform_sharing_rates={},
+                platform_qualities={},
+                service_radius_km=kwargs["service_radius_km"],
+            )
+
+        class FakeRunner:
+            """Return a normalized summary for radius-sweep tests."""
+
+            def run(self, environment: ChengduEnvironment, output_dir: Path | None = None) -> dict[str, object]:
+                return {
+                    "algorithm": "capa",
+                    "metrics": {
+                        "TR": 1.0,
+                        "CR": 0.5,
+                        "BPT": 0.1,
+                    },
+                }
+
+        def build_runner(name: str, **kwargs) -> FakeRunner:
+            """Build a fake runner for the service-radius sweep test."""
+            return FakeRunner()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            run_parameter_sweep(
+                algorithm="capa",
+                output_dir=Path(tmpdir),
+                sweep_parameter="service_radius",
+                sweep_values=[0.5, 1.5],
+                fixed_config={
+                    "data_dir": Path("Data"),
+                    "num_parcels": 20,
+                    "local_couriers": 2,
+                    "platforms": 1,
+                    "couriers_per_platform": 1,
+                    "batch_size": 300,
+                },
+                environment_builder=build_environment,
+                runner_builder=build_runner,
+            )
+
+        self.assertEqual(build_calls, [0.5, 1.5])
+
 
 if __name__ == "__main__":
     unittest.main()

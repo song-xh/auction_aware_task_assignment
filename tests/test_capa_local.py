@@ -126,6 +126,30 @@ class CAPALocalTests(unittest.TestCase):
         self.assertEqual(len(result.candidate_best_pairs), 2)
         self.assertGreater(result.threshold, 0.0)
 
+    def test_run_cama_respects_service_radius_constraint(self) -> None:
+        """CAMA should reject a local match when the courier-task distance exceeds the service radius."""
+        config = CAPAConfig(utility_balance_gamma=0.5, threshold_omega=1.0)
+        courier = Courier(
+            courier_id="c1",
+            current_location="S1",
+            depot_location="D1",
+            capacity=10.0,
+            current_load=1.0,
+        )
+        parcel = Parcel(
+            parcel_id="p1",
+            location="A",
+            arrival_time=0,
+            deadline=20,
+            weight=2.0,
+            fare=10.0,
+        )
+
+        result = run_cama([parcel], [courier], self.travel, config, now=0, service_radius_meters=3.0)
+
+        self.assertEqual(result.local_assignments, [])
+        self.assertEqual([item.parcel_id for item in result.auction_pool], ["p1"])
+
 
 if __name__ == "__main__":
     unittest.main()

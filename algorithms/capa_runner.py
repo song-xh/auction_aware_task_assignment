@@ -35,6 +35,7 @@ class CAPAAlgorithmRunner(AlgorithmRunner):
             platform_sharing_rates=environment.platform_sharing_rates,
             platform_qualities=environment.platform_qualities,
             movement_callback=environment.movement_callback,
+            service_radius_km=getattr(environment, "service_radius_km", None),
         )
         summary = {
             "algorithm": "capa",

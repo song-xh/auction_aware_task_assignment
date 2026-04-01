@@ -31,13 +31,13 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     _add_common_environment_arguments(sweep_parser)
     sweep_parser.add_argument("--algorithm", choices=get_algorithm_names(), required=True, help="Algorithm to execute.")
     sweep_parser.add_argument("--axis", required=True, help="Sweep axis, for example `num_parcels` or `batch_size`.")
-    sweep_parser.add_argument("--values", type=int, nargs="+", required=True, help="Ordered sweep values for the selected axis.")
+    sweep_parser.add_argument("--values", type=float, nargs="+", required=True, help="Ordered sweep values for the selected axis.")
 
     compare_parser = subparsers.add_parser("compare", help="Run a shared-environment comparison across algorithms.")
     _add_common_environment_arguments(compare_parser)
     compare_parser.add_argument("--algorithms", choices=get_algorithm_names(), nargs="+", required=True, help="Algorithms to compare.")
     compare_parser.add_argument("--axis", required=True, help="Sweep axis, for example `num_parcels` or `batch_size`.")
-    compare_parser.add_argument("--values", type=int, nargs="+", required=True, help="Ordered sweep values for the selected axis.")
+    compare_parser.add_argument("--values", type=float, nargs="+", required=True, help="Ordered sweep values for the selected axis.")
 
     suite_parser = subparsers.add_parser("suite", help="Run a predefined paper-style suite of sweeps.")
     _add_common_environment_arguments(suite_parser)
@@ -55,6 +55,7 @@ def _add_common_environment_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--local-couriers", type=int, default=10, help="Number of local couriers.")
     parser.add_argument("--platforms", type=int, default=2, help="Number of cooperating platforms.")
     parser.add_argument("--couriers-per-platform", type=int, default=5, help="Number of couriers per cooperating platform.")
+    parser.add_argument("--service-radius-km", type=float, default=None, help="Optional courier service radius in kilometers.")
     parser.add_argument("--batch-size", type=int, default=300, help="Batch size in seconds for algorithms that use batching.")
     parser.add_argument(
         "--prediction-window-seconds",
@@ -96,6 +97,7 @@ def _run_single_experiment(args: argparse.Namespace) -> int:
         local_courier_count=args.local_couriers,
         cooperating_platform_count=args.platforms,
         couriers_per_platform=args.couriers_per_platform,
+        service_radius_km=args.service_radius_km,
     )
     runner = build_algorithm_runner(args.algorithm, **build_algorithm_kwargs(args))
     try:
@@ -167,6 +169,7 @@ def _build_fixed_config(args: argparse.Namespace) -> dict[str, Any]:
         "local_couriers": args.local_couriers,
         "platforms": args.platforms,
         "couriers_per_platform": args.couriers_per_platform,
+        "service_radius_km": args.service_radius_km,
         "batch_size": args.batch_size,
         "prediction_window_seconds": args.prediction_window_seconds,
     }

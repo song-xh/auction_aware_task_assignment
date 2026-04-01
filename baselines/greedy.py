@@ -55,5 +55,6 @@ def run_greedy_baseline_environment(
             batch_size,
             utility,
             realtime,
+            getattr(environment, "service_radius_km", None),
         )
     return parse_greedy_metrics(stdout_buffer.getvalue())

@@ -68,10 +68,32 @@ python3 runner.py sweep \
 
 - `num_parcels`
 - `local_couriers`
+- `service_radius`
 - `platforms`
 - `batch_size`
 
-`service_radius` 仍未在统一 Chengdu 环境中暴露为可配置参数，目前会显式报未实现，而不是近似替代。
+`service_radius` 使用公里单位，通过 `--values 0.5 1.0 1.5 ...` 传入。
+
+当前统一实现将其解释为：
+
+- courier 当前节点到 pick-up 节点的最短路最大服务半径
+- 该约束会一致应用到 CAPA、Greedy、BaseGTA、ImpGTA 的可行性过滤
+
+示例：
+
+```bash
+python3 runner.py compare \
+  --algorithms capa greedy \
+  --axis service_radius \
+  --values 0.5 1.0 1.5 2.0 2.5 \
+  --data-dir Data \
+  --num-parcels 100 \
+  --local-couriers 10 \
+  --platforms 2 \
+  --couriers-per-platform 5 \
+  --batch-size 300 \
+  --output-dir outputs/plots/chengdu_compare_service_radius
+```
 
 ## 多算法对比 Sweep
 
@@ -120,6 +142,7 @@ python3 runner.py suite \
 
 - `num_parcels`
 - `local_couriers`
+- `service_radius`
 - `platforms`
 - `batch_size`
 

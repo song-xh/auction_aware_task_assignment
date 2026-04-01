@@ -50,6 +50,7 @@ def run_comparison_sweep(
         couriers_per_platform=fixed_config.get("couriers_per_platform", 5),
         batch_size=fixed_config.get("batch_size", 300),
         prediction_window_seconds=fixed_config.get("prediction_window_seconds", 180),
+        service_radius_km=fixed_config.get("service_radius_km"),
         extra=dict(fixed_config.get("extra", {})),
     )
 

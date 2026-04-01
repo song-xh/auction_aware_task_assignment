@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Iterable, List, Sequence
 
+from .constraints import is_within_service_radius
 from .models import Assignment, CAMAResult, CAPAConfig, CandidatePair, Courier, Parcel
 from .travel import DistanceMatrixTravelModel
 from .utility import calculate_threshold, calculate_utility
@@ -19,11 +20,14 @@ def is_feasible_local_match(
     courier: Courier,
     travel_model: DistanceMatrixTravelModel,
     now: int,
+    service_radius_meters: float | None = None,
 ) -> bool:
     """Check the deadline and capacity constraints required by Algorithm 2."""
     if not is_courier_available(courier, now):
         return False
     if courier.current_load + parcel.weight > courier.capacity:
+        return False
+    if not is_within_service_radius(courier.current_location, parcel.location, travel_model, service_radius_meters):
         return False
     arrival_time = now + travel_model.travel_time(courier.current_location, parcel.location)
     return arrival_time <= parcel.deadline
@@ -61,6 +65,7 @@ def run_cama(
     travel_model: DistanceMatrixTravelModel,
     config: CAPAConfig,
     now: int,
+    service_radius_meters: float | None = None,
 ) -> CAMAResult:
     """Run Algorithm 2 exactly at the candidate-set level defined in the paper."""
     all_feasible_pairs: List[CandidatePair] = []
@@ -70,7 +75,7 @@ def run_cama(
     for parcel in parcels:
         feasible_for_parcel: List[CandidatePair] = []
         for courier in couriers:
-            if not is_feasible_local_match(parcel, courier, travel_model, now):
+            if not is_feasible_local_match(parcel, courier, travel_model, now, service_radius_meters=service_radius_meters):
                 continue
             utility = calculate_utility(parcel, courier, travel_model, config)
             feasible_for_parcel.append(CandidatePair(parcel=parcel, courier=courier, utility=utility))

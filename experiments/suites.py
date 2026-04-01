@@ -13,12 +13,14 @@ SUITE_PRESETS: dict[str, dict[str, dict[str, list[int]]]] = {
         "smoke": {
             "num_parcels": [20, 50],
             "local_couriers": [2, 4],
+            "service_radius": [0.5, 1.5],
             "platforms": [1, 2],
             "batch_size": [60, 300],
         },
         "chengdu-formal": {
             "num_parcels": [100, 200, 500],
             "local_couriers": [10, 20, 30],
+            "service_radius": [0.5, 1.0, 1.5, 2.0, 2.5],
             "platforms": [1, 2, 4],
             "batch_size": [60, 300, 600],
         },

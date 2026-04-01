@@ -176,6 +176,7 @@ def run_chengdu_experiment(
         platform_sharing_rates=environment.platform_sharing_rates,
         platform_qualities=environment.platform_qualities,
         movement_callback=environment.movement_callback,
+        service_radius_km=getattr(environment, "service_radius_km", None),
     )
 
     save_experiment_plots(result.batch_reports, result.metrics, output_dir)

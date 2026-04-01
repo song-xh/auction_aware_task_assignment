@@ -6,8 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-SUPPORTED_SWEEP_AXES = frozenset({"num_parcels", "local_couriers", "platforms", "batch_size"})
-UNSUPPORTED_PAPER_AXES = frozenset({"service_radius"})
+SUPPORTED_SWEEP_AXES = frozenset({"num_parcels", "local_couriers", "service_radius", "platforms", "batch_size"})
 
 
 @dataclass(frozen=True)
@@ -32,6 +31,7 @@ class ExperimentConfig:
     couriers_per_platform: int = 5
     batch_size: int = 300
     prediction_window_seconds: int = 180
+    service_radius_km: float | None = None
     extra: dict[str, Any] = field(default_factory=dict)
 
     def with_update(self, **kwargs: Any) -> "ExperimentConfig":
@@ -44,6 +44,7 @@ class ExperimentConfig:
             "couriers_per_platform": self.couriers_per_platform,
             "batch_size": self.batch_size,
             "prediction_window_seconds": self.prediction_window_seconds,
+            "service_radius_km": self.service_radius_km,
             "extra": dict(self.extra),
         }
         for key, value in kwargs.items():
@@ -62,6 +63,8 @@ class ExperimentConfig:
             "cooperating_platform_count": self.platforms,
             "couriers_per_platform": self.couriers_per_platform,
         }
+        if self.service_radius_km is not None:
+            kwargs["service_radius_km"] = self.service_radius_km
         kwargs.update(self.extra)
         return kwargs
 
@@ -93,12 +96,12 @@ def apply_sweep_axis(config: ExperimentConfig, axis: str, value: int) -> Experim
         A new configuration with the selected axis updated.
 
     Raises:
-        NotImplementedError: The axis is paper-relevant but not yet exposed by the environment.
         ValueError: The axis name is unknown to the experiment layer.
     """
-
-    if axis in UNSUPPORTED_PAPER_AXES:
-        raise NotImplementedError(f"The sweep axis `{axis}` is not exposed by the unified Chengdu environment yet.")
     if axis not in SUPPORTED_SWEEP_AXES:
         raise ValueError(f"Unsupported sweep axis `{axis}`.")
-    return config.with_update(**{axis: value})
+    if axis == "service_radius":
+        return config.with_update(service_radius_km=float(value))
+    if axis in {"num_parcels", "local_couriers", "platforms", "batch_size"}:
+        return config.with_update(**{axis: int(value)})
+    raise ValueError(f"Unsupported sweep axis `{axis}`.")

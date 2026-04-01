@@ -164,6 +164,32 @@ class CAPAAuctionTests(unittest.TestCase):
         self.assertAlmostEqual(assignment.courier_payment, 2.6)
         self.assertAlmostEqual(assignment.platform_payment, 6.6)
 
+    def test_run_dapa_respects_service_radius_constraint(self) -> None:
+        """DAPA should reject cross-platform bids when the courier-task distance exceeds the service radius."""
+        platform = CooperatingPlatform(
+            platform_id="P1",
+            base_price=1.0,
+            sharing_rate_gamma=0.4,
+            historical_quality=0.5,
+            couriers=[
+                Courier(
+                    courier_id="c1",
+                    current_location="S1",
+                    depot_location="D1",
+                    capacity=10.0,
+                    current_load=0.0,
+                    alpha=0.0,
+                    beta=0.8,
+                    service_score=1.0,
+                )
+            ],
+        )
+
+        result = run_dapa([self.parcel], [platform], self.travel, self.config, now=0, service_radius_meters=3.0)
+
+        self.assertEqual(result.cross_assignments, [])
+        self.assertEqual([parcel.parcel_id for parcel in result.unassigned_parcels], ["p1"])
+
 
 if __name__ == "__main__":
     unittest.main()

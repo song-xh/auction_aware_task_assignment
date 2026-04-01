@@ -34,6 +34,7 @@ class ChengduEnvironmentSeed:
     platform_sharing_rates: Mapping[str, float]
     platform_qualities: Mapping[str, float]
     movement_callback: Any | None = None
+    service_radius_km: float | None = None
 
 
 def build_environment_seed(environment: ChengduEnvironment) -> ChengduEnvironmentSeed:
@@ -53,6 +54,7 @@ def build_environment_seed(environment: ChengduEnvironment) -> ChengduEnvironmen
         platform_sharing_rates=dict(environment.platform_sharing_rates),
         platform_qualities=dict(environment.platform_qualities),
         movement_callback=environment.movement_callback,
+        service_radius_km=environment.service_radius_km,
     )
 
 
@@ -73,6 +75,7 @@ def clone_environment_from_seed(seed: ChengduEnvironmentSeed) -> ChengduEnvironm
         platform_sharing_rates=dict(seed.platform_sharing_rates),
         platform_qualities=dict(seed.platform_qualities),
         movement_callback=seed.movement_callback,
+        service_radius_km=seed.service_radius_km,
     )
     _rebind_courier_station_references(environment)
     return environment

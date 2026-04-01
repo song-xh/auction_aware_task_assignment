@@ -48,6 +48,7 @@ class ExperimentSuiteTests(unittest.TestCase):
             [
                 ("num_parcels", (100, 200, 500)),
                 ("local_couriers", (10, 20, 30)),
+                ("service_radius", (0.5, 1.0, 1.5, 2.0, 2.5)),
                 ("platforms", (1, 2, 4)),
                 ("batch_size", (60, 300, 600)),
             ],
@@ -90,31 +91,11 @@ class ExperimentSuiteTests(unittest.TestCase):
             [
                 ("num_parcels", (20, 50)),
                 ("local_couriers", (2, 4)),
+                ("service_radius", (0.5, 1.5)),
                 ("platforms", (1, 2)),
                 ("batch_size", (60, 300)),
             ],
         )
-
-    def test_sweep_axis_validation_fails_explicitly_for_unsupported_service_radius(self) -> None:
-        """Unsupported axes such as service radius should fail explicitly until the environment exposes them."""
-        from experiments.sweep import run_parameter_sweep
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            with self.assertRaisesRegex(NotImplementedError, "service_radius"):
-                run_parameter_sweep(
-                    algorithm="capa",
-                    output_dir=Path(tmpdir),
-                    sweep_parameter="service_radius",
-                    sweep_values=[1000, 2000],
-                    fixed_config={
-                        "data_dir": Path("Data"),
-                        "num_parcels": 20,
-                        "local_couriers": 2,
-                        "platforms": 1,
-                        "couriers_per_platform": 1,
-                        "batch_size": 300,
-                    },
-                )
 
 
 if __name__ == "__main__":
