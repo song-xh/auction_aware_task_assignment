@@ -1,6 +1,7 @@
 """Reusable environment package exports."""
 
 from .chengdu import (
+    ChengduEnvironment,
     LegacyChengduEnvironment,
     apply_assignment_to_legacy_courier,
     assign_delivery_tasks_to_stations,
@@ -21,6 +22,7 @@ from .chengdu import (
 )
 
 __all__ = [
+    "ChengduEnvironment",
     "LegacyChengduEnvironment",
     "apply_assignment_to_legacy_courier",
     "assign_delivery_tasks_to_stations",

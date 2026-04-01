@@ -7,6 +7,31 @@ import unittest
 class EnvChengduTests(unittest.TestCase):
     """Validate the environment-layer interfaces extracted from CAPA."""
 
+    def test_environment_builds_reusable_runtime_methods(self) -> None:
+        """The unified Chengdu environment should expose reusable runtime methods."""
+        from env.chengdu import ChengduEnvironment
+
+        environment = ChengduEnvironment(
+            tasks=["task-1"],
+            local_couriers=["local-1", "local-2"],
+            partner_couriers_by_platform={"P1": ["partner-1"], "P2": ["partner-2", "partner-3"]},
+            station_set=["station-1"],
+            travel_model=None,
+            platform_base_prices={"P1": 1.0, "P2": 1.0},
+            platform_sharing_rates={"P1": 0.4, "P2": 0.4},
+            platform_qualities={"P1": 1.0, "P2": 0.9},
+        )
+
+        snapshot = environment.snapshot_for_algorithm()
+
+        self.assertTrue(callable(environment.advance))
+        self.assertTrue(callable(environment.drain))
+        self.assertTrue(callable(environment.snapshot_for_algorithm))
+        self.assertTrue(callable(environment.apply_assignments))
+        self.assertEqual(snapshot["tasks"], ["task-1"])
+        self.assertEqual(snapshot["local_couriers"], ["local-1", "local-2"])
+        self.assertEqual(snapshot["partner_couriers_by_platform"]["P1"], ["partner-1"])
+
     def test_environment_object_keeps_local_and_partner_couriers_separate(self) -> None:
         """The reusable environment facade should expose local and partner courier pools separately."""
         from env.chengdu import LegacyChengduEnvironment

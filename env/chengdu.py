@@ -27,9 +27,9 @@ class StationBlueprint:
     station_range: tuple[float, float, float, float]
 
 
-@dataclass(frozen=True)
-class LegacyChengduEnvironment:
-    """Store the reusable Chengdu experiment state shared by CAPA and future algorithms."""
+@dataclass
+class ChengduEnvironment:
+    """Store the reusable Chengdu simulation state shared by all Chengdu algorithms."""
 
     tasks: Sequence[Any]
     local_couriers: Sequence[Any]
@@ -41,6 +41,24 @@ class LegacyChengduEnvironment:
     platform_qualities: Mapping[str, float]
     movement_callback: Callable[[MutableSequence[Any], MutableSequence[Any], int, Sequence[Any]], None] | None = None
 
+    @classmethod
+    def build(
+        cls,
+        data_dir: Any,
+        num_parcels: int,
+        local_courier_count: int,
+        cooperating_platform_count: int,
+        couriers_per_platform: int,
+    ) -> "ChengduEnvironment":
+        """Build a Chengdu environment from the legacy framework inputs."""
+        return build_framework_chengdu_environment(
+            data_dir=data_dir,
+            num_parcels=num_parcels,
+            local_courier_count=local_courier_count,
+            cooperating_platform_count=cooperating_platform_count,
+            couriers_per_platform=couriers_per_platform,
+        )
+
     def all_partner_couriers(self) -> list[Any]:
         """Flatten all partner couriers while preserving platform grouping on the object itself."""
         return [courier for couriers in self.partner_couriers_by_platform.values() for courier in couriers]
@@ -48,6 +66,56 @@ class LegacyChengduEnvironment:
     def all_couriers(self) -> list[Any]:
         """Return every active courier in the environment."""
         return [*self.local_couriers, *self.all_partner_couriers()]
+
+    def snapshot_for_algorithm(self) -> dict[str, Any]:
+        """Return the current environment state in a stable algorithm-facing dictionary."""
+        return {
+            "tasks": list(self.tasks),
+            "local_couriers": list(self.local_couriers),
+            "partner_couriers_by_platform": {
+                platform_id: list(couriers)
+                for platform_id, couriers in self.partner_couriers_by_platform.items()
+            },
+            "station_set": list(self.station_set),
+            "travel_model": self.travel_model,
+            "platform_base_prices": dict(self.platform_base_prices),
+            "platform_sharing_rates": dict(self.platform_sharing_rates),
+            "platform_qualities": dict(self.platform_qualities),
+        }
+
+    def advance(self, seconds: int) -> None:
+        """Advance the environment through the underlying movement callback."""
+        if seconds <= 0:
+            return
+        movement = self.movement_callback or framework_movement_callback
+        movement(
+            list(self.local_couriers),
+            flatten_partner_couriers(self.partner_couriers_by_platform),
+            seconds,
+            self.station_set,
+        )
+
+    def drain(self, step_seconds: int = 60) -> int:
+        """Advance the environment until all active legacy routes are empty."""
+        movement = self.movement_callback or framework_movement_callback
+        return drain_legacy_routes(
+            local_couriers=list(self.local_couriers),
+            partner_couriers_by_platform={
+                platform_id: list(couriers)
+                for platform_id, couriers in self.partner_couriers_by_platform.items()
+            },
+            station_set=self.station_set,
+            step_seconds=step_seconds,
+            movement_callback=movement,
+        )
+
+    def apply_assignments(self, assignments: Sequence[tuple[Any, Any, int]]) -> None:
+        """Write a sequence of accepted legacy assignments back into courier routes."""
+        for task, courier, insertion_index in assignments:
+            apply_assignment_to_legacy_courier(task, courier, insertion_index)
+
+
+LegacyChengduEnvironment = ChengduEnvironment
 
 
 def limit_legacy_tasks(
