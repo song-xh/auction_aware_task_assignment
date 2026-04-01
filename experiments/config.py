@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-SUPPORTED_SWEEP_AXES = frozenset({"num_parcels", "local_couriers", "service_radius", "platforms", "batch_size"})
+SUPPORTED_SWEEP_AXES = frozenset({"num_parcels", "local_couriers", "service_radius", "platforms", "batch_size", "courier_capacity"})
 
 
 @dataclass(frozen=True)
@@ -106,6 +106,8 @@ def apply_sweep_axis(config: ExperimentConfig, axis: str, value: int) -> Experim
         raise ValueError(f"Unsupported sweep axis `{axis}`.")
     if axis == "service_radius":
         return config.with_update(service_radius_km=float(value))
+    if axis == "courier_capacity":
+        return config.with_update(courier_capacity=float(value))
     if axis in {"num_parcels", "local_couriers", "platforms", "batch_size"}:
         return config.with_update(**{axis: int(value)})
     raise ValueError(f"Unsupported sweep axis `{axis}`.")

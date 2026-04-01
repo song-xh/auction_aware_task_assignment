@@ -121,32 +121,55 @@ python3 runner.py compare \
 
 ```bash
 python3 runner.py suite \
-  --suite paper-main \
-  --preset chengdu-formal \
-  --algorithms capa greedy basegta impgta \
+  --suite chengdu-paper \
+  --preset formal \
+  --algorithms capa greedy ramcom mra basegta impgta \
   --data-dir Data \
-  --num-parcels 20 \
-  --local-couriers 10 \
-  --platforms 2 \
-  --couriers-per-platform 5 \
+  --num-parcels 3000 \
+  --local-couriers 200 \
+  --platforms 4 \
+  --couriers-per-platform 50 \
+  --courier-capacity 50 \
+  --service-radius-km 1.0 \
   --batch-size 300 \
-  --output-dir outputs/plots/chengdu_suite_paper_main
+  --max-workers 4 \
+  --output-dir outputs/plots/chengdu_suite_paper
 ```
 
-当前 `paper-main` 支持两个 preset：
+当前 `chengdu-paper` 支持两个 preset：
 
 - `smoke`
-- `chengdu-formal`
+- `formal`
 
-`chengdu-formal` 是当前 Chengdu 环境下的正式 preset，会批量跑这些轴：
+`formal` 是当前 Chengdu 环境下参考论文实验设计的正式 preset，会批量跑这些轴：
 
 - `num_parcels`
 - `local_couriers`
 - `service_radius`
 - `platforms`
-- `batch_size`
+- `courier_capacity`
 
 `smoke` 只用于快速联调，轴值更小。
+
+## Paper-Style 脚本
+
+`experiments/` 目录下提供了与论文实验部分对齐的 Chengdu 脚本入口：
+
+```bash
+python3 experiments/run_chengdu_exp1_num_parcels.py --output-dir outputs/plots/exp1 --preset formal --max-workers 4
+python3 experiments/run_chengdu_exp2_couriers.py --output-dir outputs/plots/exp2 --preset formal --max-workers 4
+python3 experiments/run_chengdu_exp3_radius.py --output-dir outputs/plots/exp3 --preset formal --max-workers 4
+python3 experiments/run_chengdu_exp4_platforms.py --output-dir outputs/plots/exp4 --preset formal --max-workers 4
+python3 experiments/run_chengdu_exp5_default_compare.py --output-dir outputs/plots/exp5
+python3 experiments/run_chengdu_exp6_capacity.py --output-dir outputs/plots/exp6 --preset formal --max-workers 4
+python3 experiments/run_chengdu_paper_suite.py --output-dir outputs/plots/chengdu_suite --preset formal --max-workers 4
+```
+
+这些脚本默认使用：
+
+- 同一个 sweep 点只初始化一次环境
+- 不同算法共享同一个环境 seed，并从 clone 出来的环境运行
+- `--max-workers` 用于并行不同 sweep 点，减少总墙钟时间
 
 ## 输出文件
 

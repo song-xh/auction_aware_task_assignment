@@ -17,6 +17,7 @@ def run_experiment_suite(
     output_dir: Path,
     fixed_config: dict[str, Any],
     comparison_runner: Callable[..., dict[str, Any]] | None = None,
+    max_workers: int | None = None,
 ) -> dict[str, Any]:
     """Run a predefined collection of sweeps and persist a suite manifest.
 
@@ -44,6 +45,7 @@ def run_experiment_suite(
             sweep_parameter=axis_name,
             sweep_values=values,
             fixed_config=fixed_config,
+            max_workers=max_workers,
         )
     summary = {
         "suite": suite_name,

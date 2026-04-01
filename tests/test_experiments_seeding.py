@@ -240,6 +240,124 @@ class ExperimentsSeedingTests(unittest.TestCase):
 
         self.assertEqual(build_calls, [0.5, 1.5])
 
+    def test_parameter_sweep_parallelizes_points_when_requested(self) -> None:
+        """Single-algorithm sweeps should fan out sweep points when process parallelism is requested."""
+        from experiments.sweep import run_parameter_sweep
+
+        submitted: list[float] = []
+
+        class FakeFuture:
+            """Return a precomputed sweep entry when resolved."""
+
+            def __init__(self, value: dict[str, object]) -> None:
+                """Store the synthetic future payload."""
+                self._value = value
+
+            def result(self) -> dict[str, object]:
+                """Return the stored sweep entry."""
+                return self._value
+
+        class FakeExecutor:
+            """Capture submitted sweep jobs without spawning worker processes."""
+
+            def __init__(self, max_workers: int) -> None:
+                """Store the configured process count for completeness."""
+                self.max_workers = max_workers
+
+            def __enter__(self) -> "FakeExecutor":
+                """Return the executor context manager instance."""
+                return self
+
+            def __exit__(self, exc_type, exc, tb) -> None:
+                """Close the fake executor context without extra work."""
+                return None
+
+            def submit(self, fn, **kwargs) -> FakeFuture:
+                """Record the requested sweep point and execute it immediately."""
+                submitted.append(kwargs["value"])
+                return FakeFuture(fn(**kwargs))
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with unittest.mock.patch("experiments.sweep.ProcessPoolExecutor", FakeExecutor):
+                with unittest.mock.patch(
+                    "experiments.sweep._run_sweep_point",
+                    side_effect=lambda **kwargs: {
+                        "num_parcels": kwargs["value"],
+                        "capa": {"metrics": {"TR": kwargs["value"], "CR": 1.0, "BPT": 0.1}},
+                    },
+                ):
+                    summary = run_parameter_sweep(
+                        algorithm="capa",
+                        output_dir=Path(tmpdir),
+                        sweep_parameter="num_parcels",
+                        sweep_values=[20, 10],
+                        fixed_config={
+                            "data_dir": Path("Data"),
+                            "num_parcels": 5,
+                            "local_couriers": 2,
+                            "platforms": 1,
+                            "couriers_per_platform": 1,
+                            "batch_size": 300,
+                        },
+                        max_workers=2,
+                    )
+
+        self.assertEqual(submitted, [20, 10])
+        self.assertEqual([run["num_parcels"] for run in summary["runs"]], [10, 20])
+
+    def test_courier_capacity_sweep_maps_into_environment_config(self) -> None:
+        """Courier-capacity sweeps should forward capacity values into the unified environment builder."""
+        from experiments.sweep import run_parameter_sweep
+
+        build_calls: list[float] = []
+
+        def build_environment(**kwargs) -> ChengduEnvironment:
+            build_calls.append(kwargs["courier_capacity"])
+            return ChengduEnvironment(
+                tasks=[],
+                local_couriers=[],
+                partner_couriers_by_platform={},
+                station_set=[],
+                travel_model=None,
+                platform_base_prices={},
+                platform_sharing_rates={},
+                platform_qualities={},
+                courier_capacity=kwargs["courier_capacity"],
+            )
+
+        class FakeRunner:
+            """Return a normalized summary for courier-capacity sweeps."""
+
+            def run(self, environment: ChengduEnvironment, output_dir: Path | None = None) -> dict[str, object]:
+                return {
+                    "algorithm": "capa",
+                    "metrics": {
+                        "TR": 1.0,
+                        "CR": 0.5,
+                        "BPT": 0.1,
+                    },
+                }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            run_parameter_sweep(
+                algorithm="capa",
+                output_dir=Path(tmpdir),
+                sweep_parameter="courier_capacity",
+                sweep_values=[25, 50],
+                fixed_config={
+                    "data_dir": Path("Data"),
+                    "num_parcels": 20,
+                    "local_couriers": 2,
+                    "platforms": 1,
+                    "couriers_per_platform": 1,
+                    "batch_size": 300,
+                },
+                environment_builder=build_environment,
+                runner_builder=lambda name, **kwargs: FakeRunner(),
+            )
+
+        self.assertEqual(build_calls, [25, 50])
+
     def test_compare_runner_kwargs_do_not_pass_batch_size_to_basegta(self) -> None:
         """Shared-environment comparisons should not send unsupported kwargs to BaseGTA runners."""
         from experiments.compare import run_comparison_sweep

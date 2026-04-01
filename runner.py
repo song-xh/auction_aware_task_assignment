@@ -32,18 +32,21 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     sweep_parser.add_argument("--algorithm", choices=get_algorithm_names(), required=True, help="Algorithm to execute.")
     sweep_parser.add_argument("--axis", required=True, help="Sweep axis, for example `num_parcels` or `batch_size`.")
     sweep_parser.add_argument("--values", type=float, nargs="+", required=True, help="Ordered sweep values for the selected axis.")
+    sweep_parser.add_argument("--max-workers", type=int, default=None, help="Optional process count for parallel sweep-point execution.")
 
     compare_parser = subparsers.add_parser("compare", help="Run a shared-environment comparison across algorithms.")
     _add_common_environment_arguments(compare_parser)
     compare_parser.add_argument("--algorithms", choices=get_algorithm_names(), nargs="+", required=True, help="Algorithms to compare.")
     compare_parser.add_argument("--axis", required=True, help="Sweep axis, for example `num_parcels` or `batch_size`.")
     compare_parser.add_argument("--values", type=float, nargs="+", required=True, help="Ordered sweep values for the selected axis.")
+    compare_parser.add_argument("--max-workers", type=int, default=None, help="Optional process count for parallel sweep-point execution.")
 
     suite_parser = subparsers.add_parser("suite", help="Run a predefined paper-style suite of sweeps.")
     _add_common_environment_arguments(suite_parser)
-    suite_parser.add_argument("--suite", required=True, help="Predefined suite name, for example `paper-main`.")
-    suite_parser.add_argument("--preset", default="chengdu-formal", help="Preset grid for the selected suite.")
+    suite_parser.add_argument("--suite", required=True, help="Predefined suite name, for example `chengdu-paper`.")
+    suite_parser.add_argument("--preset", default="formal", help="Preset grid for the selected suite.")
     suite_parser.add_argument("--algorithms", choices=get_algorithm_names(), nargs="+", required=True, help="Algorithms to compare in the suite.")
+    suite_parser.add_argument("--max-workers", type=int, default=None, help="Optional process count for parallel sweep-point execution.")
 
     return parser.parse_args(normalized_argv)
 
@@ -125,6 +128,7 @@ def _run_sweep(args: argparse.Namespace) -> int:
         sweep_parameter=args.axis,
         sweep_values=args.values,
         fixed_config=_build_fixed_config(args),
+        max_workers=args.max_workers,
     )
     print(f"algorithm={summary.get('algorithm', args.algorithm)}")
     print(f"sweep_parameter={summary.get('sweep_parameter', args.axis)}")
@@ -140,6 +144,7 @@ def _run_compare(args: argparse.Namespace) -> int:
         sweep_parameter=args.axis,
         sweep_values=args.values,
         fixed_config=_build_fixed_config(args),
+        max_workers=args.max_workers,
     )
     print(f"algorithms={','.join(summary.get('algorithms', args.algorithms))}")
     print(f"sweep_parameter={summary.get('sweep_parameter', args.axis)}")
@@ -155,6 +160,7 @@ def _run_suite(args: argparse.Namespace) -> int:
         algorithms=args.algorithms,
         output_dir=Path(args.output_dir),
         fixed_config=_build_fixed_config(args),
+        max_workers=args.max_workers,
     )
     print(f"suite={summary.get('suite', args.suite)}")
     print(f"preset={summary.get('preset', args.preset)}")

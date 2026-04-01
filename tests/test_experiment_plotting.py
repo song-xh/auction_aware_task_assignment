@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from experiments.plotting import save_comparison_plots, save_single_algorithm_plots
+from experiments.plotting import save_comparison_plots, save_default_comparison_plots, save_single_algorithm_plots
 
 
 class ExperimentPlottingTests(unittest.TestCase):
@@ -53,3 +53,19 @@ class ExperimentPlottingTests(unittest.TestCase):
             self.assertTrue((output_dir / "tr_vs_num_parcels.png").exists())
             self.assertTrue((output_dir / "cr_vs_num_parcels.png").exists())
             self.assertTrue((output_dir / "bpt_vs_num_parcels.png").exists())
+
+    def test_save_default_comparison_plots_writes_three_metric_figures(self) -> None:
+        """Default-setting comparisons should produce categorical TR, CR, and BPT plots."""
+        summary = {
+            "algorithms": ["capa", "greedy"],
+            "results": {
+                "capa": {"metrics": {"TR": 2.0, "CR": 0.7, "BPT": 0.2}},
+                "greedy": {"metrics": {"TR": 1.2, "CR": 0.4, "BPT": 0.05}},
+            },
+        }
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = Path(tmpdir)
+            save_default_comparison_plots(summary=summary, output_dir=output_dir)
+            self.assertTrue((output_dir / "default_tr_comparison.png").exists())
+            self.assertTrue((output_dir / "default_cr_comparison.png").exists())
+            self.assertTrue((output_dir / "default_bpt_comparison.png").exists())

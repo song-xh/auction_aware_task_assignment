@@ -46,6 +46,26 @@ def save_comparison_plots(summary: dict[str, Any], output_dir: Path) -> None:
         )
 
 
+def save_default_comparison_plots(summary: dict[str, Any], output_dir: Path) -> None:
+    """Write one categorical comparison plot per paper metric for the default-setting experiment."""
+    import matplotlib.pyplot as plt
+
+    algorithms = [str(name) for name in summary.get("algorithms", [])]
+    results = dict(summary.get("results", {}))
+    if not algorithms:
+        return
+    for metric_name in PLOT_METRICS:
+        values = [results[algorithm]["metrics"][metric_name] for algorithm in algorithms]
+        plt.figure(figsize=(8, 5))
+        plt.bar(algorithms, values)
+        plt.xlabel("algorithm")
+        plt.ylabel(metric_name)
+        plt.grid(True, axis="y", linestyle="--", linewidth=0.5, alpha=0.5)
+        plt.tight_layout()
+        plt.savefig(output_dir / f"default_{metric_name.lower()}_comparison.png")
+        plt.close()
+
+
 def _save_line_plot(
     x_values: Sequence[float],
     series: Sequence[tuple[str, Sequence[float]]],

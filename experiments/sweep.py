@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import Any, Callable, Sequence
 
@@ -21,6 +22,7 @@ def run_parameter_sweep(
     fixed_config: dict[str, Any],
     environment_builder: Callable[..., ChengduEnvironment] | None = None,
     runner_builder: Callable[..., Any] | None = None,
+    max_workers: int | None = None,
 ) -> dict[str, Any]:
     """Run a one-dimensional sweep for one algorithm and persist a normalized summary.
 
@@ -55,19 +57,34 @@ def run_parameter_sweep(
         extra=dict(fixed_config.get("extra", {})),
     )
 
-    for value in sweep_values:
-        point_config = apply_sweep_axis(base_config, sweep_parameter, value)
-        environment = builder(**point_config.as_environment_kwargs())
-        runner_kwargs = _build_runner_kwargs(algorithm_name=algorithm, config=point_config)
-        runner = build_runner(algorithm, **runner_kwargs)
-        run_output_dir = output_dir / f"{sweep_parameter}_{value}" / algorithm
-        summary = runner.run(environment=environment, output_dir=run_output_dir)
-        runs.append(
-            {
-                sweep_parameter: value,
-                algorithm: summary,
-            }
-        )
+    if max_workers is not None and max_workers > 1 and environment_builder is None and runner_builder is None and len(sweep_values) > 1:
+        with ProcessPoolExecutor(max_workers=max_workers) as executor:
+            futures = [
+                executor.submit(
+                    _run_sweep_point,
+                    algorithm=algorithm,
+                    sweep_parameter=sweep_parameter,
+                    value=value,
+                    fixed_config=dict(fixed_config),
+                    output_dir=output_dir,
+                )
+                for value in sweep_values
+            ]
+            runs = [future.result() for future in futures]
+            runs.sort(key=lambda item: item[sweep_parameter])
+    else:
+        for value in sweep_values:
+            runs.append(
+                _run_sweep_point(
+                    algorithm=algorithm,
+                    sweep_parameter=sweep_parameter,
+                    value=value,
+                    fixed_config=fixed_config,
+                    output_dir=output_dir,
+                    environment_builder=environment_builder,
+                    runner_builder=runner_builder,
+                )
+            )
 
     summary = {
         "sweep_parameter": sweep_parameter,
@@ -87,3 +104,39 @@ def _build_runner_kwargs(algorithm_name: str, config: ExperimentConfig) -> dict[
     if algorithm_name == "impgta":
         return {"prediction_window_seconds": config.prediction_window_seconds}
     return {}
+
+
+def _run_sweep_point(
+    algorithm: str,
+    sweep_parameter: str,
+    value: float,
+    fixed_config: dict[str, Any],
+    output_dir: Path,
+    environment_builder: Callable[..., ChengduEnvironment] | None = None,
+    runner_builder: Callable[..., Any] | None = None,
+) -> dict[str, Any]:
+    """Run one single-algorithm sweep point and return the normalized result entry."""
+    builder = environment_builder or ChengduEnvironment.build
+    build_runner = runner_builder or build_algorithm_runner
+    base_config = ExperimentConfig(
+        data_dir=Path(fixed_config["data_dir"]),
+        num_parcels=fixed_config.get("num_parcels", 100),
+        local_couriers=fixed_config.get("local_couriers", 10),
+        platforms=fixed_config.get("platforms", 2),
+        couriers_per_platform=fixed_config.get("couriers_per_platform", 5),
+        batch_size=fixed_config.get("batch_size", 300),
+        prediction_window_seconds=fixed_config.get("prediction_window_seconds", 180),
+        service_radius_km=fixed_config.get("service_radius_km"),
+        courier_capacity=fixed_config.get("courier_capacity"),
+        extra=dict(fixed_config.get("extra", {})),
+    )
+    point_config = apply_sweep_axis(base_config, sweep_parameter, value)
+    environment = builder(**point_config.as_environment_kwargs())
+    runner_kwargs = _build_runner_kwargs(algorithm_name=algorithm, config=point_config)
+    runner = build_runner(algorithm, **runner_kwargs)
+    run_output_dir = output_dir / f"{sweep_parameter}_{value}" / algorithm
+    summary = runner.run(environment=environment, output_dir=run_output_dir)
+    return {
+        sweep_parameter: value,
+        algorithm: summary,
+    }

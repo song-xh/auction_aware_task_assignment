@@ -182,19 +182,47 @@ class RunnerDispatchTests(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         run_compare.assert_called_once()
 
+    def test_root_runner_sweep_subcommand_passes_max_workers(self) -> None:
+        """The root runner sweep mode should forward optional process-count configuration."""
+        from runner import main
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with patch("runner.run_parameter_sweep", return_value={"algorithm": "capa", "sweep_parameter": "num_parcels"}) as run_sweep:
+                exit_code = main(
+                    [
+                        "sweep",
+                        "--algorithm",
+                        "capa",
+                        "--axis",
+                        "num_parcels",
+                        "--values",
+                        "10",
+                        "20",
+                        "--data-dir",
+                        "Data",
+                        "--max-workers",
+                        "3",
+                        "--output-dir",
+                        tmpdir,
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(run_sweep.call_args.kwargs["max_workers"], 3)
+
     def test_root_runner_suite_subcommand_delegates_to_suite_orchestrator(self) -> None:
         """The root runner suite mode should delegate to the predefined experiment-suite orchestrator."""
         from runner import main
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            with patch("runner.run_experiment_suite", return_value={"suite": "paper-main", "preset": "chengdu-formal"}) as run_suite:
+            with patch("runner.run_experiment_suite", return_value={"suite": "chengdu-paper", "preset": "formal"}) as run_suite:
                 exit_code = main(
                     [
                         "suite",
                         "--suite",
-                        "paper-main",
+                        "chengdu-paper",
                         "--preset",
-                        "chengdu-formal",
+                        "formal",
                         "--algorithms",
                         "capa",
                         "greedy",
@@ -208,6 +236,8 @@ class RunnerDispatchTests(unittest.TestCase):
                         "1",
                         "--batch-size",
                         "300",
+                        "--max-workers",
+                        "4",
                         "--output-dir",
                         tmpdir,
                     ]
@@ -215,6 +245,7 @@ class RunnerDispatchTests(unittest.TestCase):
 
         self.assertEqual(exit_code, 0)
         run_suite.assert_called_once()
+        self.assertEqual(run_suite.call_args.kwargs["max_workers"], 4)
 
     def test_root_runner_accepts_legacy_single_run_flags_without_subcommand(self) -> None:
         """The root runner should keep legacy single-run flags working by treating them as `run`."""
