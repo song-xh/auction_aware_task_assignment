@@ -6,6 +6,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+SUPPORTED_SWEEP_AXES = frozenset({"num_parcels", "local_couriers", "platforms", "batch_size"})
+UNSUPPORTED_PAPER_AXES = frozenset({"service_radius"})
+
 
 @dataclass(frozen=True)
 class ExperimentConfig:
@@ -76,3 +79,26 @@ class SweepConfig:
     axis: str
     values: tuple[int, ...]
     base: ExperimentConfig
+
+
+def apply_sweep_axis(config: ExperimentConfig, axis: str, value: int) -> ExperimentConfig:
+    """Apply one supported sweep axis update to an experiment configuration.
+
+    Args:
+        config: Base experiment configuration.
+        axis: Sweep axis name.
+        value: New value for the chosen axis.
+
+    Returns:
+        A new configuration with the selected axis updated.
+
+    Raises:
+        NotImplementedError: The axis is paper-relevant but not yet exposed by the environment.
+        ValueError: The axis name is unknown to the experiment layer.
+    """
+
+    if axis in UNSUPPORTED_PAPER_AXES:
+        raise NotImplementedError(f"The sweep axis `{axis}` is not exposed by the unified Chengdu environment yet.")
+    if axis not in SUPPORTED_SWEEP_AXES:
+        raise ValueError(f"Unsupported sweep axis `{axis}`.")
+    return config.with_update(**{axis: value})

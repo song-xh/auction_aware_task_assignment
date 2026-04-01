@@ -182,6 +182,38 @@ class RunnerDispatchTests(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         run_compare.assert_called_once()
 
+    def test_root_runner_suite_subcommand_delegates_to_suite_orchestrator(self) -> None:
+        """The root runner suite mode should delegate to the predefined experiment-suite orchestrator."""
+        from runner import main
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with patch("runner.run_experiment_suite", return_value={"suite": "paper-main"}) as run_suite:
+                exit_code = main(
+                    [
+                        "suite",
+                        "--suite",
+                        "paper-main",
+                        "--algorithms",
+                        "capa",
+                        "greedy",
+                        "--data-dir",
+                        "Data",
+                        "--local-couriers",
+                        "2",
+                        "--platforms",
+                        "1",
+                        "--couriers-per-platform",
+                        "1",
+                        "--batch-size",
+                        "300",
+                        "--output-dir",
+                        tmpdir,
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        run_suite.assert_called_once()
+
     def test_root_runner_accepts_legacy_single_run_flags_without_subcommand(self) -> None:
         """The root runner should keep legacy single-run flags working by treating them as `run`."""
         from runner import main
@@ -273,7 +305,10 @@ class RunnerDispatchTests(unittest.TestCase):
         """The README should present the root runner as the canonical way to launch experiments."""
         readme = Path("README.md").read_text(encoding="utf-8")
 
-        self.assertIn("python3 runner.py --algorithm capa", readme)
+        self.assertIn("python3 runner.py run --algorithm capa", readme)
+        self.assertIn("python3 runner.py sweep", readme)
+        self.assertIn("python3 runner.py compare", readme)
+        self.assertIn("python3 runner.py suite", readme)
 
 
 if __name__ == "__main__":

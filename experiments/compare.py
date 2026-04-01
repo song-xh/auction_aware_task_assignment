@@ -9,7 +9,7 @@ from typing import Any, Callable, Sequence
 from algorithms.registry import build_algorithm_runner
 from env.chengdu import ChengduEnvironment
 
-from .config import ExperimentConfig
+from .config import ExperimentConfig, apply_sweep_axis
 from .seeding import build_environment_seed, clone_environment_from_seed
 
 
@@ -54,7 +54,7 @@ def run_comparison_sweep(
     )
 
     for value in sweep_values:
-        point_config = base_config.with_update(**{sweep_parameter: value})
+        point_config = apply_sweep_axis(base_config, sweep_parameter, value)
         environment = builder(**point_config.as_environment_kwargs())
         seed = build_environment_seed(environment)
         run_summary: dict[str, Any] = {sweep_parameter: value}

@@ -11,6 +11,7 @@ from algorithms.registry import build_algorithm_runner, get_algorithm_names
 from env.chengdu import ChengduEnvironment
 from experiments.compare import run_comparison_sweep
 from experiments.sweep import run_parameter_sweep
+from experiments.suites import run_experiment_suite
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -37,6 +38,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     compare_parser.add_argument("--algorithms", choices=get_algorithm_names(), nargs="+", required=True, help="Algorithms to compare.")
     compare_parser.add_argument("--axis", required=True, help="Sweep axis, for example `num_parcels` or `batch_size`.")
     compare_parser.add_argument("--values", type=int, nargs="+", required=True, help="Ordered sweep values for the selected axis.")
+
+    suite_parser = subparsers.add_parser("suite", help="Run a predefined paper-style suite of sweeps.")
+    _add_common_environment_arguments(suite_parser)
+    suite_parser.add_argument("--suite", required=True, help="Predefined suite name, for example `paper-main`.")
+    suite_parser.add_argument("--algorithms", choices=get_algorithm_names(), nargs="+", required=True, help="Algorithms to compare in the suite.")
 
     return parser.parse_args(normalized_argv)
 
@@ -76,6 +82,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _run_sweep(args)
     if args.command == "compare":
         return _run_compare(args)
+    if args.command == "suite":
+        return _run_suite(args)
     raise ValueError(f"Unsupported command: {args.command}")
 
 
@@ -130,6 +138,20 @@ def _run_compare(args: argparse.Namespace) -> int:
     )
     print(f"algorithms={','.join(summary.get('algorithms', args.algorithms))}")
     print(f"sweep_parameter={summary.get('sweep_parameter', args.axis)}")
+    print(f"output_dir={Path(args.output_dir).resolve()}")
+    return 0
+
+
+def _run_suite(args: argparse.Namespace) -> int:
+    """Run one predefined experiment suite and print the summary location."""
+    summary = run_experiment_suite(
+        suite_name=args.suite,
+        algorithms=args.algorithms,
+        output_dir=Path(args.output_dir),
+        fixed_config=_build_fixed_config(args),
+    )
+    print(f"suite={summary.get('suite', args.suite)}")
+    print(f"algorithms={','.join(summary.get('algorithms', args.algorithms))}")
     print(f"output_dir={Path(args.output_dir).resolve()}")
     return 0
 

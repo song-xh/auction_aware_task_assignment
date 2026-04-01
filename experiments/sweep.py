@@ -9,7 +9,7 @@ from typing import Any, Callable, Sequence
 from algorithms.registry import build_algorithm_runner
 from env.chengdu import ChengduEnvironment
 
-from .config import ExperimentConfig
+from .config import ExperimentConfig, apply_sweep_axis
 
 
 def run_parameter_sweep(
@@ -53,7 +53,7 @@ def run_parameter_sweep(
     )
 
     for value in sweep_values:
-        point_config = base_config.with_update(**{sweep_parameter: value})
+        point_config = apply_sweep_axis(base_config, sweep_parameter, value)
         environment = builder(**point_config.as_environment_kwargs())
         runner_kwargs = _build_runner_kwargs(algorithm_name=algorithm, config=point_config)
         runner = build_runner(algorithm, **runner_kwargs)
