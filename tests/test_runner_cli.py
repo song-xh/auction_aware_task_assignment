@@ -230,6 +230,16 @@ class RunnerDispatchTests(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         self.assertIs(fake_runner.environment, fake_environment)
 
+    def test_parse_args_uses_sys_argv_when_none(self) -> None:
+        """The root runner parser should honor the real CLI argv when no explicit argv is passed."""
+        from runner import parse_args
+
+        with patch("sys.argv", ["runner.py", "compare", "--algorithms", "capa", "greedy", "--axis", "num_parcels", "--values", "5"]):
+            args = parse_args(None)
+
+        self.assertEqual(args.command, "compare")
+        self.assertEqual(args.algorithms, ["capa", "greedy"])
+
     def test_rl_capa_cli_fails_explicitly_without_fallback(self) -> None:
         """Selecting rl-capa should fail explicitly instead of silently falling back to CAPA."""
         from runner import main

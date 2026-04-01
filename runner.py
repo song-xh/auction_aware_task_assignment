@@ -15,7 +15,7 @@ from experiments.sweep import run_parameter_sweep
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     """Parse CLI arguments for single runs, sweeps, and shared-environment comparisons."""
-    normalized_argv = list(argv or [])
+    normalized_argv = list(sys.argv[1:] if argv is None else argv)
     if normalized_argv and normalized_argv[0].startswith("-"):
         normalized_argv = ["run", *normalized_argv]
 
