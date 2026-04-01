@@ -30,6 +30,8 @@ python3 runner.py run \
 
 - `capa`
 - `greedy`
+- `ramcom`
+- `mra`
 - `basegta`
 - `impgta`
 - `rl-capa`（当前会显式报未实现）
@@ -71,6 +73,7 @@ python3 runner.py sweep \
 - `service_radius`
 - `platforms`
 - `batch_size`
+- `courier_capacity`
 
 `service_radius` 使用公里单位，通过 `--values 0.5 1.0 1.5 ...` 传入。
 
@@ -165,11 +168,89 @@ python3 experiments/run_chengdu_exp6_capacity.py --output-dir outputs/plots/exp6
 python3 experiments/run_chengdu_paper_suite.py --output-dir outputs/plots/chengdu_suite --preset formal --max-workers 4
 ```
 
+各实验脚本与指标含义：
+
+- `run_chengdu_exp1_num_parcels.py`
+  - 变动参数：`|Γ| = num_parcels`
+  - 固定参数默认值：`|C|=200`、`|P|=4`、每个平台 `50` 个 courier、容量 `50`、服务半径 `1.0km`、`batch_size=300s`
+  - 输出指标：`TR vs |Γ|`、`CR vs |Γ|`、`BPT vs |Γ|`
+- `run_chengdu_exp2_couriers.py`
+  - 变动参数：`|C| = local_couriers`
+  - 固定参数默认值：`|Γ|=3000`、`|P|=4`、每个平台 `50` 个 courier、容量 `50`、服务半径 `1.0km`、`batch_size=300s`
+  - 输出指标：`TR vs |C|`、`CR vs |C|`、`BPT vs |C|`
+- `run_chengdu_exp3_radius.py`
+  - 变动参数：`rad = service_radius`
+  - 固定参数默认值：`|Γ|=3000`、`|C|=200`、`|P|=4`、每个平台 `50` 个 courier、容量 `50`、`batch_size=300s`
+  - 输出指标：`TR vs rad`、`CR vs rad`、`BPT vs rad`
+- `run_chengdu_exp4_platforms.py`
+  - 变动参数：`|P| = platforms`
+  - 固定参数默认值：`|Γ|=3000`、`|C|=200`、每个平台 `50` 个 courier、容量 `50`、服务半径 `1.0km`、`batch_size=300s`
+  - 输出指标：`TR vs |P|`、`CR vs |P|`、`BPT vs |P|`
+- `run_chengdu_exp5_default_compare.py`
+  - 变动参数：无
+  - 固定参数默认值：`|Γ|=3000`、`|C|=200`、`|P|=4`、每个平台 `50` 个 courier、容量 `50`、服务半径 `1.0km`、`batch_size=300s`
+  - 输出指标：各算法默认设置下的 `TR`、`CR`、`BPT`
+- `run_chengdu_exp6_capacity.py`
+  - 变动参数：courier capacity
+  - 固定参数默认值：`|Γ|=3000`、`|C|=200`、`|P|=4`、每个平台 `50` 个 courier、服务半径 `1.0km`、`batch_size=300s`
+  - 输出指标：`TR vs capacity`、`CR vs capacity`、`BPT vs capacity`
+- `run_chengdu_paper_suite.py`
+  - 按 preset 批量运行上述所有 sweep
+  - 输出：每个实验轴单独的图、`summary.json` 和 suite 级汇总
+
 这些脚本默认使用：
 
 - 同一个 sweep 点只初始化一次环境
 - 不同算法共享同一个环境 seed，并从 clone 出来的环境运行
 - `--max-workers` 用于并行不同 sweep 点，减少总墙钟时间
+
+推荐的正式实验命令：
+
+```bash
+python3 experiments/run_chengdu_exp1_num_parcels.py \
+  --output-dir outputs/plots/exp1_num_parcels \
+  --preset formal \
+  --algorithms capa greedy ramcom mra basegta impgta \
+  --max-workers 4
+
+python3 experiments/run_chengdu_exp2_couriers.py \
+  --output-dir outputs/plots/exp2_couriers \
+  --preset formal \
+  --algorithms capa greedy ramcom mra basegta impgta \
+  --max-workers 4
+
+python3 experiments/run_chengdu_exp3_radius.py \
+  --output-dir outputs/plots/exp3_radius \
+  --preset formal \
+  --algorithms capa greedy ramcom mra basegta impgta \
+  --max-workers 4
+
+python3 experiments/run_chengdu_exp4_platforms.py \
+  --output-dir outputs/plots/exp4_platforms \
+  --preset formal \
+  --algorithms capa greedy ramcom mra basegta impgta \
+  --max-workers 4
+
+python3 experiments/run_chengdu_exp5_default_compare.py \
+  --output-dir outputs/plots/exp5_default_compare \
+  --algorithms capa greedy ramcom mra basegta impgta
+
+python3 experiments/run_chengdu_exp6_capacity.py \
+  --output-dir outputs/plots/exp6_capacity \
+  --preset formal \
+  --algorithms capa greedy ramcom mra basegta impgta \
+  --max-workers 4
+```
+
+如果要一次性跑完整套：
+
+```bash
+python3 experiments/run_chengdu_paper_suite.py \
+  --output-dir outputs/plots/chengdu_paper_suite \
+  --preset formal \
+  --algorithms capa greedy ramcom mra basegta impgta \
+  --max-workers 4
+```
 
 ## 输出文件
 

@@ -13,5 +13,6 @@ outputs/checkpoints/
 outputs/logs/*.csv
 output/
 outputs/
+docs/
 wandb/
 .ipynb_checkpoints/
