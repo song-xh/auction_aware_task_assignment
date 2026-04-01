@@ -8,6 +8,28 @@
 python3 -m unittest discover -s tests -v
 ```
 
+## 统一入口
+
+```bash
+python3 runner.py \
+  --algorithm capa \
+  --data-dir Data \
+  --num-parcels 100 \
+  --local-couriers 10 \
+  --platforms 2 \
+  --couriers-per-platform 5 \
+  --batch-size 300 \
+  --output-dir outputs/plots/chengdu_run
+```
+
+支持的 `--algorithm`：
+
+- `capa`
+- `greedy`
+- `basegta`
+- `impgta`
+- `rl-capa`（当前会显式报未实现）
+
 ## 单次 CAPA 实验
 
 ```bash

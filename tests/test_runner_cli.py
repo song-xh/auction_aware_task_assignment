@@ -5,6 +5,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from capa import DistanceMatrixTravelModel
 from env.chengdu import ChengduEnvironment
@@ -84,6 +85,67 @@ class RunnerDispatchTests(unittest.TestCase):
             result = runner.run(environment=environment, output_dir=None)
             self.assertEqual(result["algorithm"], name)
             self.assertEqual(result["metrics"]["TR"], 1.0)
+
+    def test_root_runner_dispatches_selected_algorithm(self) -> None:
+        """The root runner should build the environment once and dispatch the selected algorithm."""
+        from runner import main
+
+        fake_environment = ChengduEnvironment(
+            tasks=[],
+            local_couriers=[],
+            partner_couriers_by_platform={},
+            station_set=[],
+            travel_model=None,
+            platform_base_prices={},
+            platform_sharing_rates={},
+            platform_qualities={},
+        )
+
+        class FakeAlgorithmRunner:
+            """Record the environment passed in and return a normalized summary."""
+
+            def run(self, environment, output_dir=None):
+                self.environment = environment
+                self.output_dir = output_dir
+                return {
+                    "algorithm": "capa",
+                    "metrics": {
+                        "TR": 1.0,
+                        "CR": 0.5,
+                        "BPT": 0.1,
+                    },
+                }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            fake_runner = FakeAlgorithmRunner()
+            with patch("runner.ChengduEnvironment.build", return_value=fake_environment) as build_environment:
+                with patch("runner.build_algorithm_runner", return_value=fake_runner) as build_runner:
+                    exit_code = main(
+                        [
+                            "--algorithm",
+                            "capa",
+                            "--data-dir",
+                            "Data",
+                            "--num-parcels",
+                            "10",
+                            "--local-couriers",
+                            "2",
+                            "--platforms",
+                            "1",
+                            "--couriers-per-platform",
+                            "1",
+                            "--batch-size",
+                            "300",
+                            "--output-dir",
+                            tmpdir,
+                        ]
+                    )
+
+        self.assertEqual(exit_code, 0)
+        build_environment.assert_called_once()
+        build_runner.assert_called_once()
+        self.assertIs(fake_runner.environment, fake_environment)
+        self.assertEqual(Path(fake_runner.output_dir), Path(tmpdir))
 
 
 if __name__ == "__main__":
