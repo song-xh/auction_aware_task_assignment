@@ -19,6 +19,8 @@ class AlgorithmRegistryTests(unittest.TestCase):
                 "capa",
                 "greedy",
                 "impgta",
+                "mra",
+                "ramcom",
                 "rl-capa",
             ],
         )

@@ -1,0 +1,196 @@
+"""Chengdu-adapted MRA baseline implementation."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from time import perf_counter
+from typing import Any, Sequence
+
+from capa.utility import calculate_capacity_ratio, find_best_local_insertion
+from env.chengdu import (
+    apply_assignment_to_legacy_courier,
+    drain_legacy_routes,
+    framework_movement_callback,
+    group_legacy_tasks_by_batch,
+    legacy_task_to_parcel,
+)
+
+from .common import build_legacy_feasible_insertions, project_courier_to_capa
+
+
+DEFAULT_MRA_BASE_PRICE = 2.0
+DEFAULT_MRA_SHARING_RATE = 0.5
+
+
+@dataclass(frozen=True)
+class MRAEdge:
+    """Store one feasible courier-parcel edge in the multi-round assignment graph."""
+
+    task: Any
+    courier: Any
+    bid: float
+    insertion_index: int
+
+
+def compute_mra_bid(
+    task: Any,
+    courier: Any,
+    travel_model: Any,
+    feasible_count: int,
+    base_price: float = DEFAULT_MRA_BASE_PRICE,
+    sharing_rate: float = DEFAULT_MRA_SHARING_RATE,
+) -> float:
+    """Compute the Chengdu-adapted MRA bid described in `docs/mra.md`.
+
+    Args:
+        task: Legacy task object.
+        courier: Legacy courier object.
+        travel_model: Shared travel model.
+        feasible_count: Number of feasible couriers for the current task.
+        base_price: MRA base bid offset.
+        sharing_rate: MRA fare scaling factor.
+
+    Returns:
+        The bid value for this courier-task pair.
+    """
+
+    parcel = legacy_task_to_parcel(task)
+    snapshot = project_courier_to_capa(courier, courier_id=f"mra-{getattr(courier, 'num')}")
+    remaining_capacity = max(snapshot.capacity - snapshot.current_load, 1e-9)
+    capacity_term = 1.0 - (parcel.weight / remaining_capacity)
+    local_ratio, _ = find_best_local_insertion(parcel, snapshot, travel_model)
+    detour_term = 1.0 - local_ratio
+    if feasible_count <= 1:
+        return base_price + sharing_rate * parcel.fare
+    alpha = float(getattr(courier, "w", 0.5))
+    beta = float(getattr(courier, "c", 0.5))
+    return base_price + (alpha * capacity_term + beta * detour_term) * sharing_rate * parcel.fare
+
+
+def run_mra_baseline_environment(
+    environment: Any,
+    batch_size: int,
+    base_price: float = DEFAULT_MRA_BASE_PRICE,
+    sharing_rate: float = DEFAULT_MRA_SHARING_RATE,
+) -> dict[str, float]:
+    """Run the Chengdu-adapted MRA baseline on the unified environment.
+
+    Args:
+        environment: Shared Chengdu environment.
+        batch_size: Batch window in seconds.
+        base_price: MRA base bid offset.
+        sharing_rate: MRA fare scaling factor.
+
+    Returns:
+        Normalized `TR`/`CR`/`BPT` metrics.
+    """
+
+    tasks = list(environment.tasks)
+    total_tasks = len(tasks)
+    if total_tasks == 0:
+        return {
+            "TR": 0.0,
+            "CR": 0.0,
+            "BPT": 0.0,
+            "delivered_parcels": 0,
+            "accepted_assignments": 0,
+        }
+
+    local_couriers = list(environment.local_couriers)
+    movement = environment.movement_callback or framework_movement_callback
+    service_radius_meters = None if getattr(environment, "service_radius_km", None) is None else float(environment.service_radius_km) * 1000.0
+    backlog: list[Any] = []
+    accepted_assignments = 0
+    total_revenue = 0.0
+    processing_time_seconds = 0.0
+    batches = group_legacy_tasks_by_batch(tasks, batch_size)
+    first_batch_start = int(float(getattr(min(tasks, key=lambda item: float(getattr(item, "s_time"))), "s_time")))
+
+    for batch_index, bucket in enumerate(batches, start=1):
+        now = first_batch_start + (batch_index - 1) * batch_size
+        unresolved = list(backlog) + list(bucket)
+        started = perf_counter()
+        remaining = list(unresolved)
+        while remaining:
+            graph_edges: list[MRAEdge] = []
+            for task in remaining:
+                feasible = build_legacy_feasible_insertions(
+                    task=task,
+                    couriers=local_couriers,
+                    travel_model=environment.travel_model,
+                    now=now,
+                    service_radius_meters=service_radius_meters,
+                    courier_id_prefix="mra",
+                )
+                for insertion in feasible:
+                    graph_edges.append(
+                        MRAEdge(
+                            task=task,
+                            courier=insertion.courier,
+                            bid=compute_mra_bid(
+                                task=task,
+                                courier=insertion.courier,
+                                travel_model=environment.travel_model,
+                                feasible_count=len(feasible),
+                                base_price=base_price,
+                                sharing_rate=sharing_rate,
+                            ),
+                            insertion_index=insertion.insertion_index,
+                        )
+                    )
+            if not graph_edges:
+                break
+
+            ordered_edges = sorted(graph_edges, key=lambda edge: (edge.bid, str(getattr(edge.task, "num")), getattr(edge.courier, "num", 0)))
+            used_couriers: set[int] = set()
+            used_tasks: set[str] = set()
+            round_assignments: list[MRAEdge] = []
+            for edge in ordered_edges:
+                task_id = str(getattr(edge.task, "num"))
+                courier_id = int(getattr(edge.courier, "num"))
+                if task_id in used_tasks or courier_id in used_couriers:
+                    continue
+                best_for_task = min(
+                    (candidate for candidate in graph_edges if str(getattr(candidate.task, "num")) == task_id),
+                    key=lambda candidate: candidate.bid,
+                )
+                if best_for_task is not edge:
+                    continue
+                round_assignments.append(edge)
+                used_tasks.add(task_id)
+                used_couriers.add(courier_id)
+
+            if not round_assignments:
+                break
+
+            for edge in round_assignments:
+                competing_bids = sorted(
+                    candidate.bid for candidate in graph_edges if str(getattr(candidate.task, "num")) == str(getattr(edge.task, "num"))
+                )
+                payment = competing_bids[1] if len(competing_bids) >= 2 else competing_bids[0]
+                apply_assignment_to_legacy_courier(edge.task, edge.courier, edge.insertion_index)
+                total_revenue += float(getattr(edge.task, "fare")) - payment
+                accepted_assignments += 1
+
+            remaining = [task for task in remaining if str(getattr(task, "num")) not in used_tasks]
+
+        backlog = remaining
+        processing_time_seconds += perf_counter() - started
+        movement(local_couriers, [], batch_size, environment.station_set)
+
+    if accepted_assignments > 0:
+        drain_legacy_routes(
+            local_couriers=local_couriers,
+            partner_couriers_by_platform={},
+            station_set=environment.station_set,
+            step_seconds=60,
+            movement_callback=movement,
+        )
+
+    return {
+        "TR": total_revenue,
+        "CR": accepted_assignments / total_tasks,
+        "BPT": processing_time_seconds,
+        "delivered_parcels": accepted_assignments,
+        "accepted_assignments": accepted_assignments,
+    }

@@ -82,7 +82,7 @@ def run_comparison_sweep(
 
 def _build_runner_kwargs(algorithm_name: str, config: ExperimentConfig) -> dict[str, Any]:
     """Translate experiment config into algorithm-specific runner arguments."""
-    if algorithm_name in {"capa", "greedy", "basegta"}:
+    if algorithm_name in {"capa", "greedy", "basegta", "mra"}:
         return {"batch_size": config.batch_size}
     if algorithm_name == "impgta":
         return {"prediction_window_seconds": config.prediction_window_seconds}

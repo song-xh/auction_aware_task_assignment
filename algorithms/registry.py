@@ -10,6 +10,8 @@ SUPPORTED_ALGORITHMS = (
     "capa",
     "greedy",
     "impgta",
+    "mra",
+    "ramcom",
     "rl-capa",
 )
 
