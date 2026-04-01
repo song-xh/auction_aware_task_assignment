@@ -32,7 +32,7 @@ def _build_placeholder_runner(name: str) -> AlgorithmRunner:
     )
 
 
-def build_algorithm_runner(name: str) -> AlgorithmRunner:
+def build_algorithm_runner(name: str, **kwargs: object) -> AlgorithmRunner:
     """Build the runner object registered to the provided algorithm name."""
     if name not in SUPPORTED_ALGORITHMS:
         raise ValueError(f"Unsupported algorithm: {name}")
@@ -46,4 +46,4 @@ def build_algorithm_runner(name: str) -> AlgorithmRunner:
         return _build_placeholder_runner(name)
     if not callable(builder):
         raise TypeError(f"Algorithm builder {function_name} in {module_name} is not callable.")
-    return builder()
+    return builder(**kwargs)
