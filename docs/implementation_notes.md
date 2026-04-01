@@ -138,6 +138,11 @@ The following are still not implemented:
 
 These remain for later phases.
 
+The unified root `runner.py` now registers `rl-capa` explicitly but does not emulate it:
+
+- selecting `--algorithm rl-capa` raises a clear not-implemented error
+- there is no fallback to `capa`
+
 ## 9. Chengdu experiment adapter assumptions
 
 The official Chengdu experiment path in `capa.experiments` now runs through the reusable `env.chengdu` package, which in turn binds to the repository's legacy simulation environment instead of synthesizing couriers from parcel nodes.

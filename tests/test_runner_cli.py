@@ -147,6 +147,35 @@ class RunnerDispatchTests(unittest.TestCase):
         self.assertIs(fake_runner.environment, fake_environment)
         self.assertEqual(Path(fake_runner.output_dir), Path(tmpdir))
 
+    def test_rl_capa_cli_fails_explicitly_without_fallback(self) -> None:
+        """Selecting rl-capa should fail explicitly instead of silently falling back to CAPA."""
+        from runner import main
+
+        fake_environment = ChengduEnvironment(
+            tasks=[],
+            local_couriers=[],
+            partner_couriers_by_platform={},
+            station_set=[],
+            travel_model=None,
+            platform_base_prices={},
+            platform_sharing_rates={},
+            platform_qualities={},
+        )
+
+        with patch("runner.ChengduEnvironment.build", return_value=fake_environment):
+            exit_code = main(
+                [
+                    "--algorithm",
+                    "rl-capa",
+                    "--data-dir",
+                    "Data",
+                    "--output-dir",
+                    "outputs/plots/test_rl_capa_cli",
+                ]
+            )
+
+        self.assertNotEqual(exit_code, 0)
+
 
 if __name__ == "__main__":
     unittest.main()

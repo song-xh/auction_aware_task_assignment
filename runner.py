@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -50,10 +51,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         couriers_per_platform=args.couriers_per_platform,
     )
     runner = build_algorithm_runner(args.algorithm, **build_algorithm_kwargs(args))
-    summary = runner.run(
-        environment=environment,
-        output_dir=Path(args.output_dir),
-    )
+    try:
+        summary = runner.run(
+            environment=environment,
+            output_dir=Path(args.output_dir),
+        )
+    except NotImplementedError as error:
+        print(str(error), file=sys.stderr)
+        return 1
     print(f"algorithm={summary['algorithm']}")
     for metric_name, value in summary.get("metrics", {}).items():
         print(f"{metric_name}={value}")
