@@ -418,8 +418,7 @@ class GraphUtils(object):
         iteration = 0
         while len(stack) != 0:
             cur = stack[len(stack) - 1]
-
-            stack.remove(stack[len(stack) - 1])
+            stack.pop()
 
             if cur.nodeId not in closeSet:
                 count += 1
@@ -529,7 +528,7 @@ class GraphUtils(object):
             if cur.nodeId == end.nodeId:
                 return self.reconstructPaths(cur.nodeId, track, nMap, eMap)
 
-            openList.remove(cur)
+            openList.pop(pos)
             openSet.remove(cur.nodeId)
             closeSet.add(cur.nodeId)
 

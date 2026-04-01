@@ -157,6 +157,24 @@ class ChengduRunnerTests(unittest.TestCase):
         self.assertEqual([task.num for task in selected], ["p1"])
         self.assertEqual([task.num for task in station.f_pick_task_set], ["p1"])
 
+    def test_assign_delivery_tasks_to_stations_uses_station_ranges(self) -> None:
+        """Delivery-task assignment should follow the same station-range rule as the legacy framework."""
+        from capa.chengdu_env import assign_delivery_tasks_to_stations
+
+        station = FakeStation(1, "S")
+        station.station_range = [0.0, 10.0, 0.0, 10.0]
+        station.station_task_set = []
+        inside = FakeTask("d1", "N1", 0, 100, 1.0, 0.0)
+        inside.l_lng = 5.0
+        inside.l_lat = 5.0
+        outside = FakeTask("d2", "N2", 0, 100, 1.0, 0.0)
+        outside.l_lng = 15.0
+        outside.l_lat = 15.0
+
+        assign_delivery_tasks_to_stations([station], [inside, outside])
+
+        self.assertEqual([task.num for task in station.station_task_set], ["d1"])
+
     def test_time_stepped_runner_advances_couriers_and_reports_metrics(self) -> None:
         """The Chengdu runner should call the movement hook and emit aggregate metrics."""
         from capa.chengdu_env import run_time_stepped_chengdu_batches

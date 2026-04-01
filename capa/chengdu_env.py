@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from dataclasses import dataclass
+from functools import lru_cache
+from pathlib import Path
 from time import perf_counter
 from typing import Any, Callable, Dict, Iterable, List, Mapping, MutableSequence, Sequence
 
@@ -11,6 +14,17 @@ from .dapa import run_dapa
 from .metrics import build_run_metrics
 from .models import Assignment, BatchReport, CAPAConfig, CAPAResult, CooperatingPlatform, Courier, Parcel
 from .utility import find_best_local_insertion
+
+
+@dataclass(frozen=True)
+class StationBlueprint:
+    """Store the immutable geometry needed to recreate a legacy station quickly."""
+
+    num: int
+    l_lng: float
+    l_lat: float
+    l_node: Any
+    station_range: tuple[float, float, float, float]
 
 
 def limit_legacy_tasks(
@@ -78,6 +92,63 @@ def select_station_pick_tasks(station_set: Sequence[Any], ordered_pick_tasks: Se
         if len(selected) >= num_parcels:
             break
     return selected
+
+
+def assign_delivery_tasks_to_stations(station_set: Sequence[Any], ordered_delivery_tasks: Sequence[Any]) -> None:
+    """Assign delivery tasks to stations using the original rectangular station ranges."""
+    for station in station_set:
+        station.station_task_set = []
+    for task in ordered_delivery_tasks:
+        for station in station_set:
+            station_range = getattr(station, "station_range", None)
+            if not station_range or len(station_range) != 4:
+                continue
+            if station_range[0] <= float(getattr(task, "l_lng")) < station_range[1] and station_range[2] <= float(getattr(task, "l_lat")) < station_range[3]:
+                station.station_task_set.append(task)
+                break
+
+
+@lru_cache(maxsize=8)
+def load_station_blueprints(data_dir_str: str, parts_num: int) -> tuple[StationBlueprint, ...]:
+    """Cache the immutable station geometry derived from the legacy Chengdu map."""
+    import Framework_ChengDu as framework
+
+    data_dir = Path(data_dir_str)
+    generator = framework.GenerateStation(str(data_dir / "map_ChengDu"), str(data_dir / "order_20161101_deal"), parts_num)
+    range_lng, range_lat = generator.edge_station()
+    blueprints: list[StationBlueprint] = []
+    count = 0
+    for i in range(parts_num - 1):
+        for j in range(parts_num - 1):
+            count += 1
+            l_lng = (range_lng[i] + range_lng[i + 1]) / 2
+            l_lat = (range_lat[j] + range_lat[j + 1]) / 2
+            l_node = framework.g.findNode(l_lng, l_lat, framework.s)
+            blueprints.append(
+                StationBlueprint(
+                    num=count,
+                    l_lng=l_lng,
+                    l_lat=l_lat,
+                    l_node=l_node,
+                    station_range=(range_lng[i], range_lng[i + 1], range_lat[j], range_lat[j + 1]),
+                )
+            )
+    return tuple(blueprints)
+
+
+def instantiate_stations_from_blueprints(framework: Any, blueprints: Sequence[StationBlueprint]) -> list[Any]:
+    """Create fresh legacy station objects from cached geometry blueprints."""
+    stations = [
+        framework.Station(
+            blueprint.num,
+            blueprint.l_lng,
+            blueprint.l_lat,
+            blueprint.l_node,
+            list(blueprint.station_range),
+        )
+        for blueprint in blueprints
+    ]
+    return stations
 
 
 def legacy_task_to_parcel(task: Any) -> Parcel:
@@ -383,6 +454,7 @@ def build_framework_chengdu_environment(
     framework.parameter_task_num = num_parcels
     framework.parameter_capacity = 75
     framework.parameter_capacity_c = 75
+    station_blueprints = load_station_blueprints(str(Path(data_dir)), 11)
 
     station_set = []
     seeded_couriers: list[Any] = []
@@ -393,8 +465,8 @@ def build_framework_chengdu_environment(
         framework.delivery_task_set = ordered_delivery[:delivery_seed_count]
         framework.fw_ff_pick_task_set1 = []
         framework.fw_sum_time = 0
-        generator = framework.GenerateStation(str(data_dir / "map_ChengDu"), str(data_dir / "order_20161101_deal"), 11)
-        station_set = generator.get_station()
+        station_set = instantiate_stations_from_blueprints(framework, station_blueprints)
+        assign_delivery_tasks_to_stations(station_set, framework.delivery_task_set)
         available_seed_count = sum(len(getattr(station, "station_task_set", [])) for station in station_set)
         framework.parameter_courier_num = min(required_couriers, available_seed_count)
         station_by_num = {station.num: station for station in station_set}

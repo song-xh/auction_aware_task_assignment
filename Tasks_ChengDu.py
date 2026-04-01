@@ -29,6 +29,21 @@ class Task:
         self.nodes = []
         self.extime = 0
 
+
+def parse_task_line(line: str) -> Task:
+    """Parse one Chengdu CSV row into a `Task` with two-decimal scalar rounding."""
+    cols = line.split(",")
+    return Task(
+        cols[0],
+        cols[1],
+        cols[2],
+        cols[3],
+        cols[4],
+        cols[5],
+        round(float(cols[6]), 2),
+        round(float(cols[7]), 2),
+    )
+
 # 平时运行开启
 def readTask():
     pick_task_set = []
@@ -36,9 +51,7 @@ def readTask():
     with open("Data/order_20161101_deal1") as f:
         count = 0
         for line in f:
-            line = line.split(",")
-            temp_task = Task(line[0], line[1], line[2], line[3],
-                             line[4], line[5], np.round(float(line[6]), 2), np.round(float(line[7]), 2))
+            temp_task = parse_task_line(line)
 
             count += 1
             if temp_task.fare != 0:
@@ -48,9 +61,7 @@ def readTask():
     with open("Data/order_20161101_deal2") as f:
         count = 0
         for line in f:
-            line = line.split(",")
-            temp_task = Task(line[0], line[1], line[2], line[3],
-                             line[4], line[5], np.round(float(line[6]), 2), np.round(float(line[7]), 2))
+            temp_task = parse_task_line(line)
 
             count += 1
             if temp_task.fare != 0:
@@ -60,9 +71,7 @@ def readTask():
     with open("Data/order_20161101_deal3") as f:
         count = 0
         for line in f:
-            line = line.split(",")
-            temp_task = Task(line[0], line[1], line[2], line[3],
-                             line[4], line[5], np.round(float(line[6]), 2), np.round(float(line[7]), 2))
+            temp_task = parse_task_line(line)
         count += 1
         if temp_task.fare != 0:
             pick_task_set.append(temp_task)
@@ -73,9 +82,7 @@ def readTask():
     with open("Data/order_20161101_deal4") as f:
         count = 0
         for line in f:
-            line = line.split(",")
-            temp_task = Task(line[0], line[1], line[2], line[3],
-                             line[4], line[5], np.round(float(line[6]), 2), np.round(float(line[7]), 2))
+            temp_task = parse_task_line(line)
 
             count += 1
             if temp_task.fare != 0:
@@ -150,4 +157,3 @@ if __name__ == "__main__":
     print(f'zuhehou',{len(pick_task_set)})
     for i in pick_task_set:
         print(i.weight)
-
