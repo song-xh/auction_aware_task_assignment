@@ -7,6 +7,7 @@ from typing import Iterable, List, Sequence
 
 from .constraints import is_within_service_radius
 from .models import Assignment, CAMAResult, CAPAConfig, CandidatePair, Courier, Parcel
+from .revenue import compute_local_courier_payment, compute_local_platform_revenue_for_local_completion
 from .timing import TimingAccumulator
 from .travel import DistanceMatrixTravelModel
 from .utility import calculate_threshold, calculate_utility
@@ -46,7 +47,10 @@ def build_local_assignment(
     config: CAPAConfig,
 ) -> Assignment:
     """Construct the realized local assignment and Eq.5 local revenue terms."""
-    courier_payment = config.local_payment_ratio_zeta * pair.parcel.fare
+    courier_payment = compute_local_courier_payment(
+        parcel_fare=pair.parcel.fare,
+        local_payment_ratio=config.local_payment_ratio_zeta,
+    )
     return Assignment(
         parcel=pair.parcel,
         courier=pair.courier,
@@ -54,7 +58,10 @@ def build_local_assignment(
         platform_id=None,
         courier_payment=courier_payment,
         platform_payment=courier_payment,
-        local_platform_revenue=pair.parcel.fare - courier_payment,
+        local_platform_revenue=compute_local_platform_revenue_for_local_completion(
+            parcel_fare=pair.parcel.fare,
+            local_payment_ratio=config.local_payment_ratio_zeta,
+        ),
         cooperating_platform_revenue=0.0,
         courier_revenue=courier_payment,
         utility_value=pair.utility.value,

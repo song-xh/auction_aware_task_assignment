@@ -229,3 +229,36 @@ Important boundary:
 - this is a paper-guided inference from the experimental section, not a formula explicitly rendered in the manuscript
 
 It is still more paper-faithful than the previous state, where `rad` was not modeled at all.
+
+## 11. Revenue-accounting audit
+
+The paper's explicit local-platform revenue definition is given in Definition 4 and Eq. 5:
+
+- local completion: `p_tau - Rc(tau, c)`
+- cross-platform completion: `p_tau - p'(tau, c)`
+- the manuscript simplifies `Rc(tau, c)` to the fixed ratio `zeta * p_tau`
+
+During the April 1 audit, no explicit formula was found that directly decays platform revenue as a function of parcel waiting time or "placement time". The paper discusses courier/platform incentives, deferred matching, and high-value parcel prioritization, but the rendered revenue formula remains the net-payment form above.
+
+Accordingly, the repository now uses the following paper-faithful interpretation:
+
+- CAPA keeps its existing Eq. 5 accounting
+- BaseGTA / ImpGTA local completions are evaluated with `p_tau - zeta * p_tau`
+- BaseGTA / ImpGTA cross-platform completions are evaluated with `p_tau - payment_to_winning_platform`
+- MRA local completions are evaluated with `p_tau - zeta * p_tau`
+- RamCOM local completions are evaluated with `p_tau - zeta * p_tau`
+- RamCOM cross-platform completions are evaluated with `p_tau - outer_payment`
+
+This change fixes an earlier inconsistency where some baselines reported:
+
+- raw parcel fare
+- `fare - dispatch_cost`
+- or other source-paper-specific utility terms
+
+instead of the CPUL paper's local-platform net revenue.
+
+One remaining boundary still exists:
+
+- the current `Greedy` baseline is delegated to the legacy Chengdu framework, which only exposes aggregate printed revenue rather than per-assignment settlement records
+
+So the corrected Eq. 5 accounting is fully enforced for the maintained Python baselines (`BaseGTA`, `ImpGTA`, `MRA`, `RamCOM`) and CAPA, while legacy `Greedy` still follows the original framework's aggregate output unless that runner is fully reimplemented inside the unified environment.

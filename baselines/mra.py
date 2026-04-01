@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from time import perf_counter
 from typing import Any, Sequence
 
+from capa.revenue import DEFAULT_LOCAL_PAYMENT_RATIO, compute_local_platform_revenue_for_local_completion
 from capa.timing import TimedTravelModel, TimingAccumulator
 from capa.utility import calculate_capacity_ratio, find_best_local_insertion
 from env.chengdu import (
@@ -74,6 +75,7 @@ def run_mra_baseline_environment(
     batch_size: int,
     base_price: float = DEFAULT_MRA_BASE_PRICE,
     sharing_rate: float = DEFAULT_MRA_SHARING_RATE,
+    local_payment_ratio: float = DEFAULT_LOCAL_PAYMENT_RATIO,
 ) -> dict[str, float]:
     """Run the Chengdu-adapted MRA baseline on the unified environment.
 
@@ -173,12 +175,11 @@ def run_mra_baseline_environment(
                 break
 
             for edge in round_assignments:
-                competing_bids = sorted(
-                    candidate.bid for candidate in graph_edges if str(getattr(candidate.task, "num")) == str(getattr(edge.task, "num"))
-                )
-                payment = competing_bids[1] if len(competing_bids) >= 2 else competing_bids[0]
                 apply_assignment_to_legacy_courier(edge.task, edge.courier, edge.insertion_index)
-                total_revenue += float(getattr(edge.task, "fare")) - payment
+                total_revenue += compute_local_platform_revenue_for_local_completion(
+                    parcel_fare=float(getattr(edge.task, "fare")),
+                    local_payment_ratio=local_payment_ratio,
+                )
                 accepted_assignments += 1
 
             remaining = [task for task in remaining if str(getattr(task, "num")) not in used_tasks]

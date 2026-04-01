@@ -16,6 +16,7 @@ from .models import (
     Parcel,
     PlatformBid,
 )
+from .revenue import compute_cooperating_platform_revenue, compute_local_platform_revenue_for_cross_completion
 from .timing import TimingAccumulator
 from .travel import DistanceMatrixTravelModel
 from .utility import find_best_auction_detour_ratio, find_best_local_insertion
@@ -88,8 +89,8 @@ def build_cross_assignment(
         platform_id=platform_id,
         courier_payment=courier_payment,
         platform_payment=platform_payment,
-        local_platform_revenue=parcel.fare - platform_payment,
-        cooperating_platform_revenue=platform_payment - courier_payment,
+        local_platform_revenue=compute_local_platform_revenue_for_cross_completion(parcel.fare, platform_payment),
+        cooperating_platform_revenue=compute_cooperating_platform_revenue(platform_payment, courier_payment),
         courier_revenue=courier_payment,
         utility_value=None,
     )

@@ -7,6 +7,11 @@ import random
 from time import perf_counter
 from typing import Any, Sequence
 
+from capa.revenue import (
+    DEFAULT_LOCAL_PAYMENT_RATIO,
+    compute_local_platform_revenue_for_cross_completion,
+    compute_local_platform_revenue_for_local_completion,
+)
 from capa.timing import TimedTravelModel, TimingAccumulator
 from env.chengdu import (
     apply_assignment_to_legacy_courier,
@@ -83,6 +88,7 @@ def choose_outer_payment_by_expected_revenue(request: Any, outer_worker_historie
 def run_ramcom_baseline_environment(
     environment: Any,
     random_seed: int = 1,
+    local_payment_ratio: float = DEFAULT_LOCAL_PAYMENT_RATIO,
 ) -> dict[str, float]:
     """Run the Chengdu-adapted RamCOM baseline on the unified environment.
 
@@ -147,7 +153,10 @@ def run_ramcom_baseline_environment(
             if inner_candidates:
                 chosen = rng.choice(inner_candidates)
                 apply_assignment_to_legacy_courier(task, chosen.courier, chosen.insertion_index)
-                total_revenue += float(getattr(task, "fare"))
+                total_revenue += compute_local_platform_revenue_for_local_completion(
+                    parcel_fare=float(getattr(task, "fare")),
+                    local_payment_ratio=local_payment_ratio,
+                )
                 accepted_assignments += 1
                 assigned = True
 
@@ -181,7 +190,10 @@ def run_ramcom_baseline_environment(
                         key=lambda item: (item[1].distance_meters, item[0], getattr(item[1].courier, "num", 0)),
                     )
                     apply_assignment_to_legacy_courier(task, selected_insertion.courier, selected_insertion.insertion_index)
-                    total_revenue += float(getattr(task, "fare")) - outer_payment
+                    total_revenue += compute_local_platform_revenue_for_cross_completion(
+                        parcel_fare=float(getattr(task, "fare")),
+                        platform_payment=outer_payment,
+                    )
                     accepted_assignments += 1
 
         processing_time_seconds += max(

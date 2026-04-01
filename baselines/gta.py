@@ -8,6 +8,11 @@ from time import perf_counter
 from typing import Any, Callable, Mapping, MutableSequence, Sequence
 
 from capa.constraints import is_within_service_radius
+from capa.revenue import (
+    DEFAULT_LOCAL_PAYMENT_RATIO,
+    compute_local_platform_revenue_for_cross_completion,
+    compute_local_platform_revenue_for_local_completion,
+)
 from capa.timing import TimedTravelModel, TimingAccumulator
 from env.chengdu import (
     apply_assignment_to_legacy_courier,
@@ -264,6 +269,7 @@ def _run_gta_environment(
     algorithm: str,
     prediction_window_seconds: int | None = None,
     unit_price_per_km: float = DEFAULT_UNIT_PRICE_PER_KM,
+    local_payment_ratio: float = DEFAULT_LOCAL_PAYMENT_RATIO,
 ) -> dict[str, float]:
     """Run one GTA-style baseline over the shared Chengdu environment."""
     tasks = sort_legacy_tasks(list(environment.tasks))
@@ -338,7 +344,10 @@ def _run_gta_environment(
                 ):
                     apply_assignment_to_legacy_courier(task, local_bid.courier, len(getattr(local_bid.courier, "re_schedule")))
                     accepted_assignments += 1
-                    total_profit += float(getattr(task, "fare")) - local_bid.dispatch_cost
+                    total_profit += compute_local_platform_revenue_for_local_completion(
+                        parcel_fare=float(getattr(task, "fare")),
+                        local_payment_ratio=local_payment_ratio,
+                    )
                     processing_time_seconds += max(
                         0.0,
                         perf_counter() - started - (timing.routing_time_seconds - routing_before) - (timing.insertion_time_seconds - insertion_before),
@@ -380,7 +389,10 @@ def _run_gta_environment(
             if outcome is not None:
                 apply_assignment_to_legacy_courier(task, outcome.courier, len(getattr(outcome.courier, "re_schedule")))
                 accepted_assignments += 1
-                total_profit += float(getattr(task, "fare")) - outcome.dispatch_cost
+                total_profit += compute_local_platform_revenue_for_cross_completion(
+                    parcel_fare=float(getattr(task, "fare")),
+                    platform_payment=outcome.payment,
+                )
             processing_time_seconds += max(
                 0.0,
                 perf_counter() - started - (timing.routing_time_seconds - routing_before) - (timing.insertion_time_seconds - insertion_before),
@@ -407,6 +419,7 @@ def _run_gta_environment(
 def run_basegta_baseline_environment(
     environment: Any,
     unit_price_per_km: float = DEFAULT_UNIT_PRICE_PER_KM,
+    local_payment_ratio: float = DEFAULT_LOCAL_PAYMENT_RATIO,
 ) -> dict[str, float]:
     """Run BaseGTA on the shared Chengdu environment."""
     return _run_gta_environment(
@@ -414,6 +427,7 @@ def run_basegta_baseline_environment(
         algorithm="basegta",
         prediction_window_seconds=None,
         unit_price_per_km=unit_price_per_km,
+        local_payment_ratio=local_payment_ratio,
     )
 
 
@@ -421,6 +435,7 @@ def run_impgta_baseline_environment(
     environment: Any,
     prediction_window_seconds: int = DEFAULT_IMPGTA_WINDOW_SECONDS,
     unit_price_per_km: float = DEFAULT_UNIT_PRICE_PER_KM,
+    local_payment_ratio: float = DEFAULT_LOCAL_PAYMENT_RATIO,
 ) -> dict[str, float]:
     """Run ImpGTA on the shared Chengdu environment with a fixed future window."""
     return _run_gta_environment(
@@ -428,4 +443,5 @@ def run_impgta_baseline_environment(
         algorithm="impgta",
         prediction_window_seconds=prediction_window_seconds,
         unit_price_per_km=unit_price_per_km,
+        local_payment_ratio=local_payment_ratio,
     )
