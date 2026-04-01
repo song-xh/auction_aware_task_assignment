@@ -176,6 +176,12 @@ class RunnerDispatchTests(unittest.TestCase):
 
         self.assertNotEqual(exit_code, 0)
 
+    def test_root_runner_is_the_documented_primary_entrypoint(self) -> None:
+        """The README should present the root runner as the canonical way to launch experiments."""
+        readme = Path("README.md").read_text(encoding="utf-8")
+
+        self.assertIn("python3 runner.py --algorithm capa", readme)
+
 
 if __name__ == "__main__":
     unittest.main()

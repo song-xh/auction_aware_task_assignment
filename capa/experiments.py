@@ -1,4 +1,4 @@
-"""Experiment helpers and CLI entrypoints for Chengdu-backed CAPA runs."""
+"""Compatibility experiment helpers for Chengdu-backed CAPA runs."""
 
 from __future__ import annotations
 

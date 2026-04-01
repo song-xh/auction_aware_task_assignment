@@ -1,4 +1,4 @@
-"""Public exports for the Phase 4 CAPA implementation."""
+"""Public CAPA exports; the canonical experiment entrypoint is the repository root runner."""
 
 from .cama import run_cama
 from .dapa import run_dapa
@@ -8,7 +8,7 @@ from .travel import DistanceMatrixTravelModel
 
 
 def run_chengdu_experiment(*args, **kwargs):
-    """Import the Chengdu experiment entrypoint lazily to avoid env/capa circular imports."""
+    """Import the compatibility Chengdu experiment helper lazily to avoid env/capa circular imports."""
     from .experiments import run_chengdu_experiment as _run_chengdu_experiment
 
     return _run_chengdu_experiment(*args, **kwargs)

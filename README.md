@@ -10,6 +10,12 @@ python3 -m unittest discover -s tests -v
 
 ## 统一入口
 
+首选命令：
+
+```bash
+python3 runner.py --algorithm capa --data-dir Data --num-parcels 100 --local-couriers 10 --platforms 2 --couriers-per-platform 5 --batch-size 300 --output-dir outputs/plots/chengdu_run
+```
+
 ```bash
 python3 runner.py \
   --algorithm capa \
@@ -29,6 +35,10 @@ python3 runner.py \
 - `basegta`
 - `impgta`
 - `rl-capa`（当前会显式报未实现）
+
+## 兼容入口
+
+以下入口仍可用，但它们现在属于兼容/辅助接口，推荐优先使用根目录 `runner.py`。
 
 ## 单次 CAPA 实验
 
