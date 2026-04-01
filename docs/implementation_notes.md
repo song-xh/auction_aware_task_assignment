@@ -144,6 +144,11 @@ The runner now also drains the simulation after the final batch window:
 - `CR` is therefore based on delivered parcels, not merely matched parcels
 - `TR` and `BPT` remain assignment-stage metrics as in Phase 4
 
+Batch-level experiment curves follow the same rule:
+
+- `cr_over_batches.png` uses each batch's cumulative delivered count
+- it no longer uses cumulative accepted assignments as a surrogate for completion
+
 One ambiguity remains:
 
 - the repository does not include a separate real-world cross-platform courier dataset

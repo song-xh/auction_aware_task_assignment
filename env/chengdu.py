@@ -174,6 +174,26 @@ def instantiate_stations_from_blueprints(framework: Any, blueprints: Sequence[St
     return stations
 
 
+def generate_origin_schedule_with_retry(
+    framework: Any,
+    station_set: Sequence[Any],
+    required_couriers: int,
+    candidate_seed_count: int,
+    preference: float,
+) -> list[Any]:
+    """Retry legacy courier seeding when the requested sample exceeds the true generated population."""
+    requested_couriers = min(required_couriers, candidate_seed_count)
+    while requested_couriers > 0:
+        framework.parameter_courier_num = requested_couriers
+        try:
+            return framework.GenerateOriginSchedule(station_set, preference)
+        except ValueError as error:
+            if "Sample larger than population" not in str(error):
+                raise
+            requested_couriers -= 1
+    return []
+
+
 def legacy_task_to_parcel(task: Any) -> Parcel:
     """Convert a legacy Chengdu task object into the CAPA parcel model."""
     return Parcel(
@@ -301,6 +321,15 @@ def has_pending_legacy_routes(local_couriers: Sequence[Any], partner_couriers_by
     return False
 
 
+def current_legacy_route_task_ids(local_couriers: Sequence[Any], partner_couriers_by_platform: Mapping[str, Sequence[Any]]) -> set[str]:
+    """Return the parcel identifiers still riding in any active legacy courier route."""
+    route_task_ids: set[str] = set()
+    for courier in [*local_couriers, *flatten_partner_couriers(partner_couriers_by_platform)]:
+        for task in getattr(courier, "re_schedule", []):
+            route_task_ids.add(str(getattr(task, "num")))
+    return route_task_ids
+
+
 def drain_legacy_routes(
     local_couriers: MutableSequence[Any],
     partner_couriers_by_platform: Mapping[str, MutableSequence[Any]],
@@ -357,6 +386,7 @@ def run_time_stepped_chengdu_batches(
     partner_lookup = _build_partner_lookup(active_partner_by_platform)
     batch_reports: List[BatchReport] = []
     matching_plan: List[Assignment] = []
+    accepted_assignment_ids: set[str] = set()
     backlog: List[Any] = []
     batches = group_legacy_tasks_by_batch(tasks, batch_seconds)
     if not batches:
@@ -412,6 +442,7 @@ def run_time_stepped_chengdu_batches(
                 apply_assignment_to_legacy_courier(task, legacy_courier, insertion_index)
                 local_assignments.append(bind_assignment_to_legacy_objects(assignment, task, legacy_courier))
                 assigned_task_ids.add(id(task))
+                accepted_assignment_ids.add(str(getattr(task, "num")))
 
             remaining_tasks = [task for task in arrived_tasks if id(task) not in assigned_task_ids]
             if remaining_tasks:
@@ -441,6 +472,7 @@ def run_time_stepped_chengdu_batches(
                     apply_assignment_to_legacy_courier(task, legacy_courier, insertion_index)
                     cross_assignments.append(bind_assignment_to_legacy_objects(assignment, task, legacy_courier))
                     assigned_task_ids.add(id(task))
+                    accepted_assignment_ids.add(str(getattr(task, "num")))
 
             unresolved = [task for task in unresolved if id(task) not in assigned_task_ids]
             processing_time_seconds += perf_counter() - started
@@ -462,6 +494,7 @@ def run_time_stepped_chengdu_batches(
             cross_assignments=cross_assignments,
             unresolved_parcels=[legacy_task_to_parcel(task) for task in backlog],
             processing_time_seconds=processing_time_seconds,
+            delivered_parcel_count=len(accepted_assignment_ids - current_legacy_route_task_ids(active_local_couriers, active_partner_by_platform)),
         )
         batch_reports.append(report)
         matching_plan.extend(local_assignments)
@@ -532,9 +565,14 @@ def build_framework_chengdu_environment(
         station_set = instantiate_stations_from_blueprints(framework, station_blueprints)
         assign_delivery_tasks_to_stations(station_set, framework.delivery_task_set)
         available_seed_count = sum(len(getattr(station, "station_task_set", [])) for station in station_set)
-        framework.parameter_courier_num = min(required_couriers, available_seed_count)
         station_by_num = {station.num: station for station in station_set}
-        seeded_couriers = framework.GenerateOriginSchedule(station_set, 0.5)
+        seeded_couriers = generate_origin_schedule_with_retry(
+            framework=framework,
+            station_set=station_set,
+            required_couriers=required_couriers,
+            candidate_seed_count=available_seed_count,
+            preference=0.5,
+        )
         for courier in seeded_couriers:
             ensure_legacy_courier_station(courier, station_by_num)
             courier.batch_take = 0

@@ -50,6 +50,7 @@ def process_batch(
         cross_assignments=list(dapa_result.cross_assignments),
         unresolved_parcels=list(dapa_result.unassigned_parcels),
         processing_time_seconds=processing_time,
+        delivered_parcel_count=len(cama_result.local_assignments) + len(dapa_result.cross_assignments),
     )
     return report, list(dapa_result.unassigned_parcels)
 

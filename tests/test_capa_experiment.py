@@ -5,8 +5,8 @@ import unittest
 from pathlib import Path
 
 from capa import CAPAConfig, Parcel
-from capa.experiments import run_chengdu_experiment, save_experiment_plots
-from capa.models import BatchReport, RunMetrics
+from capa.experiments import build_metric_series, run_chengdu_experiment, run_chengdu_parameter_sweep, save_experiment_plots
+from capa.models import Assignment, BatchReport, Courier, RunMetrics
 from env.chengdu import LegacyChengduEnvironment
 
 
@@ -23,8 +23,9 @@ class CAPAExperimentTests(unittest.TestCase):
             cross_assignments=[],
             unresolved_parcels=[],
             processing_time_seconds=0.02,
+            delivered_parcel_count=1,
         )
-        metrics = RunMetrics(total_revenue=8.0, completion_rate=1.0, batch_processing_time=0.02)
+        metrics = RunMetrics(total_revenue=8.0, completion_rate=1.0, batch_processing_time=0.02, delivered_parcel_count=1, accepted_parcel_count=1)
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             output_dir = Path(tmp_dir)
@@ -33,6 +34,49 @@ class CAPAExperimentTests(unittest.TestCase):
             self.assertTrue((output_dir / "tr_over_batches.png").exists())
             self.assertTrue((output_dir / "cr_over_batches.png").exists())
             self.assertTrue((output_dir / "bpt_over_batches.png").exists())
+
+    def test_build_metric_series_uses_delivered_parcels_for_cr(self) -> None:
+        """Batch-level CR should follow delivered parcels rather than accepted assignments."""
+        parcel = Parcel("p1", "n1", 0, 10, 1.0, 8.0)
+        courier = Courier(courier_id="c1", current_location="n0", depot_location="d0", capacity=10.0)
+        assignment = Assignment(
+            parcel=parcel,
+            courier=courier,
+            mode="local",
+            platform_id=None,
+            courier_payment=1.6,
+            platform_payment=1.6,
+            local_platform_revenue=6.4,
+            cooperating_platform_revenue=0.0,
+            courier_revenue=1.6,
+            utility_value=0.5,
+        )
+        batch_reports = [
+            BatchReport(
+                batch_index=1,
+                batch_time=0,
+                input_parcels=[parcel],
+                local_assignments=[assignment],
+                cross_assignments=[],
+                unresolved_parcels=[],
+                processing_time_seconds=0.01,
+                delivered_parcel_count=0,
+            ),
+            BatchReport(
+                batch_index=2,
+                batch_time=60,
+                input_parcels=[],
+                local_assignments=[],
+                cross_assignments=[],
+                unresolved_parcels=[],
+                processing_time_seconds=0.01,
+                delivered_parcel_count=1,
+            ),
+        ]
+
+        _, cr_values, _ = build_metric_series(batch_reports, total_parcels=1)
+
+        self.assertEqual(cr_values, [0.0, 1.0])
 
     def test_run_chengdu_experiment_uses_injected_environment_builder(self) -> None:
         """The official Chengdu experiment path should no longer depend on synthetic entity construction."""
@@ -91,6 +135,49 @@ class CAPAExperimentTests(unittest.TestCase):
             )
 
             self.assertEqual(len(result.matching_plan), 1)
+            self.assertTrue((output_dir / "summary.json").exists())
+
+    def test_run_chengdu_parameter_sweep_writes_aggregate_summary(self) -> None:
+        """The sweep helper should run one experiment per parameter value and persist an aggregate summary."""
+        from capa.models import CAPAResult
+
+        def fake_runner(**kwargs):
+            batch_size = kwargs["batch_size"]
+            metric_value = float(batch_size)
+            output_dir = kwargs["output_dir"]
+            output_dir.mkdir(parents=True, exist_ok=True)
+            return CAPAResult(
+                matching_plan=[],
+                unassigned_parcels=[],
+                batch_reports=[],
+                metrics=RunMetrics(
+                    total_revenue=metric_value,
+                    completion_rate=metric_value / 100.0,
+                    batch_processing_time=metric_value / 10.0,
+                    delivered_parcel_count=int(metric_value),
+                    accepted_parcel_count=int(metric_value),
+                ),
+                delivered_parcels=[],
+            )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            output_dir = Path(tmp_dir)
+            summary = run_chengdu_parameter_sweep(
+                data_dir=Path("Data"),
+                output_dir=output_dir,
+                sweep_parameter="batch_size",
+                sweep_values=[60, 120],
+                fixed_config={
+                    "num_parcels": 5,
+                    "local_courier_count": 2,
+                    "cooperating_platform_count": 1,
+                    "couriers_per_platform": 1,
+                    "batch_size": 60,
+                },
+                experiment_runner=fake_runner,
+            )
+
+            self.assertEqual([run["batch_size"] for run in summary["runs"]], [60, 120])
             self.assertTrue((output_dir / "summary.json").exists())
 
 

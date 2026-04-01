@@ -137,6 +137,7 @@ class BatchReport:
     cross_assignments: Sequence[Assignment]
     unresolved_parcels: Sequence[Parcel]
     processing_time_seconds: float
+    delivered_parcel_count: int = 0
 
 
 @dataclass(frozen=True)

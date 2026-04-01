@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import argparse
 import json
-from dataclasses import asdict
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Callable, Iterable, Sequence
+from typing import Any, Callable, Sequence
 
 from env.chengdu import LegacyChengduEnvironment, build_framework_chengdu_environment, run_time_stepped_chengdu_batches
 from .metrics import compute_completion_rate, compute_total_revenue
@@ -81,12 +80,10 @@ def build_metric_series(batch_reports: Sequence[BatchReport], total_parcels: int
     revenue_per_batch: list[float] = []
     completion_per_batch: list[float] = []
     bpt_per_batch: list[float] = []
-    completed_assignments = 0
     for report in batch_reports:
         assignments = [*report.local_assignments, *report.cross_assignments]
         revenue_per_batch.append(compute_total_revenue(assignments))
-        completed_assignments += len(assignments)
-        completion_per_batch.append(compute_completion_rate([None] * completed_assignments, total_parcels))
+        completion_per_batch.append(compute_completion_rate([None] * report.delivered_parcel_count, total_parcels))
         bpt_per_batch.append(report.processing_time_seconds)
     return revenue_per_batch, completion_per_batch, bpt_per_batch
 
@@ -201,6 +198,89 @@ def run_chengdu_experiment(
         json.dump(summary, handle, indent=2)
 
     return result
+
+
+def save_sweep_plots(summary: dict[str, Any], output_dir: Path) -> None:
+    """Render aggregate TR, CR, and BPT plots for a one-dimensional Chengdu sweep."""
+    import matplotlib.pyplot as plt
+
+    runs = summary["runs"]
+    parameter_name = summary["sweep_parameter"]
+    x_values = [run[parameter_name] for run in runs]
+    tr_values = [run["metrics"]["TR"] for run in runs]
+    cr_values = [run["metrics"]["CR"] for run in runs]
+    bpt_values = [run["metrics"]["BPT"] for run in runs]
+
+    plt.figure()
+    plt.plot(x_values, tr_values, marker="o")
+    plt.xlabel(parameter_name)
+    plt.ylabel("TR")
+    plt.tight_layout()
+    plt.savefig(output_dir / f"tr_vs_{parameter_name}.png", dpi=150)
+    plt.close()
+
+    plt.figure()
+    plt.plot(x_values, cr_values, marker="o")
+    plt.xlabel(parameter_name)
+    plt.ylabel("CR")
+    plt.tight_layout()
+    plt.savefig(output_dir / f"cr_vs_{parameter_name}.png", dpi=150)
+    plt.close()
+
+    plt.figure()
+    plt.plot(x_values, bpt_values, marker="o")
+    plt.xlabel(parameter_name)
+    plt.ylabel("BPT")
+    plt.tight_layout()
+    plt.savefig(output_dir / f"bpt_vs_{parameter_name}.png", dpi=150)
+    plt.close()
+
+
+def run_chengdu_parameter_sweep(
+    data_dir: Path,
+    output_dir: Path,
+    sweep_parameter: str,
+    sweep_values: Sequence[int],
+    fixed_config: dict[str, int],
+    experiment_runner: Callable[..., CAPAResult] | None = None,
+) -> dict[str, Any]:
+    """Run a one-dimensional Chengdu parameter sweep and persist an aggregate summary."""
+    runner = experiment_runner or run_chengdu_experiment
+    runs: list[dict[str, Any]] = []
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    for value in sweep_values:
+        experiment_config = dict(fixed_config)
+        experiment_config[sweep_parameter] = value
+        run_output_dir = output_dir / f"{sweep_parameter}_{value}"
+        result = runner(
+            data_dir=data_dir,
+            output_dir=run_output_dir,
+            **experiment_config,
+        )
+        runs.append(
+            {
+                sweep_parameter: value,
+                "metrics": {
+                    "TR": result.metrics.total_revenue,
+                    "CR": result.metrics.completion_rate,
+                    "BPT": result.metrics.batch_processing_time,
+                    "delivered_parcels": result.metrics.delivered_parcel_count,
+                    "accepted_assignments": result.metrics.accepted_parcel_count,
+                },
+                "output_dir": str(run_output_dir),
+            }
+        )
+
+    summary = {
+        "sweep_parameter": sweep_parameter,
+        "fixed_config": fixed_config,
+        "runs": runs,
+    }
+    with (output_dir / "summary.json").open("w", encoding="utf-8") as handle:
+        json.dump(summary, handle, indent=2)
+    save_sweep_plots(summary, output_dir)
+    return summary
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:

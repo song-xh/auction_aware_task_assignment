@@ -3,6 +3,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 from capa import CAPAConfig, DistanceMatrixTravelModel, Parcel
 from capa.models import CooperatingPlatform
@@ -268,6 +269,33 @@ class ChengduRunnerTests(unittest.TestCase):
         self.assertEqual(local_courier.re_schedule, [])
         self.assertEqual(result.metrics.delivered_parcel_count, 1)
         self.assertAlmostEqual(result.metrics.completion_rate, 1.0)
+
+    def test_generate_origin_schedule_with_retry_skips_oversized_sample_requests(self) -> None:
+        """The environment builder should retry when legacy schedule seeding requests more couriers than can be sampled."""
+        from env.chengdu import generate_origin_schedule_with_retry
+
+        attempts = []
+
+        class FakeFramework:
+            parameter_courier_num = 0
+
+            @staticmethod
+            def GenerateOriginSchedule(station_set, preference):
+                attempts.append(FakeFramework.parameter_courier_num)
+                if FakeFramework.parameter_courier_num > 2:
+                    raise ValueError("Sample larger than population or is negative")
+                return [SimpleNamespace(num=1), SimpleNamespace(num=2)]
+
+        seeded = generate_origin_schedule_with_retry(
+            framework=FakeFramework,
+            station_set=[object()],
+            required_couriers=3,
+            candidate_seed_count=3,
+            preference=0.5,
+        )
+
+        self.assertEqual(len(seeded), 2)
+        self.assertEqual(attempts, [3, 2])
 
 
 if __name__ == "__main__":
