@@ -35,6 +35,7 @@ class ChengduEnvironmentSeed:
     platform_qualities: Mapping[str, float]
     movement_callback: Any | None = None
     service_radius_km: float | None = None
+    courier_capacity: float | None = None
 
 
 def build_environment_seed(environment: ChengduEnvironment) -> ChengduEnvironmentSeed:
@@ -55,6 +56,7 @@ def build_environment_seed(environment: ChengduEnvironment) -> ChengduEnvironmen
         platform_qualities=dict(environment.platform_qualities),
         movement_callback=environment.movement_callback,
         service_radius_km=environment.service_radius_km,
+        courier_capacity=environment.courier_capacity,
     )
 
 
@@ -76,6 +78,7 @@ def clone_environment_from_seed(seed: ChengduEnvironmentSeed) -> ChengduEnvironm
         platform_qualities=dict(seed.platform_qualities),
         movement_callback=seed.movement_callback,
         service_radius_km=seed.service_radius_km,
+        courier_capacity=seed.courier_capacity,
     )
     _rebind_courier_station_references(environment)
     _rebind_station_member_references(environment)

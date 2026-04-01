@@ -32,6 +32,7 @@ class ExperimentConfig:
     batch_size: int = 300
     prediction_window_seconds: int = 180
     service_radius_km: float | None = None
+    courier_capacity: float | None = None
     extra: dict[str, Any] = field(default_factory=dict)
 
     def with_update(self, **kwargs: Any) -> "ExperimentConfig":
@@ -45,6 +46,7 @@ class ExperimentConfig:
             "batch_size": self.batch_size,
             "prediction_window_seconds": self.prediction_window_seconds,
             "service_radius_km": self.service_radius_km,
+            "courier_capacity": self.courier_capacity,
             "extra": dict(self.extra),
         }
         for key, value in kwargs.items():
@@ -65,6 +67,8 @@ class ExperimentConfig:
         }
         if self.service_radius_km is not None:
             kwargs["service_radius_km"] = self.service_radius_km
+        if self.courier_capacity is not None:
+            kwargs["courier_capacity"] = self.courier_capacity
         kwargs.update(self.extra)
         return kwargs
 

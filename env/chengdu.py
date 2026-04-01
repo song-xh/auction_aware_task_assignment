@@ -41,6 +41,7 @@ class ChengduEnvironment:
     platform_qualities: Mapping[str, float]
     movement_callback: Callable[[MutableSequence[Any], MutableSequence[Any], int, Sequence[Any]], None] | None = None
     service_radius_km: float | None = None
+    courier_capacity: float | None = None
 
     @classmethod
     def build(
@@ -51,6 +52,7 @@ class ChengduEnvironment:
         cooperating_platform_count: int,
         couriers_per_platform: int,
         service_radius_km: float | None = None,
+        courier_capacity: float | None = None,
     ) -> "ChengduEnvironment":
         """Build a Chengdu environment from the legacy framework inputs."""
         return build_framework_chengdu_environment(
@@ -60,6 +62,7 @@ class ChengduEnvironment:
             cooperating_platform_count=cooperating_platform_count,
             couriers_per_platform=couriers_per_platform,
             service_radius_km=service_radius_km,
+            courier_capacity=courier_capacity,
         )
 
     def all_partner_couriers(self) -> list[Any]:
@@ -85,6 +88,7 @@ class ChengduEnvironment:
             "platform_sharing_rates": dict(self.platform_sharing_rates),
             "platform_qualities": dict(self.platform_qualities),
             "service_radius_km": self.service_radius_km,
+            "courier_capacity": self.courier_capacity,
         }
 
     def advance(self, seconds: int) -> None:
@@ -628,6 +632,7 @@ def build_framework_chengdu_environment(
     cooperating_platform_count: int,
     couriers_per_platform: int,
     service_radius_km: float | None = None,
+    courier_capacity: float | None = None,
 ) -> LegacyChengduEnvironment:
     """Build the official Chengdu experiment state from the repository's legacy framework."""
     import Framework_ChengDu as framework
@@ -638,8 +643,9 @@ def build_framework_chengdu_environment(
     ordered_pick = sort_legacy_tasks(pick_task_set)
     ordered_delivery = sort_legacy_tasks(delivery_task_set)
     framework.parameter_task_num = num_parcels
-    framework.parameter_capacity = 75
-    framework.parameter_capacity_c = 75
+    normalized_capacity = 75 if courier_capacity is None else float(courier_capacity)
+    framework.parameter_capacity = normalized_capacity
+    framework.parameter_capacity_c = normalized_capacity
     station_blueprints = load_station_blueprints(str(Path(data_dir)), 11)
 
     station_set = []
@@ -699,4 +705,5 @@ def build_framework_chengdu_environment(
         platform_qualities={f"P{index + 1}": max(0.5, 1.0 - 0.1 * index) for index in range(cooperating_platform_count)},
         movement_callback=framework_movement_callback,
         service_radius_km=service_radius_km,
+        courier_capacity=normalized_capacity,
     )

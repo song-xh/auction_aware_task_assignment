@@ -10,6 +10,7 @@ from algorithms.registry import build_algorithm_runner
 from env.chengdu import ChengduEnvironment
 
 from .config import ExperimentConfig, apply_sweep_axis
+from .plotting import save_single_algorithm_plots
 
 
 def run_parameter_sweep(
@@ -50,6 +51,7 @@ def run_parameter_sweep(
         batch_size=fixed_config.get("batch_size", 300),
         prediction_window_seconds=fixed_config.get("prediction_window_seconds", 180),
         service_radius_km=fixed_config.get("service_radius_km"),
+        courier_capacity=fixed_config.get("courier_capacity"),
         extra=dict(fixed_config.get("extra", {})),
     )
 
@@ -74,6 +76,7 @@ def run_parameter_sweep(
     }
     with (output_dir / "summary.json").open("w", encoding="utf-8") as handle:
         json.dump(summary, handle, indent=2)
+    save_single_algorithm_plots(summary=summary, output_dir=output_dir)
     return summary
 
 

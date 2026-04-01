@@ -10,6 +10,7 @@ from algorithms.registry import build_algorithm_runner
 from env.chengdu import ChengduEnvironment
 
 from .config import ExperimentConfig, apply_sweep_axis
+from .plotting import save_comparison_plots
 from .seeding import build_environment_seed, clone_environment_from_seed
 
 
@@ -51,6 +52,7 @@ def run_comparison_sweep(
         batch_size=fixed_config.get("batch_size", 300),
         prediction_window_seconds=fixed_config.get("prediction_window_seconds", 180),
         service_radius_km=fixed_config.get("service_radius_km"),
+        courier_capacity=fixed_config.get("courier_capacity"),
         extra=dict(fixed_config.get("extra", {})),
     )
 
@@ -77,6 +79,7 @@ def run_comparison_sweep(
     }
     with (output_dir / "summary.json").open("w", encoding="utf-8") as handle:
         json.dump(summary, handle, indent=2)
+    save_comparison_plots(summary=summary, output_dir=output_dir)
     return summary
 
 

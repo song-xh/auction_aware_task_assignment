@@ -55,6 +55,7 @@ def _add_common_environment_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--local-couriers", type=int, default=10, help="Number of local couriers.")
     parser.add_argument("--platforms", type=int, default=2, help="Number of cooperating platforms.")
     parser.add_argument("--couriers-per-platform", type=int, default=5, help="Number of couriers per cooperating platform.")
+    parser.add_argument("--courier-capacity", type=float, default=None, help="Optional courier capacity override for all seeded couriers.")
     parser.add_argument("--service-radius-km", type=float, default=None, help="Optional courier service radius in kilometers.")
     parser.add_argument("--batch-size", type=int, default=300, help="Batch size in seconds for algorithms that use batching.")
     parser.add_argument(
@@ -98,6 +99,7 @@ def _run_single_experiment(args: argparse.Namespace) -> int:
         cooperating_platform_count=args.platforms,
         couriers_per_platform=args.couriers_per_platform,
         service_radius_km=args.service_radius_km,
+        courier_capacity=args.courier_capacity,
     )
     runner = build_algorithm_runner(args.algorithm, **build_algorithm_kwargs(args))
     try:
@@ -169,6 +171,7 @@ def _build_fixed_config(args: argparse.Namespace) -> dict[str, Any]:
         "local_couriers": args.local_couriers,
         "platforms": args.platforms,
         "couriers_per_platform": args.couriers_per_platform,
+        "courier_capacity": args.courier_capacity,
         "service_radius_km": args.service_radius_km,
         "batch_size": args.batch_size,
         "prediction_window_seconds": args.prediction_window_seconds,
