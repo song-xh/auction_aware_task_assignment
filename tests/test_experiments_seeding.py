@@ -107,6 +107,71 @@ class ExperimentsSeedingTests(unittest.TestCase):
         self.assertNotEqual(algorithm_environment_ids[0][1], algorithm_environment_ids[1][1])
         self.assertNotEqual(algorithm_environment_ids[2][1], algorithm_environment_ids[3][1])
 
+    def test_parameter_sweep_maps_axis_into_environment_and_runner_config(self) -> None:
+        """Single-algorithm sweeps should vary the requested axis while preserving shared fixed fields."""
+        from experiments.sweep import run_parameter_sweep
+
+        build_calls: list[tuple[int, int]] = []
+        runner_calls: list[int] = []
+
+        def build_environment(**kwargs) -> ChengduEnvironment:
+            build_calls.append((kwargs["num_parcels"], kwargs["local_courier_count"]))
+            return ChengduEnvironment(
+                tasks=[],
+                local_couriers=[],
+                partner_couriers_by_platform={},
+                station_set=[],
+                travel_model=None,
+                platform_base_prices={},
+                platform_sharing_rates={},
+                platform_qualities={},
+            )
+
+        class FakeRunner:
+            """Capture the batch size used to create the runner."""
+
+            def __init__(self, batch_size: int = 0) -> None:
+                """Store the normalized batch size for later assertions."""
+                self._batch_size = batch_size
+
+            def run(self, environment: ChengduEnvironment, output_dir: Path | None = None) -> dict[str, object]:
+                """Return a normalized sweep summary."""
+                runner_calls.append(self._batch_size)
+                return {
+                    "algorithm": "capa",
+                    "metrics": {
+                        "TR": 1.0,
+                        "CR": 0.5,
+                        "BPT": 0.1,
+                    },
+                }
+
+        def build_runner(name: str, **kwargs) -> FakeRunner:
+            """Build a fake runner so the test can inspect mapped kwargs."""
+            return FakeRunner(batch_size=kwargs.get("batch_size", 0))
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            summary = run_parameter_sweep(
+                algorithm="capa",
+                output_dir=Path(tmpdir),
+                sweep_parameter="num_parcels",
+                sweep_values=[10, 20],
+                fixed_config={
+                    "data_dir": Path("Data"),
+                    "num_parcels": 5,
+                    "local_couriers": 2,
+                    "platforms": 1,
+                    "couriers_per_platform": 1,
+                    "batch_size": 300,
+                },
+                environment_builder=build_environment,
+                runner_builder=build_runner,
+            )
+
+        self.assertEqual(summary["algorithm"], "capa")
+        self.assertEqual(build_calls, [(10, 2), (20, 2)])
+        self.assertEqual(runner_calls, [300, 300])
+
 
 if __name__ == "__main__":
     unittest.main()

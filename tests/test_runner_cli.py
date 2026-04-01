@@ -147,6 +147,89 @@ class RunnerDispatchTests(unittest.TestCase):
         self.assertIs(fake_runner.environment, fake_environment)
         self.assertEqual(Path(fake_runner.output_dir), Path(tmpdir))
 
+    def test_root_runner_compare_subcommand_delegates_to_experiment_orchestrator(self) -> None:
+        """The root runner compare mode should delegate to the shared-environment comparison orchestrator."""
+        from runner import main
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with patch("runner.run_comparison_sweep", return_value={"runs": []}) as run_compare:
+                exit_code = main(
+                    [
+                        "compare",
+                        "--algorithms",
+                        "capa",
+                        "greedy",
+                        "--axis",
+                        "num_parcels",
+                        "--values",
+                        "10",
+                        "20",
+                        "--data-dir",
+                        "Data",
+                        "--local-couriers",
+                        "2",
+                        "--platforms",
+                        "1",
+                        "--couriers-per-platform",
+                        "1",
+                        "--batch-size",
+                        "300",
+                        "--output-dir",
+                        tmpdir,
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        run_compare.assert_called_once()
+
+    def test_root_runner_accepts_legacy_single_run_flags_without_subcommand(self) -> None:
+        """The root runner should keep legacy single-run flags working by treating them as `run`."""
+        from runner import main
+
+        fake_environment = ChengduEnvironment(
+            tasks=[],
+            local_couriers=[],
+            partner_couriers_by_platform={},
+            station_set=[],
+            travel_model=None,
+            platform_base_prices={},
+            platform_sharing_rates={},
+            platform_qualities={},
+        )
+
+        class FakeAlgorithmRunner:
+            """Record the environment passed in and return a normalized summary."""
+
+            def run(self, environment, output_dir=None):
+                self.environment = environment
+                self.output_dir = output_dir
+                return {
+                    "algorithm": "capa",
+                    "metrics": {
+                        "TR": 1.0,
+                        "CR": 0.5,
+                        "BPT": 0.1,
+                    },
+                }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            fake_runner = FakeAlgorithmRunner()
+            with patch("runner.ChengduEnvironment.build", return_value=fake_environment):
+                with patch("runner.build_algorithm_runner", return_value=fake_runner):
+                    exit_code = main(
+                        [
+                            "--algorithm",
+                            "capa",
+                            "--data-dir",
+                            "Data",
+                            "--output-dir",
+                            tmpdir,
+                        ]
+                    )
+
+        self.assertEqual(exit_code, 0)
+        self.assertIs(fake_runner.environment, fake_environment)
+
     def test_rl_capa_cli_fails_explicitly_without_fallback(self) -> None:
         """Selecting rl-capa should fail explicitly instead of silently falling back to CAPA."""
         from runner import main
