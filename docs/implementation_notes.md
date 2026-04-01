@@ -23,7 +23,7 @@ The Chengdu environment integration now lives in:
 - `env/chengdu.py`
 - `env/__init__.py`
 
-The older duplicate runner path in `MyMethod/Auction_Framework_Chengdu.py` has been reduced to a compatibility wrapper that forwards to `capa.experiments`.
+The older duplicate runner path in `MyMethod/Auction_Framework_Chengdu.py` and the stale `refactor/` copies have been removed from the executable code path.
 
 ## 2. Eq.1 interpretation
 
@@ -112,21 +112,33 @@ This is intentional:
 
 The old Chengdu graph stack can later be adapted into the `capa.travel` interface if needed.
 
-## 7. Scope intentionally excluded from Phase 4
+## 7. [17] baseline adaptation notes
 
-The following are not implemented in this phase:
+The repository now includes baseline runners for:
+
+- Greedy via the original legacy `Framework_ChengDu.Greedy`
+- BaseGTA via `baselines.gta.run_basegta_baseline_environment`
+- ImpGTA via `baselines.gta.run_impgta_baseline_environment`
+
+Two adaptation boundaries remain explicit:
+
+- The Chengdu environment only contains the local platform's incoming parcel stream. It does not expose separate real task streams for each cooperating platform. Therefore ImpGTA evaluates outer-platform future demand against an empty predicted set rather than a real per-platform forecast.
+- The [17] paper varies `Δτ` over `1, 3, 5, 10, 15` minutes, but the markdown extraction does not preserve a single explicit default. This repository uses `180` seconds as the default ImpGTA window and exposes it as a parameter.
+
+## 8. Scope intentionally excluded from the current codebase
+
+The following are still not implemented:
 
 - RL-CAPA
 - DDQN
 - replay buffer
 - target network
 - RL training or evaluation loops
-- [17] baselines
 - RamCOM / MRA experiments
 
 These remain for later phases.
 
-## 8. Chengdu experiment adapter assumptions
+## 9. Chengdu experiment adapter assumptions
 
 The official Chengdu experiment path in `capa.experiments` now runs through the reusable `env.chengdu` package, which in turn binds to the repository's legacy simulation environment instead of synthesizing couriers from parcel nodes.
 

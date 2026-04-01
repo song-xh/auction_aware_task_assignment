@@ -8,6 +8,12 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Callable, Sequence
 
+from baselines.greedy import run_greedy_baseline_environment
+from baselines.gta import (
+    DEFAULT_IMPGTA_WINDOW_SECONDS,
+    run_basegta_baseline_environment,
+    run_impgta_baseline_environment,
+)
 from env.chengdu import LegacyChengduEnvironment, build_framework_chengdu_environment, run_time_stepped_chengdu_batches
 from .metrics import compute_completion_rate, compute_total_revenue
 from .models import BatchReport, CAPAConfig, CAPAResult, Parcel, RunMetrics
@@ -236,6 +242,51 @@ def save_sweep_plots(summary: dict[str, Any], output_dir: Path) -> None:
     plt.close()
 
 
+def save_comparison_sweep_plots(summary: dict[str, Any], output_dir: Path) -> None:
+    """Render aggregate comparison plots for CAPA versus Greedy over one sweep dimension."""
+    import matplotlib.pyplot as plt
+
+    runs = summary["runs"]
+    parameter_name = summary["sweep_parameter"]
+    x_values = [run[parameter_name] for run in runs]
+    capa_tr = [run["capa"]["metrics"]["TR"] for run in runs]
+    greedy_tr = [run["greedy"]["metrics"]["TR"] for run in runs]
+    capa_cr = [run["capa"]["metrics"]["CR"] for run in runs]
+    greedy_cr = [run["greedy"]["metrics"]["CR"] for run in runs]
+    capa_bpt = [run["capa"]["metrics"]["BPT"] for run in runs]
+    greedy_bpt = [run["greedy"]["metrics"]["BPT"] for run in runs]
+
+    plt.figure()
+    plt.plot(x_values, capa_tr, marker="o", label="CAPA")
+    plt.plot(x_values, greedy_tr, marker="o", label="Greedy")
+    plt.xlabel(parameter_name)
+    plt.ylabel("TR")
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(output_dir / f"tr_compare_vs_{parameter_name}.png", dpi=150)
+    plt.close()
+
+    plt.figure()
+    plt.plot(x_values, capa_cr, marker="o", label="CAPA")
+    plt.plot(x_values, greedy_cr, marker="o", label="Greedy")
+    plt.xlabel(parameter_name)
+    plt.ylabel("CR")
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(output_dir / f"cr_compare_vs_{parameter_name}.png", dpi=150)
+    plt.close()
+
+    plt.figure()
+    plt.plot(x_values, capa_bpt, marker="o", label="CAPA")
+    plt.plot(x_values, greedy_bpt, marker="o", label="Greedy")
+    plt.xlabel(parameter_name)
+    plt.ylabel("BPT")
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(output_dir / f"bpt_compare_vs_{parameter_name}.png", dpi=150)
+    plt.close()
+
+
 def run_chengdu_parameter_sweep(
     data_dir: Path,
     output_dir: Path,
@@ -280,6 +331,187 @@ def run_chengdu_parameter_sweep(
     with (output_dir / "summary.json").open("w", encoding="utf-8") as handle:
         json.dump(summary, handle, indent=2)
     save_sweep_plots(summary, output_dir)
+    return summary
+
+
+def run_chengdu_greedy_baseline(
+    data_dir: Path,
+    num_parcels: int,
+    local_courier_count: int,
+    batch_size: int,
+    output_dir: Path,
+    env_builder: Callable[..., LegacyChengduEnvironment | dict[str, Any]] | None = None,
+    baseline_runner: Callable[..., dict[str, float]] | None = None,
+) -> dict[str, Any]:
+    """Run the official Chengdu Greedy baseline on the unified environment and persist a normalized summary."""
+    builder = env_builder or build_framework_chengdu_environment
+    built_environment = builder(
+        data_dir=data_dir,
+        num_parcels=num_parcels,
+        local_courier_count=local_courier_count,
+        cooperating_platform_count=0,
+        couriers_per_platform=0,
+    )
+    environment = built_environment if isinstance(built_environment, LegacyChengduEnvironment) else LegacyChengduEnvironment(**built_environment)
+    runner = baseline_runner or run_greedy_baseline_environment
+    metrics = runner(
+        environment=environment,
+        batch_size=batch_size,
+    )
+    summary = {
+        "algorithm": "greedy",
+        "num_parcels": num_parcels,
+        "local_courier_count": local_courier_count,
+        "batch_size": batch_size,
+        "metrics": metrics,
+    }
+    output_dir.mkdir(parents=True, exist_ok=True)
+    with (output_dir / "summary.json").open("w", encoding="utf-8") as handle:
+        json.dump(summary, handle, indent=2)
+    return summary
+
+
+def run_chengdu_basegta_baseline(
+    data_dir: Path,
+    num_parcels: int,
+    local_courier_count: int,
+    cooperating_platform_count: int,
+    couriers_per_platform: int,
+    output_dir: Path,
+    env_builder: Callable[..., LegacyChengduEnvironment | dict[str, Any]] | None = None,
+    baseline_runner: Callable[..., dict[str, float]] | None = None,
+) -> dict[str, Any]:
+    """Run the BaseGTA baseline from [17] on the unified Chengdu environment."""
+    builder = env_builder or build_framework_chengdu_environment
+    built_environment = builder(
+        data_dir=data_dir,
+        num_parcels=num_parcels,
+        local_courier_count=local_courier_count,
+        cooperating_platform_count=cooperating_platform_count,
+        couriers_per_platform=couriers_per_platform,
+    )
+    environment = built_environment if isinstance(built_environment, LegacyChengduEnvironment) else LegacyChengduEnvironment(**built_environment)
+    runner = baseline_runner or run_basegta_baseline_environment
+    metrics = runner(environment=environment)
+    summary = {
+        "algorithm": "basegta",
+        "num_parcels": num_parcels,
+        "local_courier_count": local_courier_count,
+        "cooperating_platform_count": cooperating_platform_count,
+        "couriers_per_platform": couriers_per_platform,
+        "metrics": metrics,
+    }
+    output_dir.mkdir(parents=True, exist_ok=True)
+    with (output_dir / "summary.json").open("w", encoding="utf-8") as handle:
+        json.dump(summary, handle, indent=2)
+    return summary
+
+
+def run_chengdu_impgta_baseline(
+    data_dir: Path,
+    num_parcels: int,
+    local_courier_count: int,
+    cooperating_platform_count: int,
+    couriers_per_platform: int,
+    output_dir: Path,
+    prediction_window_seconds: int = DEFAULT_IMPGTA_WINDOW_SECONDS,
+    env_builder: Callable[..., LegacyChengduEnvironment | dict[str, Any]] | None = None,
+    baseline_runner: Callable[..., dict[str, float]] | None = None,
+) -> dict[str, Any]:
+    """Run the ImpGTA baseline from [17] on the unified Chengdu environment."""
+    builder = env_builder or build_framework_chengdu_environment
+    built_environment = builder(
+        data_dir=data_dir,
+        num_parcels=num_parcels,
+        local_courier_count=local_courier_count,
+        cooperating_platform_count=cooperating_platform_count,
+        couriers_per_platform=couriers_per_platform,
+    )
+    environment = built_environment if isinstance(built_environment, LegacyChengduEnvironment) else LegacyChengduEnvironment(**built_environment)
+    if baseline_runner is None:
+        metrics = run_impgta_baseline_environment(
+            environment=environment,
+            prediction_window_seconds=prediction_window_seconds,
+        )
+    else:
+        metrics = baseline_runner(environment=environment)
+    summary = {
+        "algorithm": "impgta",
+        "num_parcels": num_parcels,
+        "local_courier_count": local_courier_count,
+        "cooperating_platform_count": cooperating_platform_count,
+        "couriers_per_platform": couriers_per_platform,
+        "prediction_window_seconds": prediction_window_seconds,
+        "metrics": metrics,
+    }
+    output_dir.mkdir(parents=True, exist_ok=True)
+    with (output_dir / "summary.json").open("w", encoding="utf-8") as handle:
+        json.dump(summary, handle, indent=2)
+    return summary
+
+
+def run_chengdu_comparison_sweep(
+    data_dir: Path,
+    output_dir: Path,
+    sweep_parameter: str,
+    sweep_values: Sequence[int],
+    fixed_config: dict[str, int],
+    capa_runner: Callable[..., Any] | None = None,
+    baseline_runner: Callable[..., Any] | None = None,
+) -> dict[str, Any]:
+    """Run CAPA and Greedy on the same parameter grid and persist a comparison summary."""
+    capa_entry = capa_runner or (lambda **kwargs: run_chengdu_experiment(**kwargs))
+    greedy_entry = baseline_runner or (lambda **kwargs: run_chengdu_greedy_baseline(**kwargs))
+    runs: list[dict[str, Any]] = []
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    for value in sweep_values:
+        experiment_config = dict(fixed_config)
+        experiment_config[sweep_parameter] = value
+        capa_output_dir = output_dir / f"{sweep_parameter}_{value}" / "capa"
+        greedy_output_dir = output_dir / f"{sweep_parameter}_{value}" / "greedy"
+        capa_result = capa_entry(
+            data_dir=data_dir,
+            output_dir=capa_output_dir,
+            **experiment_config,
+        )
+        if isinstance(capa_result, CAPAResult):
+            capa_summary = {
+                "algorithm": "capa",
+                "metrics": {
+                    "TR": capa_result.metrics.total_revenue,
+                    "CR": capa_result.metrics.completion_rate,
+                    "BPT": capa_result.metrics.batch_processing_time,
+                    "delivered_parcels": capa_result.metrics.delivered_parcel_count,
+                    "accepted_assignments": capa_result.metrics.accepted_parcel_count,
+                },
+            }
+        else:
+            capa_summary = capa_result
+
+        greedy_result = greedy_entry(
+            data_dir=data_dir,
+            output_dir=greedy_output_dir,
+            num_parcels=experiment_config["num_parcels"],
+            local_courier_count=experiment_config["local_courier_count"],
+            batch_size=experiment_config["batch_size"],
+        )
+        runs.append(
+            {
+                sweep_parameter: value,
+                "capa": capa_summary,
+                "greedy": greedy_result,
+            }
+        )
+
+    summary = {
+        "sweep_parameter": sweep_parameter,
+        "fixed_config": fixed_config,
+        "runs": runs,
+    }
+    with (output_dir / "summary.json").open("w", encoding="utf-8") as handle:
+        json.dump(summary, handle, indent=2)
+    save_comparison_sweep_plots(summary, output_dir)
     return summary
 
 

@@ -11,5 +11,7 @@ venv/
 *.pth
 outputs/checkpoints/
 outputs/logs/*.csv
+output/
+outputs/
 wandb/
 .ipynb_checkpoints/

@@ -2,10 +2,16 @@
 
 from .cama import run_cama
 from .dapa import run_dapa
-from .experiments import run_chengdu_experiment
 from .models import CAPAConfig, CAPAResult, CooperatingPlatform, Courier, Parcel
 from .runner import run_capa
 from .travel import DistanceMatrixTravelModel
+
+
+def run_chengdu_experiment(*args, **kwargs):
+    """Import the Chengdu experiment entrypoint lazily to avoid env/capa circular imports."""
+    from .experiments import run_chengdu_experiment as _run_chengdu_experiment
+
+    return _run_chengdu_experiment(*args, **kwargs)
 
 __all__ = [
     "CAPAConfig",
