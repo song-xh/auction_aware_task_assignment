@@ -143,6 +143,29 @@ The unified root `runner.py` now registers `rl-capa` explicitly but does not emu
 - selecting `--algorithm rl-capa` raises a clear not-implemented error
 - there is no fallback to `capa`
 
+## 8.1 Unified experiment-suite presets
+
+The root `runner.py` now supports:
+
+- `run`
+- `sweep`
+- `compare`
+- `suite`
+
+For `suite`, the repository currently defines the `paper-main` suite with two presets:
+
+- `smoke`
+- `chengdu-formal`
+
+`chengdu-formal` is the current official preset for the Chengdu-backed environment. It is not presented as a direct reproduction of Table 2's NYTaxi or Synthetic parameter scales. Instead, it is the current Chengdu-adapted preset that remains operational under the repository's legacy environment builder while still exercising the same paper-facing axes:
+
+- parcel count
+- courier count
+- cooperating platform count
+- batch size
+
+This distinction is intentional and explicit: the paper's original datasets and scales are not identical to the current Chengdu environment path.
+
 ## 9. Chengdu experiment adapter assumptions
 
 The official Chengdu experiment path in `capa.experiments` now runs through the reusable `env.chengdu` package, which in turn binds to the repository's legacy simulation environment instead of synthesizing couriers from parcel nodes.
@@ -181,3 +204,40 @@ This preserves:
 - route-buffer insertion semantics
 
 But it does not prove that the cooperating platforms correspond to distinct real operators in the source data. That limitation remains documented here rather than hidden behind a synthetic environment.
+
+## 10. Service-radius analysis
+
+The paper varies courier service radius `rad` in Table 2 and Exp-3. However, the current Chengdu environment does not expose a paper-faithful `service_radius` control.
+
+The concrete code evidence is:
+
+- `env/chengdu.py` builds environments from:
+  - parcel count
+  - local courier count
+  - cooperating platform count
+  - couriers per platform
+- `Framework_ChengDu.GenerateStation` partitions the map into rectangular station cells
+- `Framework_ChengDu.GenerateOriginSchedule` seeds couriers from delivery schedules
+- `Framework_ChengDu.TaskSchedule` and `WalkAlongRoute` use route time, capacity, and station return constraints
+- CAPA and baseline feasibility checks depend on:
+  - shortest-path travel time
+  - parcel deadlines
+  - courier capacity
+
+What is missing is an explicit radius gate such as:
+
+- maximum courier-to-task reach distance
+- maximum service-area circle around a courier or station
+- candidate pruning by a configurable `rad`
+
+Therefore, `service_radius` cannot currently be added as a paper-faithful sweep axis by simply forwarding one more parameter into `runner.py`.
+
+Doing it correctly would require one coherent definition applied across:
+
+- CAPA local-feasibility filtering
+- cross-platform bidding feasibility
+- Greedy feasibility
+- GTA feasibility
+- potentially the Chengdu environment's candidate task exposure semantics
+
+Until that definition is implemented consistently, the unified experiment layer raises an explicit `NotImplementedError` for `service_radius` rather than approximating it with a heuristic surrogate.

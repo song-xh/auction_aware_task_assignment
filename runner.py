@@ -42,6 +42,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     suite_parser = subparsers.add_parser("suite", help="Run a predefined paper-style suite of sweeps.")
     _add_common_environment_arguments(suite_parser)
     suite_parser.add_argument("--suite", required=True, help="Predefined suite name, for example `paper-main`.")
+    suite_parser.add_argument("--preset", default="chengdu-formal", help="Preset grid for the selected suite.")
     suite_parser.add_argument("--algorithms", choices=get_algorithm_names(), nargs="+", required=True, help="Algorithms to compare in the suite.")
 
     return parser.parse_args(normalized_argv)
@@ -146,11 +147,13 @@ def _run_suite(args: argparse.Namespace) -> int:
     """Run one predefined experiment suite and print the summary location."""
     summary = run_experiment_suite(
         suite_name=args.suite,
+        preset_name=args.preset,
         algorithms=args.algorithms,
         output_dir=Path(args.output_dir),
         fixed_config=_build_fixed_config(args),
     )
     print(f"suite={summary.get('suite', args.suite)}")
+    print(f"preset={summary.get('preset', args.preset)}")
     print(f"algorithms={','.join(summary.get('algorithms', args.algorithms))}")
     print(f"output_dir={Path(args.output_dir).resolve()}")
     return 0

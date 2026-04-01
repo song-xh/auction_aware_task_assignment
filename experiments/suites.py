@@ -8,9 +8,27 @@ from typing import Any, Callable, Sequence
 
 from .compare import run_comparison_sweep
 
+SUITE_PRESETS: dict[str, dict[str, dict[str, list[int]]]] = {
+    "paper-main": {
+        "smoke": {
+            "num_parcels": [20, 50],
+            "local_couriers": [2, 4],
+            "platforms": [1, 2],
+            "batch_size": [60, 300],
+        },
+        "chengdu-formal": {
+            "num_parcels": [100, 200, 500],
+            "local_couriers": [10, 20, 30],
+            "platforms": [1, 2, 4],
+            "batch_size": [60, 300, 600],
+        },
+    }
+}
+
 
 def run_experiment_suite(
     suite_name: str,
+    preset_name: str,
     algorithms: Sequence[str],
     output_dir: Path,
     fixed_config: dict[str, Any],
@@ -20,6 +38,7 @@ def run_experiment_suite(
 
     Args:
         suite_name: Name of the predefined suite.
+        preset_name: Named preset defining the axis grid for this suite.
         algorithms: Algorithms compared at each suite point.
         output_dir: Directory that receives per-axis outputs and the suite manifest.
         fixed_config: Base configuration shared across all axes.
@@ -31,7 +50,7 @@ def run_experiment_suite(
 
     runner = comparison_runner or run_comparison_sweep
     output_dir.mkdir(parents=True, exist_ok=True)
-    axes = _get_suite_axes(suite_name)
+    axes = _get_suite_axes(suite_name, preset_name)
     results: dict[str, Any] = {}
     for axis_name, values in axes.items():
         axis_output_dir = output_dir / axis_name
@@ -44,6 +63,7 @@ def run_experiment_suite(
         )
     summary = {
         "suite": suite_name,
+        "preset": preset_name,
         "algorithms": list(algorithms),
         "results": results,
     }
@@ -52,13 +72,11 @@ def run_experiment_suite(
     return summary
 
 
-def _get_suite_axes(suite_name: str) -> dict[str, list[int]]:
-    """Return the predefined sweep axes for one supported suite name."""
-    if suite_name == "paper-main":
-        return {
-            "num_parcels": [20, 50, 100],
-            "local_couriers": [5, 10, 15],
-            "platforms": [1, 2, 3],
-            "batch_size": [60, 300, 600],
-        }
-    raise ValueError(f"Unsupported experiment suite `{suite_name}`.")
+def _get_suite_axes(suite_name: str, preset_name: str) -> dict[str, list[int]]:
+    """Return the predefined sweep axes for one supported suite and preset combination."""
+    if suite_name not in SUITE_PRESETS:
+        raise ValueError(f"Unsupported experiment suite `{suite_name}`.")
+    suite_presets = SUITE_PRESETS[suite_name]
+    if preset_name not in suite_presets:
+        raise ValueError(f"Unsupported preset `{preset_name}` for suite `{suite_name}`.")
+    return suite_presets[preset_name]

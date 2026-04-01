@@ -100,6 +100,7 @@ python3 runner.py compare \
 ```bash
 python3 runner.py suite \
   --suite paper-main \
+  --preset chengdu-formal \
   --algorithms capa greedy basegta impgta \
   --data-dir Data \
   --num-parcels 20 \
@@ -110,12 +111,19 @@ python3 runner.py suite \
   --output-dir outputs/plots/chengdu_suite_paper_main
 ```
 
-当前 `paper-main` 会批量跑这些轴：
+当前 `paper-main` 支持两个 preset：
+
+- `smoke`
+- `chengdu-formal`
+
+`chengdu-formal` 是当前 Chengdu 环境下的正式 preset，会批量跑这些轴：
 
 - `num_parcels`
 - `local_couriers`
 - `platforms`
 - `batch_size`
+
+`smoke` 只用于快速联调，轴值更小。
 
 ## 输出文件
 

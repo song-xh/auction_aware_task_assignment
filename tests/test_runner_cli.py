@@ -187,12 +187,14 @@ class RunnerDispatchTests(unittest.TestCase):
         from runner import main
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            with patch("runner.run_experiment_suite", return_value={"suite": "paper-main"}) as run_suite:
+            with patch("runner.run_experiment_suite", return_value={"suite": "paper-main", "preset": "chengdu-formal"}) as run_suite:
                 exit_code = main(
                     [
                         "suite",
                         "--suite",
                         "paper-main",
+                        "--preset",
+                        "chengdu-formal",
                         "--algorithms",
                         "capa",
                         "greedy",
