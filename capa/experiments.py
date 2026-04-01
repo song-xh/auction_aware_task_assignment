@@ -90,7 +90,7 @@ def build_metric_series(batch_reports: Sequence[BatchReport], total_parcels: int
         assignments = [*report.local_assignments, *report.cross_assignments]
         revenue_per_batch.append(compute_total_revenue(assignments))
         completion_per_batch.append(compute_completion_rate([None] * report.delivered_parcel_count, total_parcels))
-        bpt_per_batch.append(report.processing_time_seconds)
+        bpt_per_batch.append(report.timing.decision_time_seconds)
     return revenue_per_batch, completion_per_batch, bpt_per_batch
 
 

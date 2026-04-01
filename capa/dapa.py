@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from time import perf_counter
 from typing import List, Sequence
 
 from .cama import is_courier_available
@@ -15,6 +16,7 @@ from .models import (
     Parcel,
     PlatformBid,
 )
+from .timing import TimingAccumulator
 from .travel import DistanceMatrixTravelModel
 from .utility import find_best_auction_detour_ratio, find_best_local_insertion
 
@@ -43,9 +45,10 @@ def compute_fpsa_bid(
     platform: CooperatingPlatform,
     travel_model: DistanceMatrixTravelModel,
     config: CAPAConfig,
+    timing: TimingAccumulator | None = None,
 ) -> float:
     """Compute the Eq.1 FPSA bid for a courier within a cooperating platform."""
-    detour_ratio = find_best_auction_detour_ratio(parcel, courier, travel_model)
+    detour_ratio = find_best_auction_detour_ratio(parcel, courier, travel_model, timing=timing)
     p_tau_prime = config.local_sharing_rate_mu1 * parcel.fare
     return platform.base_price + (
         (courier.alpha * detour_ratio) + (courier.beta * courier.service_score)
@@ -92,9 +95,14 @@ def build_cross_assignment(
     )
 
 
-def apply_cross_assignment(parcel: Parcel, courier: Courier, travel_model: DistanceMatrixTravelModel) -> None:
+def apply_cross_assignment(
+    parcel: Parcel,
+    courier: Courier,
+    travel_model: DistanceMatrixTravelModel,
+    timing: TimingAccumulator | None = None,
+) -> None:
     """Update a courier route and carried load after a cross assignment is accepted."""
-    _, insertion_index = find_best_local_insertion(parcel, courier, travel_model)
+    _, insertion_index = find_best_local_insertion(parcel, courier, travel_model, timing=timing)
     courier.route_locations.insert(insertion_index, parcel.location)
     courier.current_load += parcel.weight
 
@@ -106,8 +114,13 @@ def run_dapa(
     config: CAPAConfig,
     now: int,
     service_radius_meters: float | None = None,
+    timing: TimingAccumulator | None = None,
 ) -> DAPAResult:
     """Run Algorithm 3 with explicit FPSA, RVA, and upper-limit filtering."""
+    started = perf_counter()
+    routing_before = 0.0 if timing is None else timing.routing_time_seconds
+    insertion_before = 0.0 if timing is None else timing.insertion_time_seconds
+    movement_before = 0.0 if timing is None else timing.movement_time_seconds
     cross_assignments: List[Assignment] = []
     unassigned_parcels: List[Parcel] = []
     observed_platform_bids: List[PlatformBid] = []
@@ -125,7 +138,7 @@ def run_dapa(
                     service_radius_meters=service_radius_meters,
                 ):
                     continue
-                courier_bid = compute_fpsa_bid(parcel, courier, platform, travel_model, config)
+                courier_bid = compute_fpsa_bid(parcel, courier, platform, travel_model, config, timing=timing)
                 feasible_bids.append((courier, courier_bid))
             if not feasible_bids:
                 continue
@@ -180,7 +193,7 @@ def run_dapa(
                 unassigned_parcels.append(parcel)
                 continue
 
-        apply_cross_assignment(parcel, winner.courier, travel_model)
+        apply_cross_assignment(parcel, winner.courier, travel_model, timing=timing)
         cross_assignments.append(
             build_cross_assignment(
                 parcel=parcel,
@@ -191,8 +204,18 @@ def run_dapa(
             )
         )
 
-    return DAPAResult(
+    result = DAPAResult(
         cross_assignments=cross_assignments,
         unassigned_parcels=unassigned_parcels,
         platform_bids=observed_platform_bids,
     )
+    if timing is not None:
+        elapsed = perf_counter() - started
+        timing.decision_time_seconds += max(
+            0.0,
+            elapsed
+            - (timing.routing_time_seconds - routing_before)
+            - (timing.insertion_time_seconds - insertion_before)
+            - (timing.movement_time_seconds - movement_before),
+        )
+    return result

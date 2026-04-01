@@ -7,6 +7,7 @@ from typing import Any, Sequence
 
 from capa.cama import is_feasible_local_match
 from capa.models import Courier
+from capa.timing import TimedTravelModel, TimingAccumulator
 from capa.utility import find_best_local_insertion
 from env.chengdu import legacy_courier_to_capa, legacy_task_to_parcel
 
@@ -35,6 +36,7 @@ def build_legacy_feasible_insertions(
     now: int,
     service_radius_meters: float | None,
     courier_id_prefix: str,
+    timing: TimingAccumulator | None = None,
 ) -> list[LegacyFeasibleInsertion]:
     """Collect all current courier-task insertions that satisfy the shared Chengdu constraints.
 
@@ -51,18 +53,19 @@ def build_legacy_feasible_insertions(
     """
 
     parcel = legacy_task_to_parcel(task)
+    timed_travel_model = TimedTravelModel(travel_model, timing)
     feasible: list[LegacyFeasibleInsertion] = []
     for courier in couriers:
         snapshot = project_courier_to_capa(courier, courier_id=f"{courier_id_prefix}-{getattr(courier, 'num')}")
-        if not is_feasible_local_match(parcel, snapshot, travel_model, now, service_radius_meters=service_radius_meters):
+        if not is_feasible_local_match(parcel, snapshot, timed_travel_model, now, service_radius_meters=service_radius_meters):
             continue
-        _, insertion_index = find_best_local_insertion(parcel, snapshot, travel_model)
+        _, insertion_index = find_best_local_insertion(parcel, snapshot, timed_travel_model, timing=timing)
         feasible.append(
             LegacyFeasibleInsertion(
                 courier=courier,
                 parcel=parcel,
                 insertion_index=insertion_index,
-                distance_meters=float(travel_model.distance(getattr(courier, "location"), getattr(task, "l_node"))),
+                distance_meters=float(timed_travel_model.distance(getattr(courier, "location"), getattr(task, "l_node"))),
             )
         )
     return feasible

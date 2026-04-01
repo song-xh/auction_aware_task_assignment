@@ -8,6 +8,7 @@ from time import perf_counter
 from typing import Any, Callable, Mapping, MutableSequence, Sequence
 
 from capa.constraints import is_within_service_radius
+from capa.timing import TimedTravelModel, TimingAccumulator
 from env.chengdu import (
     apply_assignment_to_legacy_courier,
     drain_legacy_routes,
@@ -282,6 +283,8 @@ def _run_gta_environment(
         for platform_id, couriers in environment.partner_couriers_by_platform.items()
     }
     movement = environment.movement_callback or framework_movement_callback
+    timing = TimingAccumulator()
+    timed_travel_model = TimedTravelModel(environment.travel_model, timing)
     service_radius_meters = None if getattr(environment, "service_radius_km", None) is None else float(environment.service_radius_km) * 1000.0
     current_time = int(float(getattr(tasks[0], "s_time")))
     task_index = 0
@@ -313,10 +316,12 @@ def _run_gta_environment(
 
         for task in arrivals:
             started = perf_counter()
+            routing_before = timing.routing_time_seconds
+            insertion_before = timing.insertion_time_seconds
             local_bid = select_available_courier_for_task(
                 task=task,
                 couriers=local_couriers,
-                travel_model=environment.travel_model,
+                travel_model=timed_travel_model,
                 now=current_time,
                 unit_price_per_km=unit_price_per_km,
                 service_radius_meters=service_radius_meters,
@@ -334,7 +339,10 @@ def _run_gta_environment(
                     apply_assignment_to_legacy_courier(task, local_bid.courier, len(getattr(local_bid.courier, "re_schedule")))
                     accepted_assignments += 1
                     total_profit += float(getattr(task, "fare")) - local_bid.dispatch_cost
-                    processing_time_seconds += perf_counter() - started
+                    processing_time_seconds += max(
+                        0.0,
+                        perf_counter() - started - (timing.routing_time_seconds - routing_before) - (timing.insertion_time_seconds - insertion_before),
+                    )
                     continue
 
             outer_bids: list[GTABid] = []
@@ -342,7 +350,7 @@ def _run_gta_environment(
                 partner_bid = select_available_courier_for_task(
                     task=task,
                     couriers=partner_couriers,
-                    travel_model=environment.travel_model,
+                    travel_model=timed_travel_model,
                     now=current_time,
                     unit_price_per_km=unit_price_per_km,
                     service_radius_meters=service_radius_meters,
@@ -373,7 +381,10 @@ def _run_gta_environment(
                 apply_assignment_to_legacy_courier(task, outcome.courier, len(getattr(outcome.courier, "re_schedule")))
                 accepted_assignments += 1
                 total_profit += float(getattr(task, "fare")) - outcome.dispatch_cost
-            processing_time_seconds += perf_counter() - started
+            processing_time_seconds += max(
+                0.0,
+                perf_counter() - started - (timing.routing_time_seconds - routing_before) - (timing.insertion_time_seconds - insertion_before),
+            )
 
     if accepted_assignments > 0:
         drain_legacy_routes(

@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from time import perf_counter
 from typing import Iterable, List, Sequence
 
 from .constraints import is_within_service_radius
 from .models import Assignment, CAMAResult, CAPAConfig, CandidatePair, Courier, Parcel
+from .timing import TimingAccumulator
 from .travel import DistanceMatrixTravelModel
 from .utility import calculate_threshold, calculate_utility
 
@@ -66,8 +68,13 @@ def run_cama(
     config: CAPAConfig,
     now: int,
     service_radius_meters: float | None = None,
+    timing: TimingAccumulator | None = None,
 ) -> CAMAResult:
     """Run Algorithm 2 exactly at the candidate-set level defined in the paper."""
+    started = perf_counter()
+    routing_before = 0.0 if timing is None else timing.routing_time_seconds
+    insertion_before = 0.0 if timing is None else timing.insertion_time_seconds
+    movement_before = 0.0 if timing is None else timing.movement_time_seconds
     all_feasible_pairs: List[CandidatePair] = []
     candidate_best_pairs: List[CandidatePair] = []
     auction_pool: List[Parcel] = []
@@ -77,7 +84,7 @@ def run_cama(
         for courier in couriers:
             if not is_feasible_local_match(parcel, courier, travel_model, now, service_radius_meters=service_radius_meters):
                 continue
-            utility = calculate_utility(parcel, courier, travel_model, config)
+            utility = calculate_utility(parcel, courier, travel_model, config, timing=timing)
             feasible_for_parcel.append(CandidatePair(parcel=parcel, courier=courier, utility=utility))
         if feasible_for_parcel:
             all_feasible_pairs.extend(feasible_for_parcel)
@@ -99,7 +106,7 @@ def run_cama(
         else:
             auction_pool.append(pair.parcel)
 
-    return CAMAResult(
+    result = CAMAResult(
         local_assignments=local_assignments,
         auction_pool=auction_pool,
         all_feasible_pairs=all_feasible_pairs,
@@ -107,3 +114,13 @@ def run_cama(
         threshold=threshold,
         matching_pairs=local_assignments,
     )
+    if timing is not None:
+        elapsed = perf_counter() - started
+        timing.decision_time_seconds += max(
+            0.0,
+            elapsed
+            - (timing.routing_time_seconds - routing_before)
+            - (timing.insertion_time_seconds - insertion_before)
+            - (timing.movement_time_seconds - movement_before),
+        )
+    return result

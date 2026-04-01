@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from time import perf_counter
 from typing import Any, Sequence
 
+from capa.timing import TimedTravelModel, TimingAccumulator
 from capa.utility import calculate_capacity_ratio, find_best_local_insertion
 from env.chengdu import (
     apply_assignment_to_legacy_courier,
@@ -39,6 +40,7 @@ def compute_mra_bid(
     feasible_count: int,
     base_price: float = DEFAULT_MRA_BASE_PRICE,
     sharing_rate: float = DEFAULT_MRA_SHARING_RATE,
+    timing: TimingAccumulator | None = None,
 ) -> float:
     """Compute the Chengdu-adapted MRA bid described in `docs/mra.md`.
 
@@ -58,7 +60,7 @@ def compute_mra_bid(
     snapshot = project_courier_to_capa(courier, courier_id=f"mra-{getattr(courier, 'num')}")
     remaining_capacity = max(snapshot.capacity - snapshot.current_load, 1e-9)
     capacity_term = 1.0 - (parcel.weight / remaining_capacity)
-    local_ratio, _ = find_best_local_insertion(parcel, snapshot, travel_model)
+    local_ratio, _ = find_best_local_insertion(parcel, snapshot, travel_model, timing=timing)
     detour_term = 1.0 - local_ratio
     if feasible_count <= 1:
         return base_price + sharing_rate * parcel.fare
@@ -98,6 +100,8 @@ def run_mra_baseline_environment(
 
     local_couriers = list(environment.local_couriers)
     movement = environment.movement_callback or framework_movement_callback
+    timing = TimingAccumulator()
+    timed_travel_model = TimedTravelModel(environment.travel_model, timing)
     service_radius_meters = None if getattr(environment, "service_radius_km", None) is None else float(environment.service_radius_km) * 1000.0
     backlog: list[Any] = []
     accepted_assignments = 0
@@ -112,15 +116,19 @@ def run_mra_baseline_environment(
         started = perf_counter()
         remaining = list(unresolved)
         while remaining:
+            round_started = perf_counter()
+            routing_before = timing.routing_time_seconds
+            insertion_before = timing.insertion_time_seconds
             graph_edges: list[MRAEdge] = []
             for task in remaining:
                 feasible = build_legacy_feasible_insertions(
                     task=task,
                     couriers=local_couriers,
-                    travel_model=environment.travel_model,
+                    travel_model=timed_travel_model,
                     now=now,
                     service_radius_meters=service_radius_meters,
                     courier_id_prefix="mra",
+                    timing=timing,
                 )
                 for insertion in feasible:
                     graph_edges.append(
@@ -130,10 +138,11 @@ def run_mra_baseline_environment(
                             bid=compute_mra_bid(
                                 task=task,
                                 courier=insertion.courier,
-                                travel_model=environment.travel_model,
+                                travel_model=timed_travel_model,
                                 feasible_count=len(feasible),
                                 base_price=base_price,
                                 sharing_rate=sharing_rate,
+                                timing=timing,
                             ),
                             insertion_index=insertion.insertion_index,
                         )
@@ -173,10 +182,16 @@ def run_mra_baseline_environment(
                 accepted_assignments += 1
 
             remaining = [task for task in remaining if str(getattr(task, "num")) not in used_tasks]
+            elapsed = perf_counter() - round_started
+            processing_time_seconds += max(
+                0.0,
+                elapsed - (timing.routing_time_seconds - routing_before) - (timing.insertion_time_seconds - insertion_before),
+            )
 
         backlog = remaining
-        processing_time_seconds += perf_counter() - started
+        movement_started = perf_counter()
         movement(local_couriers, [], batch_size, environment.station_set)
+        timing.movement_time_seconds += perf_counter() - movement_started
 
     if accepted_assignments > 0:
         drain_legacy_routes(

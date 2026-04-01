@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import math
 import random
+from time import perf_counter
 from typing import Any, Sequence
 
+from capa.timing import TimedTravelModel, TimingAccumulator
 from env.chengdu import (
     apply_assignment_to_legacy_courier,
     drain_legacy_routes,
@@ -92,8 +94,6 @@ def run_ramcom_baseline_environment(
         Normalized `TR`/`CR`/`BPT` metrics.
     """
 
-    import time
-
     tasks = sort_legacy_tasks(list(environment.tasks))
     total_tasks = len(tasks)
     if total_tasks == 0:
@@ -106,6 +106,8 @@ def run_ramcom_baseline_environment(
         }
 
     rng = random.Random(random_seed)
+    timing = TimingAccumulator()
+    timed_travel_model = TimedTravelModel(environment.travel_model, timing)
     local_couriers = list(environment.local_couriers)
     partner_couriers_by_platform = {
         platform_id: list(couriers)
@@ -123,19 +125,24 @@ def run_ramcom_baseline_environment(
     for task in tasks:
         arrival_time = int(float(getattr(task, "s_time")))
         if arrival_time > current_time:
+            movement_started = perf_counter()
             movement(local_couriers, flatten_partner_couriers(partner_couriers_by_platform), arrival_time - current_time, environment.station_set)
+            timing.movement_time_seconds += perf_counter() - movement_started
             current_time = arrival_time
 
-        started = time.perf_counter()
+        started = perf_counter()
+        routing_before = timing.routing_time_seconds
+        insertion_before = timing.insertion_time_seconds
         assigned = False
         if float(getattr(task, "fare")) > threshold:
             inner_candidates = build_legacy_feasible_insertions(
                 task=task,
                 couriers=local_couriers,
-                travel_model=environment.travel_model,
+                travel_model=timed_travel_model,
                 now=current_time,
                 service_radius_meters=service_radius_meters,
                 courier_id_prefix="ramcom-inner",
+                timing=timing,
             )
             if inner_candidates:
                 chosen = rng.choice(inner_candidates)
@@ -151,10 +158,11 @@ def run_ramcom_baseline_environment(
                 feasible = build_legacy_feasible_insertions(
                     task=task,
                     couriers=couriers,
-                    travel_model=environment.travel_model,
+                    travel_model=timed_travel_model,
                     now=current_time,
                     service_radius_meters=service_radius_meters,
                     courier_id_prefix=f"ramcom-{platform_id}",
+                    timing=timing,
                 )
                 for insertion in feasible:
                     outer_candidates.append((platform_id, insertion))
@@ -176,7 +184,10 @@ def run_ramcom_baseline_environment(
                     total_revenue += float(getattr(task, "fare")) - outer_payment
                     accepted_assignments += 1
 
-        processing_time_seconds += time.perf_counter() - started
+        processing_time_seconds += max(
+            0.0,
+            perf_counter() - started - (timing.routing_time_seconds - routing_before) - (timing.insertion_time_seconds - insertion_before),
+        )
 
     if accepted_assignments > 0:
         drain_legacy_routes(

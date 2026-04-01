@@ -13,6 +13,7 @@ from capa.cama import run_cama
 from capa.dapa import run_dapa
 from capa.metrics import build_run_metrics
 from capa.models import Assignment, BatchReport, CAPAConfig, CAPAResult, CooperatingPlatform, Courier, Parcel
+from capa.timing import TimingAccumulator, TimedTravelModel
 from capa.utility import find_best_local_insertion
 
 
@@ -485,6 +486,7 @@ def run_time_stepped_chengdu_batches(
         batch_input_tasks = list(unresolved)
         local_assignments: List[Assignment] = []
         cross_assignments: List[Assignment] = []
+        timing = TimingAccumulator()
         processing_time_seconds = 0.0
         cursor = batch_time
         batch_end = batch_time + batch_seconds
@@ -492,16 +494,19 @@ def run_time_stepped_chengdu_batches(
         while cursor < batch_end and unresolved:
             arrived_tasks = [task for task in unresolved if float(getattr(task, "s_time")) <= cursor]
             if not arrived_tasks:
+                movement_started = perf_counter()
                 movement(
                     active_local_couriers,
                     flatten_partner_couriers(active_partner_by_platform),
                     step_seconds,
                     station_set,
                 )
+                timing.movement_time_seconds += perf_counter() - movement_started
                 cursor += step_seconds
                 continue
 
             started = perf_counter()
+            timed_travel_model = TimedTravelModel(travel_model, timing)
             local_snapshots = [
                 legacy_courier_to_capa(courier, courier_id=f"local-{getattr(courier, 'num')}")
                 for courier in active_local_couriers
@@ -510,10 +515,11 @@ def run_time_stepped_chengdu_batches(
             cama_result = run_cama(
                 arrived_parcels,
                 local_snapshots,
-                travel_model,
+                timed_travel_model,
                 config,
                 now=cursor,
                 service_radius_meters=service_radius_meters,
+                timing=timing,
             )
             best_local_pairs = _index_best_local_pairs(cama_result)
             task_lookup = {parcel.parcel_id: task for parcel, task in zip(arrived_parcels, arrived_tasks)}
@@ -549,10 +555,11 @@ def run_time_stepped_chengdu_batches(
                 dapa_result = run_dapa(
                     remaining_parcels,
                     partner_platforms,
-                    travel_model,
+                    timed_travel_model,
                     config,
                     now=cursor,
                     service_radius_meters=service_radius_meters,
+                    timing=timing,
                 )
                 cross_task_lookup = {parcel.parcel_id: task for parcel, task in zip(remaining_parcels, remaining_tasks)}
 
@@ -560,7 +567,12 @@ def run_time_stepped_chengdu_batches(
                     task = cross_task_lookup[assignment.parcel.parcel_id]
                     legacy_courier = partner_lookup[assignment.platform_id][assignment.courier.courier_id]
                     snapshot_courier = snapshot_lookup[assignment.platform_id][assignment.courier.courier_id]
-                    _, insertion_index = find_best_local_insertion(legacy_task_to_parcel(task), snapshot_courier, travel_model)
+                    _, insertion_index = find_best_local_insertion(
+                        legacy_task_to_parcel(task),
+                        snapshot_courier,
+                        timed_travel_model,
+                        timing=timing,
+                    )
                     apply_assignment_to_legacy_courier(task, legacy_courier, insertion_index)
                     cross_assignments.append(bind_assignment_to_legacy_objects(assignment, task, legacy_courier))
                     assigned_task_ids.add(id(task))
@@ -569,12 +581,14 @@ def run_time_stepped_chengdu_batches(
             unresolved = [task for task in unresolved if id(task) not in assigned_task_ids]
             processing_time_seconds += perf_counter() - started
 
+            movement_started = perf_counter()
             movement(
                 active_local_couriers,
                 flatten_partner_couriers(active_partner_by_platform),
                 step_seconds,
                 station_set,
             )
+            timing.movement_time_seconds += perf_counter() - movement_started
             cursor += step_seconds
 
         backlog = unresolved
@@ -586,6 +600,7 @@ def run_time_stepped_chengdu_batches(
             cross_assignments=cross_assignments,
             unresolved_parcels=[legacy_task_to_parcel(task) for task in backlog],
             processing_time_seconds=processing_time_seconds,
+            timing=timing.freeze(),
             delivered_parcel_count=len(accepted_assignment_ids - current_legacy_route_task_ids(active_local_couriers, active_partner_by_platform)),
         )
         batch_reports.append(report)
@@ -602,6 +617,7 @@ def run_time_stepped_chengdu_batches(
                 cross_assignments=[],
                 unresolved_parcels=[legacy_task_to_parcel(task) for task in backlog],
                 processing_time_seconds=0.0,
+                timing=TimingAccumulator().freeze(),
             )
         )
 
