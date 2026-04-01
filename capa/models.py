@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Hashable, List, Literal, Optional, Sequence
 
+from .timing import BatchTimingBreakdown
+
 
 Location = Hashable
 
@@ -137,6 +139,7 @@ class BatchReport:
     cross_assignments: Sequence[Assignment]
     unresolved_parcels: Sequence[Parcel]
     processing_time_seconds: float
+    timing: BatchTimingBreakdown = field(default_factory=BatchTimingBreakdown)
     delivered_parcel_count: int = 0
 
 
@@ -149,6 +152,9 @@ class RunMetrics:
     batch_processing_time: float
     delivered_parcel_count: int = 0
     accepted_parcel_count: int = 0
+    excluded_routing_time: float = 0.0
+    excluded_insertion_time: float = 0.0
+    excluded_movement_time: float = 0.0
 
 
 @dataclass(frozen=True)

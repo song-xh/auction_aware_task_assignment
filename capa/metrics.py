@@ -21,7 +21,7 @@ def compute_completion_rate(assignments: Sequence[Assignment], total_parcels: in
 
 def compute_batch_processing_time(batch_reports: Sequence[BatchReport]) -> float:
     """Compute the aggregate batch-processing-time metric BPT."""
-    return sum(report.processing_time_seconds for report in batch_reports)
+    return sum(report.timing.decision_time_seconds for report in batch_reports)
 
 
 def build_run_metrics(
@@ -38,4 +38,7 @@ def build_run_metrics(
         batch_processing_time=compute_batch_processing_time(batch_reports),
         delivered_parcel_count=delivered_count,
         accepted_parcel_count=len(assignments),
+        excluded_routing_time=sum(report.timing.routing_time_seconds for report in batch_reports),
+        excluded_insertion_time=sum(report.timing.insertion_time_seconds for report in batch_reports),
+        excluded_movement_time=sum(report.timing.movement_time_seconds for report in batch_reports),
     )
