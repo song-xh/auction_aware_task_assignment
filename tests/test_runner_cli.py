@@ -55,6 +55,36 @@ class RunnerDispatchTests(unittest.TestCase):
         self.assertIn("metrics", result)
         self.assertIn("TR", result["metrics"])
 
+    def test_all_baselines_share_same_environment_contract(self) -> None:
+        """Greedy, BaseGTA, and ImpGTA should all dispatch through the same runner interface."""
+        from algorithms.registry import build_algorithm_runner
+
+        environment = ChengduEnvironment(
+            tasks=[],
+            local_couriers=[],
+            partner_couriers_by_platform={},
+            station_set=[],
+            travel_model=None,
+            platform_base_prices={},
+            platform_sharing_rates={},
+            platform_qualities={},
+        )
+
+        def fake_baseline_runner(**kwargs):
+            return {
+                "TR": 1.0,
+                "CR": 0.5,
+                "BPT": 0.1,
+                "delivered_parcels": 1,
+                "accepted_assignments": 1,
+            }
+
+        for name in ["greedy", "basegta", "impgta"]:
+            runner = build_algorithm_runner(name, baseline_runner=fake_baseline_runner)
+            result = runner.run(environment=environment, output_dir=None)
+            self.assertEqual(result["algorithm"], name)
+            self.assertEqual(result["metrics"]["TR"], 1.0)
+
 
 if __name__ == "__main__":
     unittest.main()
