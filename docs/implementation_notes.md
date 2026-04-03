@@ -125,23 +125,37 @@ Two adaptation boundaries remain explicit:
 - The Chengdu environment only contains the local platform's incoming parcel stream. It does not expose separate real task streams for each cooperating platform. Therefore ImpGTA evaluates outer-platform future demand against an empty predicted set rather than a real per-platform forecast.
 - The [17] paper varies `Δτ` over `1, 3, 5, 10, 15` minutes, but the markdown extraction does not preserve a single explicit default. This repository uses `180` seconds as the default ImpGTA window and exposes it as a parameter.
 
-## 8. Scope intentionally excluded from the current codebase
+## 8. RL-CAPA implementation boundary
 
-The following are still not implemented:
+RL-CAPA is now implemented in:
 
-- RL-CAPA
-- DDQN
-- replay buffer
-- target network
-- RL training or evaluation loops
-- RamCOM / MRA experiments
+- `rl_capa/env.py`
+- `rl_capa/ddqn/networks.py`
+- `rl_capa/ddqn/replay_buffer.py`
+- `rl_capa/ddqn/agent.py`
+- `rl_capa/train.py`
+- `rl_capa/evaluate.py`
+- `algorithms/rl_capa_runner.py`
 
-These remain for later phases.
+The unified root `runner.py` can now launch `rl-capa` without fallback.
 
-The unified root `runner.py` now registers `rl-capa` explicitly but does not emulate it:
+The current implementation follows the paper and `docs/rl_capa_algo.md` as follows:
 
-- selecting `--algorithm rl-capa` raises a clear not-implemented error
-- there is no fallback to `capa`
+- `M_b` selects a discrete batch duration from `A_b = [h_L, ..., h_M]`
+- `M_m` only acts on the CAMA output `L_cr`
+- CAMA and DAPA themselves are reused unchanged from the heuristic CAPA modules
+- both DDQN agents use online Q-networks, target Q-networks, replay buffers, epsilon-greedy exploration, and hard target updates
+- joint training uses RMSprop, learning rate `0.001`, and discount factor `0.9`
+
+One explicit implementation choice remains:
+
+- for `a_m = 0` defer decisions, the reward is not guessed immediately
+- instead, the transition is resolved at the next batch boundary
+- if the parcel reappears in the next auction pool, the stored transition receives `r_m = 0` and a non-terminal next state
+- if it is locally assigned before reappearing, the stored transition receives the realized local revenue and terminates
+- if the episode ends first, the stored transition terminates with reward `0`
+
+This keeps the reward timing aligned with the paper's delayed-outcome semantics without inventing a heuristic shortcut.
 
 ## 8.1 Unified experiment-suite presets
 
