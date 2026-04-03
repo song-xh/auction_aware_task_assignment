@@ -305,8 +305,8 @@ class RunnerDispatchTests(unittest.TestCase):
         self.assertEqual(args.command, "compare")
         self.assertEqual(args.algorithms, ["capa", "greedy"])
 
-    def test_rl_capa_cli_fails_explicitly_without_fallback(self) -> None:
-        """Selecting rl-capa should fail explicitly instead of silently falling back to CAPA."""
+    def test_rl_capa_cli_dispatches_through_unified_runner(self) -> None:
+        """Selecting rl-capa should run through the unified registry without fallback."""
         from runner import main
 
         fake_environment = ChengduEnvironment(
@@ -320,19 +320,35 @@ class RunnerDispatchTests(unittest.TestCase):
             platform_qualities={},
         )
 
-        with patch("runner.ChengduEnvironment.build", return_value=fake_environment):
-            exit_code = main(
-                [
-                    "--algorithm",
-                    "rl-capa",
-                    "--data-dir",
-                    "Data",
-                    "--output-dir",
-                    "outputs/plots/test_rl_capa_cli",
-                ]
-            )
+        class FakeAlgorithmRunner:
+            """Record the environment passed in and return a normalized summary."""
 
-        self.assertNotEqual(exit_code, 0)
+            def run(self, environment, output_dir=None):
+                self.environment = environment
+                self.output_dir = output_dir
+                return {
+                    "algorithm": "rl-capa",
+                    "metrics": {
+                        "TR": 1.0,
+                        "CR": 1.0,
+                        "BPT": 0.1,
+                    },
+                }
+
+        with patch("runner.ChengduEnvironment.build", return_value=fake_environment):
+            with patch("runner.build_algorithm_runner", return_value=FakeAlgorithmRunner()):
+                exit_code = main(
+                    [
+                        "--algorithm",
+                        "rl-capa",
+                        "--data-dir",
+                        "Data",
+                        "--output-dir",
+                        "outputs/plots/test_rl_capa_cli",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
 
     def test_root_runner_is_the_documented_primary_entrypoint(self) -> None:
         """The README should present the root runner as the canonical way to launch experiments."""

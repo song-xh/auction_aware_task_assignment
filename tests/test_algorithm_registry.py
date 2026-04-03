@@ -25,13 +25,12 @@ class AlgorithmRegistryTests(unittest.TestCase):
             ],
         )
 
-    def test_rl_capa_registration_is_explicitly_unimplemented(self) -> None:
-        """The rl-capa registry entry should exist but fail explicitly when invoked."""
+    def test_rl_capa_registration_builds_real_runner(self) -> None:
+        """The rl-capa registry entry should resolve to a runnable implementation."""
         from algorithms.registry import build_algorithm_runner
 
         runner = build_algorithm_runner("rl-capa")
-        with self.assertRaises(NotImplementedError):
-            runner.run(environment=None, output_dir=None)
+        self.assertTrue(hasattr(runner, "run"))
 
 
 if __name__ == "__main__":

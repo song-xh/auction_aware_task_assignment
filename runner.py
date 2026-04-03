@@ -61,6 +61,10 @@ def _add_common_environment_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--courier-capacity", type=float, default=None, help="Optional courier capacity override for all seeded couriers.")
     parser.add_argument("--service-radius-km", type=float, default=None, help="Optional courier service radius in kilometers.")
     parser.add_argument("--batch-size", type=int, default=300, help="Batch size in seconds for algorithms that use batching.")
+    parser.add_argument("--min-batch-size", type=int, default=10, help="Lower bound of the RL-CAPA batch-size action space.")
+    parser.add_argument("--max-batch-size", type=int, default=20, help="Upper bound of the RL-CAPA batch-size action space.")
+    parser.add_argument("--step-seconds", type=int, default=60, help="Simulation step size in seconds for RL-CAPA.")
+    parser.add_argument("--episodes", type=int, default=10, help="Training episodes used by RL-CAPA before evaluation.")
     parser.add_argument(
         "--prediction-window-seconds",
         type=int,
@@ -76,6 +80,13 @@ def build_algorithm_kwargs(args: argparse.Namespace) -> dict[str, Any]:
         return {"batch_size": args.batch_size}
     if args.algorithm == "impgta":
         return {"prediction_window_seconds": args.prediction_window_seconds}
+    if args.algorithm == "rl-capa":
+        return {
+            "min_batch_size": args.min_batch_size,
+            "max_batch_size": args.max_batch_size,
+            "step_seconds": args.step_seconds,
+            "episodes": args.episodes,
+        }
     return {}
 
 

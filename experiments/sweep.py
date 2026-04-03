@@ -103,6 +103,13 @@ def _build_runner_kwargs(algorithm_name: str, config: ExperimentConfig) -> dict[
         return {"batch_size": config.batch_size}
     if algorithm_name == "impgta":
         return {"prediction_window_seconds": config.prediction_window_seconds}
+    if algorithm_name == "rl-capa":
+        return {
+            "min_batch_size": int(config.extra.get("min_batch_size", 10)),
+            "max_batch_size": int(config.extra.get("max_batch_size", 20)),
+            "step_seconds": int(config.extra.get("step_seconds", 60)),
+            "episodes": int(config.extra.get("episodes", 10)),
+        }
     return {}
 
 
