@@ -5,6 +5,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from env.chengdu import ChengduEnvironment
 
@@ -278,8 +279,8 @@ class ExperimentsSeedingTests(unittest.TestCase):
                 return FakeFuture(fn(**kwargs))
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            with unittest.mock.patch("experiments.sweep.ProcessPoolExecutor", FakeExecutor):
-                with unittest.mock.patch(
+            with mock.patch("experiments.sweep.ProcessPoolExecutor", FakeExecutor):
+                with mock.patch(
                     "experiments.sweep._run_sweep_point",
                     side_effect=lambda **kwargs: {
                         "num_parcels": kwargs["value"],

@@ -168,6 +168,43 @@ python3 experiments/run_chengdu_exp6_capacity.py --output-dir outputs/plots/exp6
 python3 experiments/run_chengdu_paper_suite.py --output-dir outputs/plots/chengdu_suite --preset formal --max-workers 4
 ```
 
+如果要按受控方式运行 `exp_1`，并在 `batch_size=30s` 下做多轮 CAPA 参数试验、把每轮结果先写到 `/tmp`，可以使用：
+
+```bash
+python3 experiments/run_exp1_managed.py \
+  --tmp-root /tmp/exp1_managed \
+  --final-output-dir /tmp/exp1_selected \
+  --preset formal \
+  --algorithms capa greedy ramcom mra basegta impgta \
+  --batch-size 30 \
+  --max-workers 4
+```
+
+`run_exp1_managed.py` 的行为是：
+
+- 固定 `exp_1` 轴为 `TR / CR / BPT vs |Γ|`
+- 使用 formal 点位 `1000 / 2000 / 3000 / 5000`
+- 每轮 CAPA 使用一组显式参数，不做隐藏 fallback
+- 每轮输出：
+  - `summary.json`
+  - `analysis.json`
+  - `round_manifest.json`
+- 根目录输出：
+  - `status.json`
+  - `final_manifest.json`
+
+当前内置 CAPA round 顺序：
+
+- `paper-default`: `γ=0.5, ω=1.0`
+- `lower-threshold`: `γ=0.5, ω=0.8`
+- `detour-favoring`: `γ=0.3, ω=0.8`
+
+判定逻辑：
+
+- 若 CAPA 的平均 `TR` 不低于最强 baseline 的 `90%`
+- 且平均 `CR` 与最强 baseline 的差距不超过 `0.02`
+- 则该轮被接受并晋级为最终结果
+
 各实验脚本与指标含义：
 
 - `run_chengdu_exp1_num_parcels.py`

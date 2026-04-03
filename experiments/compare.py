@@ -58,7 +58,7 @@ def run_comparison_sweep(
         extra=dict(fixed_config.get("extra", {})),
     )
 
-    if max_workers is not None and max_workers > 1 and environment_builder is None and runner_builder is None and len(sweep_values) > 1:
+    if max_workers is not None and max_workers > 1 and len(sweep_values) > 1:
         with ProcessPoolExecutor(max_workers=max_workers) as executor:
             futures = [
                 executor.submit(
@@ -68,6 +68,8 @@ def run_comparison_sweep(
                     value=value,
                     fixed_config=dict(fixed_config),
                     output_dir=output_dir,
+                    environment_builder=environment_builder,
+                    runner_builder=runner_builder,
                 )
                 for value in sweep_values
             ]

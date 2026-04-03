@@ -6,7 +6,8 @@ import json
 from pathlib import Path
 from typing import Any
 
-from capa.experiments import build_default_chengdu_config, save_experiment_plots
+from capa.experiments import save_experiment_plots
+from capa.models import CAPAConfig
 from env.chengdu import run_time_stepped_chengdu_batches
 
 from .base import AlgorithmRunner
@@ -15,13 +16,43 @@ from .base import AlgorithmRunner
 class CAPAAlgorithmRunner(AlgorithmRunner):
     """Run the paper-faithful CAPA logic against a prepared Chengdu environment."""
 
-    def __init__(self, batch_size: int = 300) -> None:
-        """Store the CAPA batch window used by the environment-backed runner."""
+    def __init__(
+        self,
+        batch_size: int = 300,
+        utility_balance_gamma: float = 0.5,
+        threshold_omega: float = 1.0,
+        local_payment_ratio_zeta: float = 0.2,
+        local_sharing_rate_mu1: float = 0.5,
+        cross_platform_sharing_rate_mu2: float = 0.4,
+    ) -> None:
+        """Store the CAPA configuration used by the environment-backed runner.
+
+        Args:
+            batch_size: Batch-size window in seconds.
+            utility_balance_gamma: Eq.6 utility balance parameter.
+            threshold_omega: Eq.7 threshold scale factor.
+            local_payment_ratio_zeta: Local courier payment ratio.
+            local_sharing_rate_mu1: Cross-platform first-layer sharing ratio.
+            cross_platform_sharing_rate_mu2: Cross-platform second-layer sharing ratio.
+        """
+
         self._batch_size = batch_size
+        self._utility_balance_gamma = utility_balance_gamma
+        self._threshold_omega = threshold_omega
+        self._local_payment_ratio_zeta = local_payment_ratio_zeta
+        self._local_sharing_rate_mu1 = local_sharing_rate_mu1
+        self._cross_platform_sharing_rate_mu2 = cross_platform_sharing_rate_mu2
 
     def run(self, environment: Any, output_dir: Path | None = None) -> dict[str, Any]:
         """Execute CAPA on the provided Chengdu environment and return a normalized summary."""
-        config = build_default_chengdu_config(batch_size=self._batch_size)
+        config = CAPAConfig(
+            batch_size=self._batch_size,
+            utility_balance_gamma=self._utility_balance_gamma,
+            threshold_omega=self._threshold_omega,
+            local_payment_ratio_zeta=self._local_payment_ratio_zeta,
+            local_sharing_rate_mu1=self._local_sharing_rate_mu1,
+            cross_platform_sharing_rate_mu2=self._cross_platform_sharing_rate_mu2,
+        )
         result = run_time_stepped_chengdu_batches(
             tasks=environment.tasks,
             local_couriers=environment.local_couriers,
@@ -40,6 +71,13 @@ class CAPAAlgorithmRunner(AlgorithmRunner):
         summary = {
             "algorithm": "capa",
             "batch_size": self._batch_size,
+            "config": {
+                "utility_balance_gamma": self._utility_balance_gamma,
+                "threshold_omega": self._threshold_omega,
+                "local_payment_ratio_zeta": self._local_payment_ratio_zeta,
+                "local_sharing_rate_mu1": self._local_sharing_rate_mu1,
+                "cross_platform_sharing_rate_mu2": self._cross_platform_sharing_rate_mu2,
+            },
             "metrics": {
                 "TR": result.metrics.total_revenue,
                 "CR": result.metrics.completion_rate,
@@ -56,6 +94,21 @@ class CAPAAlgorithmRunner(AlgorithmRunner):
         return summary
 
 
-def build_capa_runner(batch_size: int = 300) -> CAPAAlgorithmRunner:
-    """Build the unified CAPA runner with the provided batch window."""
-    return CAPAAlgorithmRunner(batch_size=batch_size)
+def build_capa_runner(
+    batch_size: int = 300,
+    utility_balance_gamma: float = 0.5,
+    threshold_omega: float = 1.0,
+    local_payment_ratio_zeta: float = 0.2,
+    local_sharing_rate_mu1: float = 0.5,
+    cross_platform_sharing_rate_mu2: float = 0.4,
+) -> CAPAAlgorithmRunner:
+    """Build the unified CAPA runner with the provided CAPA parameterization."""
+
+    return CAPAAlgorithmRunner(
+        batch_size=batch_size,
+        utility_balance_gamma=utility_balance_gamma,
+        threshold_omega=threshold_omega,
+        local_payment_ratio_zeta=local_payment_ratio_zeta,
+        local_sharing_rate_mu1=local_sharing_rate_mu1,
+        cross_platform_sharing_rate_mu2=cross_platform_sharing_rate_mu2,
+    )
