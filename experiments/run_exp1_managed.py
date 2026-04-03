@@ -14,10 +14,9 @@ from time import time
 from typing import Any, Sequence
 
 from algorithms.registry import build_algorithm_runner
-
-from .compare import run_comparison_sweep
-from .paper_chengdu import DEFAULT_CHENGDU_PAPER_FIXED_CONFIG
-from .paper_config import DEFAULT_CHENGDU_PAPER_ALGORITHMS, PAPER_SUITE_PRESETS
+from experiments.compare import run_comparison_sweep
+from experiments.paper_chengdu import DEFAULT_CHENGDU_PAPER_FIXED_CONFIG
+from experiments.paper_config import DEFAULT_CHENGDU_PAPER_ALGORITHMS, PAPER_SUITE_PRESETS
 
 
 @dataclass(frozen=True)
