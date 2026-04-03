@@ -6,12 +6,16 @@ import argparse
 import json
 import os
 import shutil
+import sys
 from dataclasses import asdict, dataclass
 from functools import partial
 from pathlib import Path
 from statistics import mean
 from time import time
 from typing import Any, Sequence
+
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from algorithms.registry import build_algorithm_runner
 from experiments.compare import run_comparison_sweep
