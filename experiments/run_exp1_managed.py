@@ -191,6 +191,7 @@ def run_managed_exp1(
     round_specs: Sequence[Exp1RoundSpec] = DEFAULT_EXP1_ROUNDS,
     success_tr_ratio: float = 0.9,
     success_cr_gap: float = 0.02,
+    parallel_backend: str = "thread",
 ) -> dict[str, Any]:
     """Run managed multi-round Chengdu Exp-1 and promote the winning CAPA round.
 
@@ -205,6 +206,7 @@ def run_managed_exp1(
         round_specs: Ordered CAPA parameter candidates.
         success_tr_ratio: Minimum CAPA TR ratio versus the strongest baseline.
         success_cr_gap: Maximum allowed CAPA CR drop versus the strongest baseline.
+        parallel_backend: Explicit sweep-point parallel backend used by the comparison runner.
 
     Returns:
         Final managed experiment manifest.
@@ -243,6 +245,7 @@ def run_managed_exp1(
             fixed_config=fixed_config,
             runner_builder=partial(build_managed_exp1_runner, capa_runner_kwargs=round_spec.capa_runner_kwargs),
             max_workers=max_workers,
+            parallel_backend=parallel_backend,
         )
         analysis = analyze_exp1_summary(
             summary=summary,
@@ -334,6 +337,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--service-radius-km", type=float, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["service_radius_km"])
     parser.add_argument("--success-tr-ratio", type=float, default=0.9)
     parser.add_argument("--success-cr-gap", type=float, default=0.02)
+    parser.add_argument("--parallel-backend", default="thread", choices=("thread", "process"))
     return parser
 
 
@@ -360,6 +364,7 @@ def main() -> int:
         batch_size=args.batch_size,
         success_tr_ratio=args.success_tr_ratio,
         success_cr_gap=args.success_cr_gap,
+        parallel_backend=args.parallel_backend,
     )
     return 0
 

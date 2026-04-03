@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Callable, Sequence
 
@@ -24,6 +24,7 @@ def run_comparison_sweep(
     environment_builder: Callable[..., ChengduEnvironment] | None = None,
     runner_builder: Callable[..., Any] | None = None,
     max_workers: int | None = None,
+    parallel_backend: str = "process",
 ) -> dict[str, Any]:
     """Run a shared-environment comparison sweep and persist a normalized summary.
 
@@ -59,7 +60,8 @@ def run_comparison_sweep(
     )
 
     if max_workers is not None and max_workers > 1 and len(sweep_values) > 1:
-        with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        executor_class = _select_executor_class(parallel_backend)
+        with executor_class(max_workers=max_workers) as executor:
             futures = [
                 executor.submit(
                     _run_comparison_point,
@@ -98,6 +100,23 @@ def run_comparison_sweep(
         json.dump(summary, handle, indent=2)
     save_comparison_plots(summary=summary, output_dir=output_dir)
     return summary
+
+
+def _select_executor_class(parallel_backend: str) -> type[ProcessPoolExecutor] | type[ThreadPoolExecutor]:
+    """Resolve the configured comparison-sweep parallel backend.
+
+    Args:
+        parallel_backend: Requested backend identifier.
+
+    Returns:
+        Executor class matching the requested backend.
+    """
+
+    if parallel_backend == "process":
+        return ProcessPoolExecutor
+    if parallel_backend == "thread":
+        return ThreadPoolExecutor
+    raise ValueError(f"Unsupported parallel backend: {parallel_backend}")
 
 
 def _build_runner_kwargs(algorithm_name: str, config: ExperimentConfig) -> dict[str, Any]:
