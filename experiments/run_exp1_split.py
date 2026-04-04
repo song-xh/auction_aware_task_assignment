@@ -29,6 +29,8 @@ def run_exp1_split(
     fixed_config_overrides: dict[str, Any] | None = None,
     batch_size: int = 30,
     poll_seconds: int = 30,
+    seed_path: Path | None = None,
+    capa_runner_kwargs: dict[str, float] | None = None,
 ) -> dict[str, Any]:
     """Launch one process per Exp-1 parcel-count point from a shared canonical seed.
 
@@ -40,6 +42,8 @@ def run_exp1_split(
         fixed_config_overrides: Optional configuration overrides.
         batch_size: Shared batch size in seconds.
         poll_seconds: Launcher polling interval in seconds.
+        seed_path: Optional existing canonical seed bundle reused across rounds.
+        capa_runner_kwargs: Optional CAPA-only override set forwarded to point processes.
 
     Returns:
         Aggregate Exp-1 comparison summary.
@@ -50,18 +54,19 @@ def run_exp1_split(
     fixed_config = dict(DEFAULT_CHENGDU_PAPER_FIXED_CONFIG)
     if fixed_config_overrides:
         fixed_config.update(fixed_config_overrides)
-    max_num_parcels = max(int(value) for value in parcel_values)
-    canonical_environment = ChengduEnvironment.build(
-        data_dir=Path(fixed_config["data_dir"]),
-        num_parcels=max_num_parcels,
-        local_courier_count=int(fixed_config["local_couriers"]),
-        cooperating_platform_count=int(fixed_config["platforms"]),
-        couriers_per_platform=int(fixed_config["couriers_per_platform"]),
-        service_radius_km=fixed_config["service_radius_km"],
-        courier_capacity=fixed_config["courier_capacity"],
-    )
-    seed_path = tmp_root / "canonical_seed.pkl"
-    save_environment_seed(build_environment_seed(canonical_environment), seed_path)
+    if seed_path is None:
+        max_num_parcels = max(int(value) for value in parcel_values)
+        canonical_environment = ChengduEnvironment.build(
+            data_dir=Path(fixed_config["data_dir"]),
+            num_parcels=max_num_parcels,
+            local_courier_count=int(fixed_config["local_couriers"]),
+            cooperating_platform_count=int(fixed_config["platforms"]),
+            couriers_per_platform=int(fixed_config["couriers_per_platform"]),
+            service_radius_km=fixed_config["service_radius_km"],
+            courier_capacity=fixed_config["courier_capacity"],
+        )
+        seed_path = tmp_root / "canonical_seed.pkl"
+        save_environment_seed(build_environment_seed(canonical_environment), seed_path)
 
     processes: dict[int, subprocess.Popen[str]] = {}
     log_handles: list[TextIOWrapper] = []
@@ -89,6 +94,7 @@ def run_exp1_split(
                     *list(algorithms),
                     "--batch-size",
                     str(batch_size),
+                    *build_capa_cli_args(capa_runner_kwargs or {}),
                 ],
                 cwd=Path(__file__).resolve().parents[1],
                 stdout=stdout_handle,
@@ -170,13 +176,30 @@ def main() -> int:
     parser.add_argument("--algorithms", nargs="+", default=list(DEFAULT_CHENGDU_PAPER_ALGORITHMS))
     parser.add_argument("--batch-size", type=int, default=30)
     parser.add_argument("--poll-seconds", type=int, default=30)
+    parser.add_argument("--seed-path", default=None)
     parser.add_argument("--data-dir", default="Data")
     parser.add_argument("--local-couriers", type=int, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["local_couriers"])
     parser.add_argument("--platforms", type=int, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["platforms"])
     parser.add_argument("--couriers-per-platform", type=int, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["couriers_per_platform"])
     parser.add_argument("--courier-capacity", type=float, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["courier_capacity"])
     parser.add_argument("--service-radius-km", type=float, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["service_radius_km"])
+    parser.add_argument("--utility-balance-gamma", type=float, default=None)
+    parser.add_argument("--threshold-omega", type=float, default=None)
+    parser.add_argument("--local-payment-ratio-zeta", type=float, default=None)
+    parser.add_argument("--local-sharing-rate-mu1", type=float, default=None)
+    parser.add_argument("--cross-platform-sharing-rate-mu2", type=float, default=None)
     args = parser.parse_args()
+    capa_runner_kwargs = {
+        key: value
+        for key, value in {
+            "utility_balance_gamma": args.utility_balance_gamma,
+            "threshold_omega": args.threshold_omega,
+            "local_payment_ratio_zeta": args.local_payment_ratio_zeta,
+            "local_sharing_rate_mu1": args.local_sharing_rate_mu1,
+            "cross_platform_sharing_rate_mu2": args.cross_platform_sharing_rate_mu2,
+        }.items()
+        if value is not None
+    }
     run_exp1_split(
         tmp_root=Path(args.tmp_root),
         output_dir=Path(args.output_dir),
@@ -191,8 +214,34 @@ def main() -> int:
         },
         batch_size=args.batch_size,
         poll_seconds=args.poll_seconds,
+        seed_path=Path(args.seed_path) if args.seed_path is not None else None,
+        capa_runner_kwargs=capa_runner_kwargs or None,
     )
     return 0
+
+
+def build_capa_cli_args(capa_runner_kwargs: dict[str, float]) -> list[str]:
+    """Translate CAPA override kwargs into `run_exp1_point.py` CLI flags.
+
+    Args:
+        capa_runner_kwargs: CAPA-only override mapping.
+
+    Returns:
+        Flat CLI argument list.
+    """
+
+    flag_mapping = {
+        "utility_balance_gamma": "--utility-balance-gamma",
+        "threshold_omega": "--threshold-omega",
+        "local_payment_ratio_zeta": "--local-payment-ratio-zeta",
+        "local_sharing_rate_mu1": "--local-sharing-rate-mu1",
+        "cross_platform_sharing_rate_mu2": "--cross-platform-sharing-rate-mu2",
+    }
+    args: list[str] = []
+    for key, flag in flag_mapping.items():
+        if key in capa_runner_kwargs:
+            args.extend([flag, str(capa_runner_kwargs[key])])
+    return args
 
 
 if __name__ == "__main__":

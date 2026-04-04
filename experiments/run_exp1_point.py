@@ -22,6 +22,7 @@ def run_exp1_point(
     output_dir: Path,
     algorithms: Sequence[str],
     batch_size: int,
+    capa_runner_kwargs: dict[str, float] | None = None,
 ) -> dict[str, Any]:
     """Run one parcel-count comparison point from a persisted canonical seed.
 
@@ -31,6 +32,7 @@ def run_exp1_point(
         output_dir: Point output directory.
         algorithms: Algorithms executed at this point.
         batch_size: Shared batch size in seconds.
+        capa_runner_kwargs: Optional CAPA-only runner overrides for managed retries.
 
     Returns:
         One normalized point summary.
@@ -45,6 +47,8 @@ def run_exp1_point(
         runner_kwargs: dict[str, Any] = {}
         if algorithm in {"capa", "greedy", "mra"}:
             runner_kwargs["batch_size"] = batch_size
+        if algorithm == "capa" and capa_runner_kwargs:
+            runner_kwargs.update(capa_runner_kwargs)
         elif algorithm == "impgta":
             runner_kwargs["prediction_window_seconds"] = 180
         runner = build_algorithm_runner(algorithm, **runner_kwargs)
@@ -66,13 +70,30 @@ def main() -> int:
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--algorithms", nargs="+", required=True)
     parser.add_argument("--batch-size", type=int, default=30)
+    parser.add_argument("--utility-balance-gamma", type=float, default=None)
+    parser.add_argument("--threshold-omega", type=float, default=None)
+    parser.add_argument("--local-payment-ratio-zeta", type=float, default=None)
+    parser.add_argument("--local-sharing-rate-mu1", type=float, default=None)
+    parser.add_argument("--cross-platform-sharing-rate-mu2", type=float, default=None)
     args = parser.parse_args()
+    capa_runner_kwargs = {
+        key: value
+        for key, value in {
+            "utility_balance_gamma": args.utility_balance_gamma,
+            "threshold_omega": args.threshold_omega,
+            "local_payment_ratio_zeta": args.local_payment_ratio_zeta,
+            "local_sharing_rate_mu1": args.local_sharing_rate_mu1,
+            "cross_platform_sharing_rate_mu2": args.cross_platform_sharing_rate_mu2,
+        }.items()
+        if value is not None
+    }
     run_exp1_point(
         seed_path=Path(args.seed_path),
         num_parcels=args.num_parcels,
         output_dir=Path(args.output_dir),
         algorithms=args.algorithms,
         batch_size=args.batch_size,
+        capa_runner_kwargs=capa_runner_kwargs or None,
     )
     return 0
 

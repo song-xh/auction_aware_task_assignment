@@ -292,6 +292,56 @@ class PaperExperimentTests(unittest.TestCase):
         self.assertEqual(summary["num_parcels"], 2)
         self.assertEqual(summary["capa"]["metrics"]["TR"], 2.0)
 
+    def test_run_exp1_point_forwards_capa_override_kwargs(self) -> None:
+        """One Exp-1 point should pass CAPA parameter overrides only to the CAPA runner."""
+        from env.chengdu import ChengduEnvironment
+        from experiments.run_exp1_point import run_exp1_point
+        from experiments.seeding import build_environment_seed
+
+        environment = ChengduEnvironment(
+            tasks=[SimpleNamespace(num="t1", s_time=0.0, d_time=10.0)],
+            local_couriers=[SimpleNamespace(num=1)],
+            partner_couriers_by_platform={"P1": [SimpleNamespace(num=2)]},
+            station_set=[SimpleNamespace(num=1, courier_set=[], f_pick_task_set=[])],
+            travel_model=object(),
+            platform_base_prices={"P1": 1.0},
+            platform_sharing_rates={"P1": 0.4},
+            platform_qualities={"P1": 0.9},
+        )
+        observed_kwargs: dict[str, dict[str, object]] = {}
+
+        class FakeRunner:
+            """Return one normalized summary for CAPA override forwarding tests."""
+
+            def __init__(self, name: str) -> None:
+                self._name = name
+
+            def run(self, environment, output_dir=None) -> dict[str, object]:
+                return {"algorithm": self._name, "metrics": {"TR": 1.0, "CR": 1.0, "BPT": 0.1}}
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with patch("experiments.run_exp1_point.load_environment_seed", return_value=build_environment_seed(environment)):
+                def fake_build_runner(name: str, **kwargs):
+                    observed_kwargs[name] = kwargs
+                    return FakeRunner(name)
+
+                with patch(
+                    "experiments.run_exp1_point.build_algorithm_runner",
+                    side_effect=fake_build_runner,
+                ):
+                    run_exp1_point(
+                        seed_path=Path(tmpdir) / "seed.pkl",
+                        num_parcels=1,
+                        output_dir=Path(tmpdir) / "point",
+                        algorithms=("capa", "greedy"),
+                        batch_size=30,
+                        capa_runner_kwargs={"threshold_omega": 0.8, "utility_balance_gamma": 0.3},
+                    )
+
+        self.assertEqual(observed_kwargs["capa"]["threshold_omega"], 0.8)
+        self.assertEqual(observed_kwargs["capa"]["utility_balance_gamma"], 0.3)
+        self.assertNotIn("threshold_omega", observed_kwargs["greedy"])
+
     def test_run_exp1_split_aggregates_completed_points(self) -> None:
         """The split Exp-1 launcher should aggregate point summaries after every point finishes."""
         from experiments.run_exp1_split import run_exp1_split
@@ -349,6 +399,56 @@ class PaperExperimentTests(unittest.TestCase):
             self.assertTrue((output_dir / "split_manifest.json").exists())
             self.assertTrue(save_seed.called)
             self.assertTrue(save_plots.called)
+
+    def test_run_exp1_split_reuses_existing_canonical_seed(self) -> None:
+        """The split launcher should skip environment rebuilding when a canonical seed path is provided."""
+        from experiments.run_exp1_split import run_exp1_split
+
+        class FakeProcess:
+            """Represent one already-finished point process for seed-reuse tests."""
+
+            _next_pid = 2000
+
+            def __init__(self, *args, **kwargs) -> None:
+                self.pid = FakeProcess._next_pid
+                FakeProcess._next_pid += 1
+                self.returncode = 0
+
+            def poll(self) -> int:
+                return self.returncode
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_root = Path(tmpdir) / "tmp"
+            output_dir = Path(tmpdir) / "out"
+            seed_path = Path(tmpdir) / "canonical_seed.pkl"
+            seed_path.write_bytes(b"seed")
+            point_summary = {"num_parcels": 1000, "capa": {"metrics": {"TR": 10.0, "CR": 0.5, "BPT": 1.0}}}
+
+            def fake_popen(cmd, cwd=None, stdout=None, stderr=None, text=None):
+                output_path = Path(cmd[cmd.index("--output-dir") + 1])
+                output_path.mkdir(parents=True, exist_ok=True)
+                with (output_path / "summary.json").open("w", encoding="utf-8") as handle:
+                    json.dump(point_summary, handle, indent=2)
+                return FakeProcess()
+
+            with patch("experiments.run_exp1_split.ChengduEnvironment.build") as build_environment:
+                with patch("experiments.run_exp1_split.save_environment_seed") as save_seed:
+                    with patch("experiments.run_exp1_split.subprocess.Popen", side_effect=fake_popen):
+                        with patch("experiments.run_exp1_split.save_comparison_plots"):
+                            summary = run_exp1_split(
+                                tmp_root=tmp_root,
+                                output_dir=output_dir,
+                                algorithms=("capa",),
+                                parcel_values=(1000,),
+                                batch_size=30,
+                                poll_seconds=0,
+                                seed_path=seed_path,
+                            )
+
+        self.assertEqual(summary["runs"][0]["num_parcels"], 1000)
+        self.assertFalse(build_environment.called)
+        self.assertFalse(save_seed.called)
+
 
     def test_collect_split_progress_reports_completed_algorithms_and_points(self) -> None:
         """The split monitor should summarize per-point algorithm completion from tmp outputs."""
@@ -430,6 +530,80 @@ class PaperExperimentTests(unittest.TestCase):
         self.assertEqual(snapshot["completed_points"], 1)
         self.assertIn("completed_points=1/1", log_text)
         self.assertIn("1000:algos=capa", log_text)
+
+    def test_supervisor_launches_next_round_when_capa_is_not_accepted(self) -> None:
+        """The split supervisor should analyze one finished round and launch the next CAPA configuration when needed."""
+        from experiments.supervise_exp1_split import supervise_exp1_split
+
+        class FakeProcess:
+            """Represent a launched next-round split process."""
+
+            def __init__(self, *args, **kwargs) -> None:
+                self.pid = 4321
+                self.returncode = None
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            current_tmp_root = Path(tmpdir) / "round1_tmp"
+            current_output_dir = Path(tmpdir) / "round1_out"
+            next_output_dir = Path(tmpdir) / "round2_out"
+            current_tmp_root.mkdir(parents=True)
+            current_output_dir.mkdir(parents=True)
+            seed_path = current_tmp_root / "canonical_seed.pkl"
+            seed_path.write_bytes(b"seed")
+            (current_output_dir / "summary.json").write_text(
+                json.dumps(
+                    {
+                        "sweep_parameter": "num_parcels",
+                        "algorithms": ["capa", "greedy"],
+                        "runs": [
+                            {
+                                "num_parcels": 1000,
+                                "capa": {"metrics": {"TR": 50.0, "CR": 0.40, "BPT": 1.0}},
+                                "greedy": {"metrics": {"TR": 100.0, "CR": 0.50, "BPT": 0.5}},
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            snapshot_path = Path(tmpdir) / "supervisor_snapshot.json"
+            log_path = Path(tmpdir) / "supervisor.log"
+            analysis_path = Path(tmpdir) / "analysis.json"
+
+            with patch(
+                "experiments.supervise_exp1_split.collect_split_progress",
+                return_value={
+                    "state": "finished",
+                    "completed_points": 4,
+                    "total_points": 4,
+                    "points": {},
+                },
+            ):
+                with patch("experiments.supervise_exp1_split.subprocess.Popen", return_value=FakeProcess()) as popen:
+                    manifest = supervise_exp1_split(
+                        current_tmp_root=current_tmp_root,
+                        current_output_dir=current_output_dir,
+                        snapshot_path=snapshot_path,
+                        log_path=log_path,
+                        analysis_path=analysis_path,
+                        data_dir=Path("Data"),
+                        algorithms=("capa", "greedy"),
+                        poll_seconds=0,
+                        max_rounds=2,
+                        next_tmp_root_base=Path(tmpdir) / "managed_tmp",
+                        next_output_dir_base=Path(tmpdir) / "managed_out",
+                        stop_after_launch=True,
+                    )
+
+            self.assertFalse(manifest["accepted"])
+            self.assertEqual(manifest["recommendation"], "retry-lower-threshold")
+            self.assertTrue(popen.called)
+            launched_command = popen.call_args.args[0]
+            self.assertIn("--seed-path", launched_command)
+            self.assertIn(str(seed_path), launched_command)
+            self.assertIn("--threshold-omega", launched_command)
+            self.assertIn("0.8", launched_command)
+            self.assertTrue(analysis_path.exists())
 
 
 if __name__ == "__main__":
