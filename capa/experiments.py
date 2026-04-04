@@ -15,6 +15,7 @@ from baselines.gta import (
     run_impgta_baseline_environment,
 )
 from env.chengdu import LegacyChengduEnvironment, build_framework_chengdu_environment, run_time_stepped_chengdu_batches
+from .geo import GeoIndex
 from .metrics import compute_completion_rate, compute_total_revenue
 from .models import BatchReport, CAPAConfig, CAPAResult, Parcel, RunMetrics
 
@@ -148,6 +149,15 @@ def build_default_chengdu_config(batch_size: int) -> CAPAConfig:
     )
 
 
+def _build_geo_index_if_available() -> GeoIndex | None:
+    """Build a GeoIndex from the Chengdu graph nMap, or return None in test environments."""
+    try:
+        from GraphUtils_ChengDu import s
+        return GeoIndex(s.nMap)
+    except Exception:
+        return None
+
+
 def run_chengdu_experiment(
     data_dir: Path,
     num_parcels: int,
@@ -169,6 +179,7 @@ def run_chengdu_experiment(
     )
     environment = built_environment if isinstance(built_environment, LegacyChengduEnvironment) else LegacyChengduEnvironment(**built_environment)
     config = build_default_chengdu_config(batch_size=batch_size)
+    geo_index = _build_geo_index_if_available()
     result = run_time_stepped_chengdu_batches(
         tasks=environment.tasks,
         local_couriers=environment.local_couriers,
@@ -183,6 +194,8 @@ def run_chengdu_experiment(
         platform_qualities=environment.platform_qualities,
         movement_callback=environment.movement_callback,
         service_radius_km=getattr(environment, "service_radius_km", None),
+        geo_index=geo_index,
+        speed_m_per_s=environment.travel_model._speed if hasattr(environment.travel_model, '_speed') else 0.0,
     )
 
     save_experiment_plots(result.batch_reports, result.metrics, output_dir)

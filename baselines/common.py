@@ -7,6 +7,7 @@ from typing import Any, Sequence
 
 from capa.cama import is_feasible_local_match
 from capa.cache import InsertionCache
+from capa.geo import GeoIndex
 from capa.models import Courier
 from capa.timing import TimedTravelModel, TimingAccumulator
 from capa.utility import find_best_local_insertion
@@ -40,6 +41,8 @@ def build_legacy_feasible_insertions(
     timing: TimingAccumulator | None = None,
     snapshot_cache: LegacyCourierSnapshotCache | None = None,
     insertion_cache: InsertionCache | None = None,
+    geo_index: GeoIndex | None = None,
+    speed_m_per_s: float = 0.0,
 ) -> list[LegacyFeasibleInsertion]:
     """Collect all current courier-task insertions that satisfy the shared Chengdu constraints.
 
@@ -64,7 +67,12 @@ def build_legacy_feasible_insertions(
             courier_id=f"{courier_id_prefix}-{getattr(courier, 'num')}",
             snapshot_cache=snapshot_cache,
         )
-        if not is_feasible_local_match(parcel, snapshot, timed_travel_model, now, service_radius_meters=service_radius_meters):
+        if not is_feasible_local_match(
+            parcel, snapshot, timed_travel_model, now,
+            service_radius_meters=service_radius_meters,
+            geo_index=geo_index,
+            speed_m_per_s=speed_m_per_s,
+        ):
             continue
         _, insertion_index = find_best_local_insertion(
             parcel,

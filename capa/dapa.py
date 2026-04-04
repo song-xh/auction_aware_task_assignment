@@ -7,7 +7,8 @@ from typing import List, Sequence
 
 from .cache import InsertionCache
 from .cama import is_courier_available
-from .constraints import is_within_service_radius
+from .constraints import is_deadline_feasible_by_geo, is_within_service_radius
+from .geo import GeoIndex
 from .models import (
     Assignment,
     CAPAConfig,
@@ -29,13 +30,21 @@ def is_feasible_cross_match(
     travel_model: DistanceMatrixTravelModel,
     now: int,
     service_radius_meters: float | None = None,
+    geo_index: GeoIndex | None = None,
+    speed_m_per_s: float = 0.0,
 ) -> bool:
     """Check the validity condition required before a courier may enter FPSA."""
     if not is_courier_available(courier, now):
         return False
     if courier.current_load + parcel.weight > courier.capacity:
         return False
-    if not is_within_service_radius(courier.current_location, parcel.location, travel_model, service_radius_meters):
+    if not is_deadline_feasible_by_geo(
+        courier.current_location, parcel.location, now, parcel.deadline, speed_m_per_s, geo_index,
+    ):
+        return False
+    if not is_within_service_radius(
+        courier.current_location, parcel.location, travel_model, service_radius_meters, geo_index=geo_index,
+    ):
         return False
     arrival_time = now + travel_model.travel_time(courier.current_location, parcel.location)
     return arrival_time <= parcel.deadline
@@ -132,6 +141,8 @@ def run_dapa(
     service_radius_meters: float | None = None,
     timing: TimingAccumulator | None = None,
     insertion_cache: InsertionCache | None = None,
+    geo_index: GeoIndex | None = None,
+    speed_m_per_s: float = 0.0,
 ) -> DAPAResult:
     """Run Algorithm 3 with explicit FPSA, RVA, and upper-limit filtering."""
     started = perf_counter()
@@ -153,6 +164,8 @@ def run_dapa(
                     travel_model,
                     now,
                     service_radius_meters=service_radius_meters,
+                    geo_index=geo_index,
+                    speed_m_per_s=speed_m_per_s,
                 ):
                     continue
                 courier_bid = compute_fpsa_bid(

@@ -9,9 +9,11 @@ from pathlib import Path
 from time import perf_counter
 from typing import Any, Callable, Dict, Iterable, List, Mapping, MutableSequence, Sequence
 
+from capa.batch_distance import BatchDistanceMatrix
 from capa.cache import InsertionCache
 from capa.cama import run_cama
 from capa.dapa import run_dapa
+from capa.geo import GeoIndex
 from capa.metrics import build_run_metrics
 from capa.models import Assignment, BatchReport, CAPAConfig, CAPAResult, CooperatingPlatform, Courier, Parcel
 from capa.timing import TimingAccumulator, TimedTravelModel
@@ -522,6 +524,37 @@ def _build_partner_lookup(partner_couriers_by_platform: Mapping[str, Sequence[An
     return platform_lookup
 
 
+def _collect_active_nodes(
+    couriers: Sequence[Courier],
+    parcels: Sequence[Parcel],
+    partner_platforms: Sequence[CooperatingPlatform] | None = None,
+) -> list[object]:
+    """Collect the deduplicated set of node IDs relevant to the current batch."""
+    seen: set[object] = set()
+    nodes: list[object] = []
+
+    def _add(n: object) -> None:
+        if n not in seen:
+            seen.add(n)
+            nodes.append(n)
+
+    for c in couriers:
+        _add(c.current_location)
+        _add(c.depot_location)
+        for loc in c.route_locations:
+            _add(loc)
+    for p in parcels:
+        _add(p.location)
+    if partner_platforms:
+        for plat in partner_platforms:
+            for c in plat.couriers:
+                _add(c.current_location)
+                _add(c.depot_location)
+                for loc in c.route_locations:
+                    _add(loc)
+    return nodes
+
+
 def run_time_stepped_chengdu_batches(
     tasks: Sequence[Any],
     local_couriers: Sequence[Any],
@@ -536,6 +569,8 @@ def run_time_stepped_chengdu_batches(
     platform_qualities: Mapping[str, float],
     movement_callback: Callable[[MutableSequence[Any], MutableSequence[Any], int, Sequence[Any]], None] | None = None,
     service_radius_km: float | None = None,
+    geo_index: GeoIndex | None = None,
+    speed_m_per_s: float = 0.0,
 ) -> CAPAResult:
     """Run CAPA over legacy Chengdu batches with one matching round per batch deadline."""
     if step_seconds <= 0:
@@ -622,15 +657,20 @@ def run_time_stepped_chengdu_batches(
             for courier in active_local_couriers
         ]
         batch_parcels = [legacy_task_to_parcel(task) for task in eligible_tasks]
+        active_nodes = _collect_active_nodes(local_snapshots, batch_parcels)
+        bdm = BatchDistanceMatrix(timed_travel_model)
+        bdm.precompute(active_nodes)
         cama_result = run_cama(
             batch_parcels,
             local_snapshots,
-            timed_travel_model,
+            bdm,
             config,
             now=current_time,
             service_radius_meters=service_radius_meters,
             timing=timing,
             insertion_cache=insertion_cache,
+            geo_index=geo_index,
+            speed_m_per_s=speed_m_per_s,
         )
         best_local_pairs = _index_best_local_pairs(cama_result)
         task_lookup = {parcel.parcel_id: task for parcel, task in zip(batch_parcels, eligible_tasks)}
@@ -664,15 +704,19 @@ def run_time_stepped_chengdu_batches(
                 platform.platform_id: {courier.courier_id: courier for courier in platform.couriers}
                 for platform in partner_platforms
             }
+            cross_nodes = _collect_active_nodes(local_snapshots, remaining_parcels, partner_platforms)
+            bdm.precompute(cross_nodes)
             dapa_result = run_dapa(
                 remaining_parcels,
                 partner_platforms,
-                timed_travel_model,
+                bdm,
                 config,
                 now=current_time,
                 service_radius_meters=service_radius_meters,
                 timing=timing,
                 insertion_cache=insertion_cache,
+                geo_index=geo_index,
+                speed_m_per_s=speed_m_per_s,
             )
             cross_task_lookup = {parcel.parcel_id: task for parcel, task in zip(remaining_parcels, remaining_tasks)}
 
@@ -683,7 +727,7 @@ def run_time_stepped_chengdu_batches(
                 _, insertion_index = find_best_local_insertion(
                     legacy_task_to_parcel(task),
                     snapshot_courier,
-                    timed_travel_model,
+                    bdm,
                     timing=timing,
                     insertion_cache=insertion_cache,
                 )
