@@ -6,6 +6,7 @@ import tempfile
 import unittest
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 
@@ -237,6 +238,117 @@ class PaperExperimentTests(unittest.TestCase):
         self.assertEqual(run_managed.call_args.kwargs["algorithms"], ["capa", "greedy"])
         self.assertEqual(run_managed.call_args.kwargs["max_workers"], 3)
         self.assertEqual(run_managed.call_args.kwargs["batch_size"], 30)
+
+    def test_run_exp1_point_uses_shared_seed_bundle(self) -> None:
+        """One Exp-1 point should run algorithms from a shared canonical seed bundle."""
+        from env.chengdu import ChengduEnvironment
+        from experiments.run_exp1_point import run_exp1_point
+        from experiments.seeding import build_environment_seed, save_environment_seed
+
+        environment = ChengduEnvironment(
+            tasks=[
+                SimpleNamespace(num="t1", s_time=0.0, d_time=10.0),
+                SimpleNamespace(num="t2", s_time=1.0, d_time=11.0),
+                SimpleNamespace(num="t3", s_time=2.0, d_time=12.0),
+            ],
+            local_couriers=[SimpleNamespace(num=1)],
+            partner_couriers_by_platform={"P1": [SimpleNamespace(num=2)]},
+            station_set=[SimpleNamespace(num=1, courier_set=[], f_pick_task_set=[])],
+            travel_model=object(),
+            platform_base_prices={"P1": 1.0},
+            platform_sharing_rates={"P1": 0.4},
+            platform_qualities={"P1": 0.9},
+        )
+
+        class FakeRunner:
+            """Return a normalized point summary while exposing task counts."""
+
+            def __init__(self, name: str) -> None:
+                self._name = name
+
+            def run(self, environment, output_dir=None) -> dict[str, object]:
+                return {
+                    "algorithm": self._name,
+                    "metrics": {
+                        "TR": float(len(environment.tasks)),
+                        "CR": 1.0,
+                        "BPT": 0.1,
+                    },
+                }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            seed_path = Path(tmpdir) / "seed.pkl"
+            save_environment_seed(build_environment_seed(environment), seed_path)
+            with patch("experiments.run_exp1_point.load_environment_seed", return_value=build_environment_seed(environment)):
+                with patch("experiments.run_exp1_point.build_algorithm_runner", side_effect=lambda name, **kwargs: FakeRunner(name)):
+                    summary = run_exp1_point(
+                        seed_path=seed_path,
+                        num_parcels=2,
+                        output_dir=Path(tmpdir) / "point",
+                        algorithms=("capa", "greedy"),
+                        batch_size=30,
+                    )
+
+        self.assertEqual(summary["num_parcels"], 2)
+        self.assertEqual(summary["capa"]["metrics"]["TR"], 2.0)
+
+    def test_run_exp1_split_aggregates_completed_points(self) -> None:
+        """The split Exp-1 launcher should aggregate point summaries after every point finishes."""
+        from experiments.run_exp1_split import run_exp1_split
+
+        class FakeProcess:
+            """Represent one already-finished point process."""
+
+            _next_pid = 1000
+
+            def __init__(self, *args, **kwargs) -> None:
+                self.pid = FakeProcess._next_pid
+                FakeProcess._next_pid += 1
+                self.returncode = 0
+
+            def poll(self) -> int:
+                return self.returncode
+
+        class FakeRunnerBuilder:
+            """Placeholder used only to keep patch scopes explicit."""
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_root = Path(tmpdir) / "tmp"
+            output_dir = Path(tmpdir) / "out"
+            point_summaries = {
+                1000: {"num_parcels": 1000, "capa": {"metrics": {"TR": 10.0, "CR": 0.5, "BPT": 1.0}}},
+                2000: {"num_parcels": 2000, "capa": {"metrics": {"TR": 20.0, "CR": 0.6, "BPT": 1.5}}},
+            }
+
+            def fake_popen(cmd, cwd=None, stdout=None, stderr=None, text=None):
+                point_value = int(cmd[cmd.index("--num-parcels") + 1])
+                output_path = Path(cmd[cmd.index("--output-dir") + 1])
+                output_path.mkdir(parents=True, exist_ok=True)
+                with (output_path / "summary.json").open("w", encoding="utf-8") as handle:
+                    json.dump(point_summaries[point_value], handle, indent=2)
+                return FakeProcess()
+
+            fake_environment = SimpleNamespace()
+
+            with patch("experiments.run_exp1_split.ChengduEnvironment.build", return_value=fake_environment):
+                with patch("experiments.run_exp1_split.build_environment_seed", return_value="seed-object"):
+                    with patch("experiments.run_exp1_split.save_environment_seed") as save_seed:
+                        with patch("experiments.run_exp1_split.subprocess.Popen", side_effect=fake_popen):
+                            with patch("experiments.run_exp1_split.save_comparison_plots") as save_plots:
+                                summary = run_exp1_split(
+                                    tmp_root=tmp_root,
+                                    output_dir=output_dir,
+                                    algorithms=("capa",),
+                                    parcel_values=(1000, 2000),
+                                    batch_size=30,
+                                    poll_seconds=0,
+                                )
+
+            self.assertEqual([run["num_parcels"] for run in summary["runs"]], [1000, 2000])
+            self.assertTrue((output_dir / "summary.json").exists())
+            self.assertTrue((output_dir / "split_manifest.json").exists())
+            self.assertTrue(save_seed.called)
+            self.assertTrue(save_plots.called)
 
 
 if __name__ == "__main__":
