@@ -6,10 +6,12 @@ from dataclasses import dataclass
 from time import perf_counter
 from typing import Any, Sequence
 
+from capa.cache import InsertionCache
 from capa.revenue import DEFAULT_LOCAL_PAYMENT_RATIO, compute_local_platform_revenue_for_local_completion
 from capa.timing import TimedTravelModel, TimingAccumulator
-from capa.utility import calculate_capacity_ratio, find_best_local_insertion
+from capa.utility import find_best_local_insertion
 from env.chengdu import (
+    LegacyCourierSnapshotCache,
     apply_assignment_to_legacy_courier,
     drain_legacy_routes,
     framework_movement_callback,
@@ -42,6 +44,8 @@ def compute_mra_bid(
     base_price: float = DEFAULT_MRA_BASE_PRICE,
     sharing_rate: float = DEFAULT_MRA_SHARING_RATE,
     timing: TimingAccumulator | None = None,
+    insertion_cache: InsertionCache | None = None,
+    snapshot_cache: LegacyCourierSnapshotCache | None = None,
 ) -> float:
     """Compute the Chengdu-adapted MRA bid described in `docs/mra.md`.
 
@@ -58,10 +62,20 @@ def compute_mra_bid(
     """
 
     parcel = legacy_task_to_parcel(task)
-    snapshot = project_courier_to_capa(courier, courier_id=f"mra-{getattr(courier, 'num')}")
+    snapshot = project_courier_to_capa(
+        courier,
+        courier_id=f"mra-{getattr(courier, 'num')}",
+        snapshot_cache=snapshot_cache,
+    )
     remaining_capacity = max(snapshot.capacity - snapshot.current_load, 1e-9)
     capacity_term = 1.0 - (parcel.weight / remaining_capacity)
-    local_ratio, _ = find_best_local_insertion(parcel, snapshot, travel_model, timing=timing)
+    local_ratio, _ = find_best_local_insertion(
+        parcel,
+        snapshot,
+        travel_model,
+        timing=timing,
+        insertion_cache=insertion_cache,
+    )
     detour_term = 1.0 - local_ratio
     if feasible_count <= 1:
         return base_price + sharing_rate * parcel.fare
@@ -104,6 +118,8 @@ def run_mra_baseline_environment(
     movement = environment.movement_callback or framework_movement_callback
     timing = TimingAccumulator()
     timed_travel_model = TimedTravelModel(environment.travel_model, timing)
+    snapshot_cache = LegacyCourierSnapshotCache()
+    insertion_cache = InsertionCache()
     service_radius_meters = None if getattr(environment, "service_radius_km", None) is None else float(environment.service_radius_km) * 1000.0
     backlog: list[Any] = []
     accepted_assignments = 0
@@ -131,6 +147,8 @@ def run_mra_baseline_environment(
                     service_radius_meters=service_radius_meters,
                     courier_id_prefix="mra",
                     timing=timing,
+                    snapshot_cache=snapshot_cache,
+                    insertion_cache=insertion_cache,
                 )
                 for insertion in feasible:
                     graph_edges.append(
@@ -145,6 +163,8 @@ def run_mra_baseline_environment(
                                 base_price=base_price,
                                 sharing_rate=sharing_rate,
                                 timing=timing,
+                                insertion_cache=insertion_cache,
+                                snapshot_cache=snapshot_cache,
                             ),
                             insertion_index=insertion.insertion_index,
                         )

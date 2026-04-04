@@ -8,11 +8,13 @@ from contextlib import redirect_stdout
 from time import perf_counter
 from typing import Any, Sequence
 
+from capa.cache import InsertionCache
 from capa.cama import is_feasible_local_match
 from capa.revenue import DEFAULT_LOCAL_PAYMENT_RATIO, compute_local_platform_revenue_for_local_completion
 from capa.timing import TimedTravelModel, TimingAccumulator
-from capa.utility import build_route_nodes
+from capa.utility import find_best_local_insertion
 from env.chengdu import (
+    LegacyCourierSnapshotCache,
     apply_assignment_to_legacy_courier,
     drain_legacy_routes,
     framework_movement_callback,
@@ -122,6 +124,8 @@ def run_greedy_baseline_environment(
     movement = environment.movement_callback or framework_movement_callback
     timing = TimingAccumulator()
     timed_travel_model = TimedTravelModel(environment.travel_model, timing)
+    snapshot_cache = LegacyCourierSnapshotCache()
+    insertion_cache = InsertionCache()
     service_radius_meters = (
         None if getattr(environment, "service_radius_km", None) is None else float(environment.service_radius_km) * 1000.0
     )
@@ -156,6 +160,8 @@ def run_greedy_baseline_environment(
                 utility=utility,
                 service_radius_meters=service_radius_meters,
                 timing=timing,
+                snapshot_cache=snapshot_cache,
+                insertion_cache=insertion_cache,
             )
             if selection is not None:
                 courier, insertion_index, _ = selection
@@ -196,6 +202,8 @@ def select_greedy_assignment(
     utility: float,
     service_radius_meters: float | None,
     timing: TimingAccumulator | None = None,
+    snapshot_cache: LegacyCourierSnapshotCache | None = None,
+    insertion_cache: InsertionCache | None = None,
 ) -> tuple[Any, int, float] | None:
     """Choose the minimum-bid local courier for one task under legacy Greedy bidding.
 
@@ -215,7 +223,11 @@ def select_greedy_assignment(
     parcel = legacy_task_to_parcel(task)
     best_choice: tuple[Any, int, float] | None = None
     for courier in couriers:
-        snapshot = project_courier_to_capa(courier, courier_id=f"greedy-{getattr(courier, 'num')}")
+        snapshot = project_courier_to_capa(
+            courier,
+            courier_id=f"greedy-{getattr(courier, 'num')}",
+            snapshot_cache=snapshot_cache,
+        )
         if not is_feasible_local_match(
             parcel=parcel,
             courier=snapshot,
@@ -231,6 +243,7 @@ def select_greedy_assignment(
             travel_model=travel_model,
             utility=utility,
             timing=timing,
+            insertion_cache=insertion_cache,
         )
         candidate = (courier, insertion_index, bid)
         if best_choice is None or (bid, getattr(courier, "num", 0)) < (best_choice[2], getattr(best_choice[0], "num", 0)):
@@ -245,6 +258,7 @@ def compute_greedy_bid(
     travel_model: Any,
     utility: float,
     timing: TimingAccumulator | None = None,
+    insertion_cache: InsertionCache | None = None,
 ) -> tuple[float, int]:
     """Compute the legacy Greedy local bid and insertion index for one courier-task pair.
 
@@ -260,33 +274,21 @@ def compute_greedy_bid(
         `(bid, insertion_index)` for the minimum-bid insertion position.
     """
 
-    started = perf_counter()
-    if timing is not None:
-        timing.begin_insertion()
-    route_nodes = build_route_nodes(courier_snapshot)
-    best_bid = float("inf")
-    best_index = 0
-    try:
-        remaining_capacity = max(float(getattr(legacy_courier, "max_weight")) - float(getattr(legacy_courier, "re_weight", 0.0)), 1e-9)
-        weight_term = float(parcel.weight) / remaining_capacity
-        preference_w = float(getattr(legacy_courier, "w", 0.5))
-        preference_c = float(getattr(legacy_courier, "c", 0.5))
-        for index in range(len(route_nodes) - 1):
-            start = route_nodes[index]
-            end = route_nodes[index + 1]
-            base_distance = float(travel_model.distance(start, end))
-            detour_distance = float(travel_model.distance(start, parcel.location)) + float(travel_model.distance(parcel.location, end))
-            detour_rate = 0.0 if base_distance <= 0.0 else detour_distance / base_distance
-            bid = 2.0 + (preference_w * weight_term + preference_c * detour_rate) * float(utility) * float(parcel.fare)
-            bid = min(bid, 2.0 + float(utility) * float(parcel.fare))
-            if bid < best_bid:
-                best_bid = bid
-                best_index = index
-        return best_bid, best_index
-    finally:
-        if timing is not None:
-            timing.end_insertion()
-            timing.insertion_time_seconds += perf_counter() - started
+    remaining_capacity = max(float(getattr(legacy_courier, "max_weight")) - float(getattr(legacy_courier, "re_weight", 0.0)), 1e-9)
+    weight_term = float(parcel.weight) / remaining_capacity
+    preference_w = float(getattr(legacy_courier, "w", 0.5))
+    preference_c = float(getattr(legacy_courier, "c", 0.5))
+    local_ratio, insertion_index = find_best_local_insertion(
+        parcel,
+        courier_snapshot,
+        travel_model,
+        timing=timing,
+        insertion_cache=insertion_cache,
+    )
+    detour_rate = 0.0 if local_ratio >= 1.0 else 1.0 / max(local_ratio, 1e-9)
+    bid = 2.0 + (preference_w * weight_term + preference_c * detour_rate) * float(utility) * float(parcel.fare)
+    bid = min(bid, 2.0 + float(utility) * float(parcel.fare))
+    return bid, insertion_index
 
 
 def total_task_count(tasks: Sequence[Any]) -> int:

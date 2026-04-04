@@ -5,6 +5,7 @@ from __future__ import annotations
 from time import perf_counter
 from typing import Iterable, List, Tuple
 
+from .cache import InsertionCache
 from .models import CAPAConfig, Courier, Parcel, UtilityEvaluation
 from .timing import TimingAccumulator
 from .travel import DistanceMatrixTravelModel
@@ -27,8 +28,13 @@ def find_best_local_insertion(
     courier: Courier,
     travel_model: DistanceMatrixTravelModel,
     timing: TimingAccumulator | None = None,
+    insertion_cache: InsertionCache | None = None,
 ) -> Tuple[float, int]:
     """Return the best insertion index and the Eq.6 detour ratio for local matching."""
+    if insertion_cache is not None:
+        cached = insertion_cache.get(courier, parcel.location)
+        if cached is not None:
+            return cached
     started = perf_counter()
     if timing is not None:
         timing.begin_insertion()
@@ -48,7 +54,10 @@ def find_best_local_insertion(
             if ratio > best_ratio:
                 best_ratio = ratio
                 best_index = index
-        return best_ratio, best_index
+        result = (best_ratio, best_index)
+        if insertion_cache is not None:
+            insertion_cache.store(courier, parcel.location, result)
+        return result
     finally:
         if timing is not None:
             timing.end_insertion()
@@ -60,9 +69,16 @@ def find_best_auction_detour_ratio(
     courier: Courier,
     travel_model: DistanceMatrixTravelModel,
     timing: TimingAccumulator | None = None,
+    insertion_cache: InsertionCache | None = None,
 ) -> float:
     """Return the Eq.1 detour term used by the FPSA bid function."""
-    local_ratio, _ = find_best_local_insertion(parcel, courier, travel_model, timing=timing)
+    local_ratio, _ = find_best_local_insertion(
+        parcel,
+        courier,
+        travel_model,
+        timing=timing,
+        insertion_cache=insertion_cache,
+    )
     return 1.0 - local_ratio
 
 
@@ -72,9 +88,16 @@ def calculate_utility(
     travel_model: DistanceMatrixTravelModel,
     config: CAPAConfig,
     timing: TimingAccumulator | None = None,
+    insertion_cache: InsertionCache | None = None,
 ) -> UtilityEvaluation:
     """Compute the Eq.6 utility and preserve the best insertion index."""
-    detour_ratio, insertion_index = find_best_local_insertion(parcel, courier, travel_model, timing=timing)
+    detour_ratio, insertion_index = find_best_local_insertion(
+        parcel,
+        courier,
+        travel_model,
+        timing=timing,
+        insertion_cache=insertion_cache,
+    )
     capacity_ratio = calculate_capacity_ratio(parcel, courier)
     utility_value = (
         config.utility_balance_gamma * capacity_ratio

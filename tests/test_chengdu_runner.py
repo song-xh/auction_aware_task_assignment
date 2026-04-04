@@ -60,6 +60,7 @@ class ChengduRunnerTests(unittest.TestCase):
             distances={
                 ("L0", "T1"): 2.0,
                 ("L0", "T2"): 8.0,
+                ("T1", "T2"): 4.0,
                 ("T1", "S"): 2.0,
                 ("T2", "S"): 6.0,
                 ("L0", "S"): 4.0,
@@ -193,8 +194,8 @@ class ChengduRunnerTests(unittest.TestCase):
             historical_quality=1.0,
         )
         tasks = [
-            FakeTask("t1", "T1", 0, 30, 1.0, 10.0),
-            FakeTask("t2", "T2", 0, 30, 1.0, 10.0),
+            FakeTask("t1", "T1", 0, 120, 1.0, 10.0),
+            FakeTask("t2", "T2", 0, 120, 1.0, 10.0),
         ]
         move_calls = []
 
@@ -233,7 +234,7 @@ class ChengduRunnerTests(unittest.TestCase):
 
         local_station = FakeStation(1, "S")
         local_courier = FakeLegacyCourier(num=1, location="L0", station=local_station)
-        task = FakeTask("t1", "T1", 40, 100, 1.0, 10.0)
+        task = FakeTask("t1", "T1", 40, 200, 1.0, 10.0)
         move_calls = []
 
         def delayed_delivery_callback(local_couriers, partner_couriers, step_seconds, station_set) -> None:
@@ -269,6 +270,54 @@ class ChengduRunnerTests(unittest.TestCase):
         self.assertEqual(local_courier.re_schedule, [])
         self.assertEqual(result.metrics.delivered_parcel_count, 1)
         self.assertAlmostEqual(result.metrics.completion_rate, 1.0)
+
+    def test_time_stepped_runner_matches_once_at_batch_boundary(self) -> None:
+        """Tasks arriving inside one batch window should be matched together at the batch deadline."""
+        from env.chengdu import run_time_stepped_chengdu_batches
+
+        local_station = FakeStation(1, "S")
+        local_courier = FakeLegacyCourier(num=1, location="L0", station=local_station)
+        tasks = [
+            FakeTask("t1", "T1", 0, 100, 1.0, 10.0),
+            FakeTask("t2", "T2", 20, 100, 1.0, 10.0),
+        ]
+        move_calls = []
+
+        def movement_callback(local_couriers, partner_couriers, step_seconds, station_set) -> None:
+            move_calls.append((len(local_couriers), len(partner_couriers), step_seconds, len(station_set)))
+            for courier in [*local_couriers, *partner_couriers]:
+                if not courier.re_schedule:
+                    continue
+                head = courier.re_schedule.pop(0)
+                courier.location = head.l_node
+                courier.re_weight -= head.weight
+
+        result = run_time_stepped_chengdu_batches(
+            tasks=tasks,
+            local_couriers=[local_courier],
+            partner_couriers_by_platform={},
+            station_set=[local_station],
+            travel_model=self.travel,
+            config=CAPAConfig(
+                batch_size=30,
+                utility_balance_gamma=0.5,
+                threshold_omega=1.0,
+                local_payment_ratio_zeta=0.2,
+                local_sharing_rate_mu1=0.5,
+                cross_platform_sharing_rate_mu2=0.4,
+            ),
+            batch_seconds=30,
+            step_seconds=60,
+            platform_base_prices={},
+            platform_sharing_rates={},
+            platform_qualities={},
+            movement_callback=movement_callback,
+        )
+
+        self.assertEqual(move_calls[0][2], 30)
+        self.assertEqual([parcel.parcel_id for parcel in result.batch_reports[0].input_parcels], ["t1", "t2"])
+        self.assertEqual(result.batch_reports[0].batch_time, 30)
+        self.assertEqual(len(result.matching_plan), 2)
 
     def test_generate_origin_schedule_with_retry_skips_oversized_sample_requests(self) -> None:
         """The environment builder should retry when legacy schedule seeding requests more couriers than can be sampled."""

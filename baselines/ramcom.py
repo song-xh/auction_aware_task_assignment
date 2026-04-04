@@ -7,6 +7,7 @@ import random
 from time import perf_counter
 from typing import Any, Sequence
 
+from capa.cache import InsertionCache
 from capa.revenue import (
     DEFAULT_LOCAL_PAYMENT_RATIO,
     compute_local_platform_revenue_for_cross_completion,
@@ -14,6 +15,7 @@ from capa.revenue import (
 )
 from capa.timing import TimedTravelModel, TimingAccumulator
 from env.chengdu import (
+    LegacyCourierSnapshotCache,
     apply_assignment_to_legacy_courier,
     drain_legacy_routes,
     flatten_partner_couriers,
@@ -114,6 +116,8 @@ def run_ramcom_baseline_environment(
     rng = random.Random(random_seed)
     timing = TimingAccumulator()
     timed_travel_model = TimedTravelModel(environment.travel_model, timing)
+    snapshot_cache = LegacyCourierSnapshotCache()
+    insertion_cache = InsertionCache()
     local_couriers = list(environment.local_couriers)
     partner_couriers_by_platform = {
         platform_id: list(couriers)
@@ -149,6 +153,8 @@ def run_ramcom_baseline_environment(
                 service_radius_meters=service_radius_meters,
                 courier_id_prefix="ramcom-inner",
                 timing=timing,
+                snapshot_cache=snapshot_cache,
+                insertion_cache=insertion_cache,
             )
             if inner_candidates:
                 chosen = rng.choice(inner_candidates)
@@ -172,6 +178,8 @@ def run_ramcom_baseline_environment(
                     service_radius_meters=service_radius_meters,
                     courier_id_prefix=f"ramcom-{platform_id}",
                     timing=timing,
+                    snapshot_cache=snapshot_cache,
+                    insertion_cache=insertion_cache,
                 )
                 for insertion in feasible:
                     outer_candidates.append((platform_id, insertion))

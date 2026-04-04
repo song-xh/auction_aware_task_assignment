@@ -3,8 +3,10 @@
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
-from capa import CAPAConfig, Parcel
+from capa import CAPAConfig, DistanceMatrixTravelModel, Parcel
 from capa.experiments import build_metric_series, run_chengdu_experiment, run_chengdu_parameter_sweep, save_experiment_plots
 from capa.models import Assignment, BatchReport, Courier, RunMetrics
 from env.chengdu import LegacyChengduEnvironment
@@ -84,7 +86,7 @@ class CAPAExperimentTests(unittest.TestCase):
 
         local_station = FakeStation(1, "S")
         partner_station = FakeStation(2, "PS")
-        tasks = [FakeTask("t1", "T1", 0, 30, 1.0, 10.0)]
+        tasks = [FakeTask("t1", "T1", 0, 120, 1.0, 10.0)]
         local_courier = FakeLegacyCourier(num=1, location="L0", station=local_station)
         partner_courier = FakeLegacyCourier(num=2, location="P0", station=partner_station)
         from capa import DistanceMatrixTravelModel
@@ -137,6 +139,68 @@ class CAPAExperimentTests(unittest.TestCase):
             self.assertEqual(len(result.matching_plan), 1)
             self.assertTrue((output_dir / "summary.json").exists())
 
+    def test_run_chengdu_experiment_matches_a_full_batch_at_the_deadline(self) -> None:
+        """The official Chengdu experiment path should match one full batch at the batch boundary."""
+        from tests.test_chengdu_runner import FakeLegacyCourier, FakeStation, FakeTask
+
+        local_station = FakeStation(1, "S")
+        tasks = [
+            FakeTask("t1", "T1", 0, 100, 1.0, 10.0),
+            FakeTask("t2", "T2", 20, 100, 1.0, 10.0),
+        ]
+        local_courier = FakeLegacyCourier(num=1, location="L0", station=local_station)
+        travel_model = DistanceMatrixTravelModel(
+            distances={
+                ("L0", "T1"): 2.0,
+                ("T1", "S"): 2.0,
+                ("L0", "T2"): 2.0,
+                ("T1", "T2"): 2.0,
+                ("T2", "S"): 2.0,
+                ("L0", "S"): 4.0,
+            },
+            speed=1.0,
+        )
+        move_calls = []
+
+        def fake_builder(**_kwargs):
+            def movement_callback(local_couriers, partner_couriers, step, stations) -> None:
+                move_calls.append((len(local_couriers), len(partner_couriers), step, len(stations)))
+                for courier in [*local_couriers, *partner_couriers]:
+                    if not courier.re_schedule:
+                        continue
+                    head = courier.re_schedule.pop(0)
+                    courier.location = head.l_node
+                    courier.re_weight -= head.weight
+
+            return LegacyChengduEnvironment(
+                tasks=tasks,
+                local_couriers=[local_courier],
+                partner_couriers_by_platform={},
+                station_set=[local_station],
+                travel_model=travel_model,
+                platform_base_prices={},
+                platform_sharing_rates={},
+                platform_qualities={},
+                movement_callback=movement_callback,
+            )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            output_dir = Path(tmp_dir)
+            result = run_chengdu_experiment(
+                data_dir=Path("Data"),
+                num_parcels=2,
+                local_courier_count=1,
+                cooperating_platform_count=0,
+                couriers_per_platform=0,
+                batch_size=30,
+                output_dir=output_dir,
+                env_builder=fake_builder,
+            )
+
+            self.assertEqual(move_calls[0][2], 30)
+            self.assertEqual([parcel.parcel_id for parcel in result.batch_reports[0].input_parcels], ["t1", "t2"])
+            self.assertEqual(result.batch_reports[0].batch_time, 30)
+
     def test_run_chengdu_parameter_sweep_writes_aggregate_summary(self) -> None:
         """The sweep helper should run one experiment per parameter value and persist an aggregate summary."""
         from capa.models import CAPAResult
@@ -179,6 +243,50 @@ class CAPAExperimentTests(unittest.TestCase):
 
             self.assertEqual([run["batch_size"] for run in summary["runs"]], [60, 120])
             self.assertTrue((output_dir / "summary.json").exists())
+
+    def test_chengdu_graph_travel_model_prefers_distance_only_graph_api(self) -> None:
+        """The Chengdu travel-model wrapper should use a distance-only graph fast path when available."""
+        from capa.experiments import ChengduGraphTravelModel
+
+        class FakeNodeModel:
+            """Minimal node model stub matching the Chengdu graph wrapper contract."""
+
+            def __init__(self) -> None:
+                """Initialize the fake node with an unset identifier."""
+                self.nodeId = ""
+
+        graph = SimpleNamespace(
+            distance_calls=[],
+            path_calls=[],
+        )
+
+        def get_shortest_distance(start, end, context):
+            """Return a deterministic distance and record the fast-path call."""
+            graph.distance_calls.append((start.nodeId, end.nodeId, context))
+            return 7.0
+
+        def get_short_path(start, end, context):
+            """Fail if the wrapper falls back to the slower path-based API."""
+            graph.path_calls.append((start.nodeId, end.nodeId, context))
+            raise AssertionError("path-based shortest path should not be used when distance-only API exists")
+
+        fake_module = SimpleNamespace(
+            NodeModel=FakeNodeModel,
+            VELOCITY=1.0,
+            g=SimpleNamespace(
+                getShortestDistance=get_shortest_distance,
+                getShortPath=get_short_path,
+            ),
+            s="context",
+        )
+
+        with patch.dict("sys.modules", {"GraphUtils_ChengDu": fake_module}):
+            model = ChengduGraphTravelModel()
+            distance = model.distance("A", "B")
+
+        self.assertEqual(distance, 7.0)
+        self.assertEqual(graph.path_calls, [])
+        self.assertEqual(graph.distance_calls, [("A", "B", "context")])
 
 
 if __name__ == "__main__":

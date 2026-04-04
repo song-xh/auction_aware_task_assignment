@@ -219,6 +219,38 @@ This preserves:
 
 But it does not prove that the cooperating platforms correspond to distinct real operators in the source data. That limitation remains documented here rather than hidden behind a synthetic environment.
 
+## 10. CAPA batch-boundary execution and cache layers
+
+The Chengdu CAPA runner now executes one decision epoch per batch boundary.
+
+Concretely, `env.chengdu.run_time_stepped_chengdu_batches()` now follows this sequence for each batch:
+
+- advance the legacy simulation to the batch deadline using the original road-network movement logic
+- collect the entire batch parcel set plus the carried backlog from prior batches
+- drop only parcels whose deadlines have already expired at the batch deadline
+- run `CAMA` once over the whole local batch
+- run `DAPA` once over the unresolved remainder
+- carry unresolved but still-feasible parcels into the next batch
+
+It no longer performs repeated matching loops inside the same batch window. This matches the paper's batch semantics more closely and avoids the old distortion where `step_seconds` could exceed the batch duration.
+
+This refactor also adds three reusable performance layers used by CAPA and the reusable baseline helpers:
+
+- a distance-only Chengdu graph API for cases that only need shortest-path length rather than a full path reconstruction
+- an insertion-result cache keyed by courier route signature and parcel location
+- a legacy courier snapshot cache keyed by the mutable legacy route state
+
+These caches are intentionally transparent:
+
+- they do not change feasibility, bids, or rewards
+- they only avoid recomputing repeated route-projection and insertion-search results within a stable route state
+
+One explicit safety rule remains:
+
+- if the final batch still has carried backlog and no courier routes remain pending, the unresolved backlog is marked terminal instead of being retried forever
+
+This is not fallback logic. It is the terminal condition for parcels that are no longer schedulable under the current environment state.
+
 ## 10. Service-radius interpretation
 
 The paper varies courier service radius `rad` in Table 2 and Exp-3, but it does not provide a formal equation for how `rad` enters the feasibility checks.

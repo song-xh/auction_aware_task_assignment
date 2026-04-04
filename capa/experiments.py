@@ -69,6 +69,12 @@ class ChengduGraphTravelModel:
         start_node.nodeId = str(start)
         end_node = self._NodeModel()
         end_node.nodeId = str(end)
+        distance_only = getattr(self._graph, "getShortestDistance", None)
+        if callable(distance_only):
+            distance = distance_only(start_node, end_node, self._context)
+            if distance is None:
+                raise ValueError(f"No Chengdu road path between {start!r} and {end!r}.")
+            return float(distance)
         edges = self._graph.getShortPath(start_node, end_node, self._context)
         if not edges:
             raise ValueError(f"No Chengdu road path between {start!r} and {end!r}.")

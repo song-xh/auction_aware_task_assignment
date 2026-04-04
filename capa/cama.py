@@ -5,6 +5,7 @@ from __future__ import annotations
 from time import perf_counter
 from typing import Iterable, List, Sequence
 
+from .cache import InsertionCache
 from .constraints import is_within_service_radius
 from .models import Assignment, CAMAResult, CAPAConfig, CandidatePair, Courier, Parcel
 from .revenue import compute_local_courier_payment, compute_local_platform_revenue_for_local_completion
@@ -76,6 +77,7 @@ def run_cama(
     now: int,
     service_radius_meters: float | None = None,
     timing: TimingAccumulator | None = None,
+    insertion_cache: InsertionCache | None = None,
 ) -> CAMAResult:
     """Run Algorithm 2 exactly at the candidate-set level defined in the paper."""
     started = perf_counter()
@@ -91,7 +93,14 @@ def run_cama(
         for courier in couriers:
             if not is_feasible_local_match(parcel, courier, travel_model, now, service_radius_meters=service_radius_meters):
                 continue
-            utility = calculate_utility(parcel, courier, travel_model, config, timing=timing)
+            utility = calculate_utility(
+                parcel,
+                courier,
+                travel_model,
+                config,
+                timing=timing,
+                insertion_cache=insertion_cache,
+            )
             feasible_for_parcel.append(CandidatePair(parcel=parcel, courier=courier, utility=utility))
         if feasible_for_parcel:
             all_feasible_pairs.extend(feasible_for_parcel)

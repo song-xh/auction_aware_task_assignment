@@ -6,10 +6,11 @@ from dataclasses import dataclass
 from typing import Any, Sequence
 
 from capa.cama import is_feasible_local_match
+from capa.cache import InsertionCache
 from capa.models import Courier
 from capa.timing import TimedTravelModel, TimingAccumulator
 from capa.utility import find_best_local_insertion
-from env.chengdu import legacy_courier_to_capa, legacy_task_to_parcel
+from env.chengdu import LegacyCourierSnapshotCache, legacy_courier_to_capa, legacy_task_to_parcel
 
 
 @dataclass(frozen=True)
@@ -37,6 +38,8 @@ def build_legacy_feasible_insertions(
     service_radius_meters: float | None,
     courier_id_prefix: str,
     timing: TimingAccumulator | None = None,
+    snapshot_cache: LegacyCourierSnapshotCache | None = None,
+    insertion_cache: InsertionCache | None = None,
 ) -> list[LegacyFeasibleInsertion]:
     """Collect all current courier-task insertions that satisfy the shared Chengdu constraints.
 
@@ -56,10 +59,20 @@ def build_legacy_feasible_insertions(
     timed_travel_model = TimedTravelModel(travel_model, timing)
     feasible: list[LegacyFeasibleInsertion] = []
     for courier in couriers:
-        snapshot = project_courier_to_capa(courier, courier_id=f"{courier_id_prefix}-{getattr(courier, 'num')}")
+        snapshot = project_courier_to_capa(
+            courier,
+            courier_id=f"{courier_id_prefix}-{getattr(courier, 'num')}",
+            snapshot_cache=snapshot_cache,
+        )
         if not is_feasible_local_match(parcel, snapshot, timed_travel_model, now, service_radius_meters=service_radius_meters):
             continue
-        _, insertion_index = find_best_local_insertion(parcel, snapshot, timed_travel_model, timing=timing)
+        _, insertion_index = find_best_local_insertion(
+            parcel,
+            snapshot,
+            timed_travel_model,
+            timing=timing,
+            insertion_cache=insertion_cache,
+        )
         feasible.append(
             LegacyFeasibleInsertion(
                 courier=courier,
@@ -89,9 +102,15 @@ def extract_worker_history_values(courier: Any) -> list[float]:
     return [float(getattr(task, "fare", 0.0)) for task in getattr(courier, "re_schedule", []) if hasattr(task, "fare")]
 
 
-def project_courier_to_capa(courier: Any, courier_id: str) -> Courier:
+def project_courier_to_capa(
+    courier: Any,
+    courier_id: str,
+    snapshot_cache: LegacyCourierSnapshotCache | None = None,
+) -> Courier:
     """Project a legacy courier or a light-weight test double into the CAPA courier model."""
     try:
+        if snapshot_cache is not None:
+            return snapshot_cache.get(courier, courier_id=courier_id)
         return legacy_courier_to_capa(courier, courier_id=courier_id)
     except ValueError:
         return Courier(

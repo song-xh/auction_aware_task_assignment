@@ -5,6 +5,7 @@ from __future__ import annotations
 from time import perf_counter
 from typing import List, Sequence
 
+from .cache import InsertionCache
 from .cama import is_courier_available
 from .constraints import is_within_service_radius
 from .models import (
@@ -47,9 +48,16 @@ def compute_fpsa_bid(
     travel_model: DistanceMatrixTravelModel,
     config: CAPAConfig,
     timing: TimingAccumulator | None = None,
+    insertion_cache: InsertionCache | None = None,
 ) -> float:
     """Compute the Eq.1 FPSA bid for a courier within a cooperating platform."""
-    detour_ratio = find_best_auction_detour_ratio(parcel, courier, travel_model, timing=timing)
+    detour_ratio = find_best_auction_detour_ratio(
+        parcel,
+        courier,
+        travel_model,
+        timing=timing,
+        insertion_cache=insertion_cache,
+    )
     p_tau_prime = config.local_sharing_rate_mu1 * parcel.fare
     return platform.base_price + (
         (courier.alpha * detour_ratio) + (courier.beta * courier.service_score)
@@ -101,9 +109,16 @@ def apply_cross_assignment(
     courier: Courier,
     travel_model: DistanceMatrixTravelModel,
     timing: TimingAccumulator | None = None,
+    insertion_cache: InsertionCache | None = None,
 ) -> None:
     """Update a courier route and carried load after a cross assignment is accepted."""
-    _, insertion_index = find_best_local_insertion(parcel, courier, travel_model, timing=timing)
+    _, insertion_index = find_best_local_insertion(
+        parcel,
+        courier,
+        travel_model,
+        timing=timing,
+        insertion_cache=insertion_cache,
+    )
     courier.route_locations.insert(insertion_index, parcel.location)
     courier.current_load += parcel.weight
 
@@ -116,6 +131,7 @@ def run_dapa(
     now: int,
     service_radius_meters: float | None = None,
     timing: TimingAccumulator | None = None,
+    insertion_cache: InsertionCache | None = None,
 ) -> DAPAResult:
     """Run Algorithm 3 with explicit FPSA, RVA, and upper-limit filtering."""
     started = perf_counter()
@@ -139,7 +155,15 @@ def run_dapa(
                     service_radius_meters=service_radius_meters,
                 ):
                     continue
-                courier_bid = compute_fpsa_bid(parcel, courier, platform, travel_model, config, timing=timing)
+                courier_bid = compute_fpsa_bid(
+                    parcel,
+                    courier,
+                    platform,
+                    travel_model,
+                    config,
+                    timing=timing,
+                    insertion_cache=insertion_cache,
+                )
                 feasible_bids.append((courier, courier_bid))
             if not feasible_bids:
                 continue
@@ -194,7 +218,7 @@ def run_dapa(
                 unassigned_parcels.append(parcel)
                 continue
 
-        apply_cross_assignment(parcel, winner.courier, travel_model, timing=timing)
+        apply_cross_assignment(parcel, winner.courier, travel_model, timing=timing, insertion_cache=insertion_cache)
         cross_assignments.append(
             build_cross_assignment(
                 parcel=parcel,

@@ -1,4 +1,5 @@
 # 地图工具类
+import heapq
 import numpy as np
 # from v1.utils.DistanceUtils import *
 from DistanceUtils import *
@@ -555,6 +556,56 @@ class GraphUtils(object):
         print("no paths suitable.")
 
         return paths
+
+    def getShortestDistance(self, start, end, context):
+        '''
+        使用启发式最短路算法直接返回最短距离，不重建完整路径
+        :param start:开始点
+        :param end:结束点
+        :param context:地图
+        :return:最短距离
+        '''
+        nMap = context.nMap
+        eMap = context.eMap
+
+        start = nMap[start.nodeId]
+        end = nMap[end.nodeId]
+        if start.nodeId == end.nodeId:
+            return 0.0
+
+        open_heap = [(self.heuristic_cost(start, end), 0.0, start.nodeId)]
+        best_distance = {start.nodeId: 0.0}
+        closed = set()
+
+        while open_heap:
+            _, current_distance, current_id = heapq.heappop(open_heap)
+            if current_id in closed:
+                continue
+            if current_id == end.nodeId:
+                return current_distance * VELOCITY
+            closed.add(current_id)
+            current = nMap[current_id]
+
+            for neighbor_id in current.neighbors:
+                if neighbor_id in closed:
+                    continue
+                edge = eMap[current.nEdge[neighbor_id]]
+                tentative_distance = current_distance + edge.length / VELOCITY
+                if tentative_distance >= best_distance.get(neighbor_id, float('inf')):
+                    continue
+                best_distance[neighbor_id] = tentative_distance
+                neighbor = nMap[neighbor_id]
+                heapq.heappush(
+                    open_heap,
+                    (
+                        tentative_distance + self.heuristic_cost(neighbor, end),
+                        tentative_distance,
+                        neighbor_id,
+                    ),
+                )
+
+        print("no paths suitable.")
+        return None
 
     def findNode(self, lat, lng, sContext):
         '''
