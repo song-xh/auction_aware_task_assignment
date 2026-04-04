@@ -10,6 +10,7 @@ from typing import Any, Sequence
 
 from capa.cache import InsertionCache
 from capa.cama import is_feasible_local_match
+from capa.geo import GeoIndex
 from capa.revenue import DEFAULT_LOCAL_PAYMENT_RATIO, compute_local_platform_revenue_for_local_completion
 from capa.timing import TimedTravelModel, TimingAccumulator
 from capa.utility import find_best_local_insertion
@@ -204,6 +205,8 @@ def select_greedy_assignment(
     timing: TimingAccumulator | None = None,
     snapshot_cache: LegacyCourierSnapshotCache | None = None,
     insertion_cache: InsertionCache | None = None,
+    geo_index: GeoIndex | None = None,
+    speed_m_per_s: float = 0.0,
 ) -> tuple[Any, int, float] | None:
     """Choose the minimum-bid local courier for one task under legacy Greedy bidding.
 
@@ -234,6 +237,8 @@ def select_greedy_assignment(
             travel_model=travel_model,
             now=now,
             service_radius_meters=service_radius_meters,
+            geo_index=geo_index,
+            speed_m_per_s=speed_m_per_s,
         ):
             continue
         bid, insertion_index = compute_greedy_bid(

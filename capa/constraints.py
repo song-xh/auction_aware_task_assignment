@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from .geo import GeoIndex
 
 
 def is_within_service_radius(
@@ -10,19 +13,42 @@ def is_within_service_radius(
     task_location: Any,
     travel_model: Any,
     service_radius_meters: float | None,
+    geo_index: GeoIndex | None = None,
 ) -> bool:
     """Return whether a courier-task pair respects the configured service radius.
 
-    Args:
-        start_location: Courier current location node identifier.
-        task_location: Task pickup location node identifier.
-        travel_model: Travel model exposing a `distance(start, end)` method.
-        service_radius_meters: Maximum allowed courier-to-task distance in meters.
-
-    Returns:
-        `True` when the radius is disabled or the shortest-path distance is within the limit.
+    When *geo_index* is provided the Haversine straight-line distance is
+    checked first.  If the lower bound already exceeds the radius the
+    expensive road-network query is skipped entirely.
     """
 
     if service_radius_meters is None:
         return True
+    if geo_index is not None:
+        lb = geo_index.haversine_meters_between(start_location, task_location)
+        if lb is not None and lb > service_radius_meters:
+            return False
     return float(travel_model.distance(start_location, task_location)) <= float(service_radius_meters)
+
+
+def is_deadline_feasible_by_geo(
+    courier_location: Any,
+    task_location: Any,
+    now: int,
+    deadline: float,
+    speed_m_per_s: float,
+    geo_index: GeoIndex | None = None,
+) -> bool:
+    """Quick geometric check: can the courier possibly reach the task before deadline?
+
+    Returns ``True`` (optimistic) when the geo_index is unavailable or the
+    straight-line lower bound allows it.  Returns ``False`` only when it is
+    *certain* the courier cannot arrive in time.
+    """
+
+    if geo_index is None or speed_m_per_s <= 0:
+        return True
+    lb = geo_index.haversine_meters_between(courier_location, task_location)
+    if lb is None:
+        return True
+    return now + lb / speed_m_per_s <= deadline

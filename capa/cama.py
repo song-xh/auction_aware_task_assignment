@@ -6,7 +6,8 @@ from time import perf_counter
 from typing import Iterable, List, Sequence
 
 from .cache import InsertionCache
-from .constraints import is_within_service_radius
+from .constraints import is_deadline_feasible_by_geo, is_within_service_radius
+from .geo import GeoIndex
 from .models import Assignment, CAMAResult, CAPAConfig, CandidatePair, Courier, Parcel
 from .revenue import compute_local_courier_payment, compute_local_platform_revenue_for_local_completion
 from .timing import TimingAccumulator
@@ -25,13 +26,21 @@ def is_feasible_local_match(
     travel_model: DistanceMatrixTravelModel,
     now: int,
     service_radius_meters: float | None = None,
+    geo_index: GeoIndex | None = None,
+    speed_m_per_s: float = 0.0,
 ) -> bool:
     """Check the deadline and capacity constraints required by Algorithm 2."""
     if not is_courier_available(courier, now):
         return False
     if courier.current_load + parcel.weight > courier.capacity:
         return False
-    if not is_within_service_radius(courier.current_location, parcel.location, travel_model, service_radius_meters):
+    if not is_deadline_feasible_by_geo(
+        courier.current_location, parcel.location, now, parcel.deadline, speed_m_per_s, geo_index,
+    ):
+        return False
+    if not is_within_service_radius(
+        courier.current_location, parcel.location, travel_model, service_radius_meters, geo_index=geo_index,
+    ):
         return False
     arrival_time = now + travel_model.travel_time(courier.current_location, parcel.location)
     return arrival_time <= parcel.deadline
@@ -78,6 +87,8 @@ def run_cama(
     service_radius_meters: float | None = None,
     timing: TimingAccumulator | None = None,
     insertion_cache: InsertionCache | None = None,
+    geo_index: GeoIndex | None = None,
+    speed_m_per_s: float = 0.0,
 ) -> CAMAResult:
     """Run Algorithm 2 exactly at the candidate-set level defined in the paper."""
     started = perf_counter()
@@ -91,7 +102,12 @@ def run_cama(
     for parcel in parcels:
         feasible_for_parcel: List[CandidatePair] = []
         for courier in couriers:
-            if not is_feasible_local_match(parcel, courier, travel_model, now, service_radius_meters=service_radius_meters):
+            if not is_feasible_local_match(
+                parcel, courier, travel_model, now,
+                service_radius_meters=service_radius_meters,
+                geo_index=geo_index,
+                speed_m_per_s=speed_m_per_s,
+            ):
                 continue
             utility = calculate_utility(
                 parcel,
