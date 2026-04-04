@@ -73,6 +73,28 @@ class BaselineRunnerTests(unittest.TestCase):
             )
         )
 
+    def test_basegta_runner_forwards_environment_geo_context(self) -> None:
+        """BaseGTA should forward shared environment geo context into courier feasibility selection."""
+        from baselines.gta import run_basegta_baseline_environment
+
+        environment = SimpleNamespace(
+            tasks=[SimpleNamespace(num="t1", l_node=10, s_time=0, d_time=100, weight=1.0, fare=10.0)],
+            local_couriers=[],
+            partner_couriers_by_platform={},
+            station_set=[],
+            travel_model=_LinearTravelModel(),
+            movement_callback=lambda local, partner, seconds, station_set: None,
+            service_radius_km=1.5,
+            geo_index=object(),
+            travel_speed_m_per_s=7.5,
+        )
+
+        with patch("baselines.gta.select_available_courier_for_task", return_value=None) as select_available:
+            run_basegta_baseline_environment(environment=environment)
+
+        self.assertIs(select_available.call_args.kwargs["geo_index"], environment.geo_index)
+        self.assertEqual(select_available.call_args.kwargs["speed_m_per_s"], 7.5)
+
     def test_available_courier_selection_can_use_route_tail_state(self) -> None:
         """The Chengdu GTA adapter should evaluate couriers from their next available route state."""
         task = SimpleNamespace(l_node=12, d_time=100, weight=1.0)
@@ -127,6 +149,41 @@ class BaselineRunnerTests(unittest.TestCase):
 
         self.assertEqual(metrics["TR"], 0.0)
         self.assertEqual(metrics["CR"], 0.0)
+
+    def test_greedy_wrapper_forwards_environment_geo_context(self) -> None:
+        """The unified Greedy runner should forward environment geo context into assignment selection."""
+        from baselines.greedy import run_greedy_baseline_environment
+
+        geo_index = object()
+        environment = SimpleNamespace(
+            tasks=[SimpleNamespace(num="t1", l_node=10, s_time=0, d_time=100, weight=1.0, fare=10.0)],
+            local_couriers=[
+                SimpleNamespace(
+                    num=1,
+                    location=0,
+                    re_schedule=[],
+                    re_weight=0.0,
+                    max_weight=5.0,
+                    w=0.5,
+                    c=0.5,
+                    station_num=1,
+                    station=SimpleNamespace(l_node=0),
+                )
+            ],
+            partner_couriers_by_platform={},
+            station_set=[],
+            travel_model=_LinearTravelModel(),
+            movement_callback=lambda local, partner, seconds, station_set: None,
+            service_radius_km=1.5,
+            geo_index=geo_index,
+            travel_speed_m_per_s=9.0,
+        )
+
+        with patch("baselines.greedy.select_greedy_assignment", return_value=None) as select_assignment:
+            run_greedy_baseline_environment(environment=environment, batch_size=300)
+
+        self.assertIs(select_assignment.call_args.kwargs["geo_index"], geo_index)
+        self.assertEqual(select_assignment.call_args.kwargs["speed_m_per_s"], 9.0)
 
     def test_settle_aim_auction_uses_second_price_payment(self) -> None:
         """AIM should choose the lowest bidder and pay the second-lowest bid."""

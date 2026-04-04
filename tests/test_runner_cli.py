@@ -56,6 +56,48 @@ class RunnerDispatchTests(unittest.TestCase):
         self.assertIn("metrics", result)
         self.assertIn("TR", result["metrics"])
 
+    def test_capa_strategy_forwards_environment_optimization_context(self) -> None:
+        """The unified CAPA runner should forward geo and speed context into the batch runner."""
+        from algorithms.capa_runner import CAPAAlgorithmRunner
+
+        fake_environment = ChengduEnvironment(
+            tasks=[],
+            local_couriers=[],
+            partner_couriers_by_platform={},
+            station_set=[],
+            travel_model=None,
+            platform_base_prices={},
+            platform_sharing_rates={},
+            platform_qualities={},
+        )
+        fake_environment.geo_index = object()
+        fake_environment.travel_speed_m_per_s = 12.5
+
+        with patch("algorithms.capa_runner.run_time_stepped_chengdu_batches") as run_batches:
+            run_batches.return_value = type(
+                "FakeResult",
+                (),
+                {
+                    "metrics": type(
+                        "FakeMetrics",
+                        (),
+                        {
+                            "total_revenue": 1.0,
+                            "completion_rate": 0.5,
+                            "batch_processing_time": 0.1,
+                            "delivered_parcel_count": 1,
+                            "accepted_parcel_count": 1,
+                        },
+                    )(),
+                    "batch_reports": [],
+                },
+            )()
+            runner = CAPAAlgorithmRunner(batch_size=60)
+            runner.run(environment=fake_environment, output_dir=None)
+
+        self.assertIs(run_batches.call_args.kwargs["geo_index"], fake_environment.geo_index)
+        self.assertEqual(run_batches.call_args.kwargs["speed_m_per_s"], 12.5)
+
     def test_all_baselines_share_same_environment_contract(self) -> None:
         """Greedy, BaseGTA, and ImpGTA should all dispatch through the same runner interface."""
         from algorithms.registry import build_algorithm_runner

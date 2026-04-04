@@ -7,7 +7,8 @@ from statistics import fmean
 from time import perf_counter
 from typing import Any, Callable, Mapping, MutableSequence, Sequence
 
-from capa.constraints import is_within_service_radius
+from capa.constraints import is_deadline_feasible_by_geo, is_within_service_radius
+from capa.geo import GeoIndex
 from capa.revenue import (
     DEFAULT_LOCAL_PAYMENT_RATIO,
     compute_local_platform_revenue_for_cross_completion,
@@ -89,13 +90,30 @@ def is_idle_courier_feasible(
     travel_model: Any,
     now: int,
     service_radius_meters: float | None = None,
+    geo_index: GeoIndex | None = None,
+    speed_m_per_s: float = 0.0,
 ) -> bool:
     """Check whether an idle legacy courier can still reach the task before its deadline."""
     if not is_idle_legacy_courier(courier):
         return False
     if float(getattr(courier, "re_weight", 0.0)) + float(getattr(task, "weight")) > float(getattr(courier, "max_weight")):
         return False
-    if not is_within_service_radius(getattr(courier, "location"), getattr(task, "l_node"), travel_model, service_radius_meters):
+    if not is_deadline_feasible_by_geo(
+        getattr(courier, "location"),
+        getattr(task, "l_node"),
+        now,
+        float(getattr(task, "d_time")),
+        speed_m_per_s,
+        geo_index,
+    ):
+        return False
+    if not is_within_service_radius(
+        getattr(courier, "location"),
+        getattr(task, "l_node"),
+        travel_model,
+        service_radius_meters,
+        geo_index=geo_index,
+    ):
         return False
     arrival_time = now + float(travel_model.travel_time(getattr(courier, "location"), getattr(task, "l_node")))
     return arrival_time <= float(getattr(task, "d_time"))
@@ -107,6 +125,8 @@ def is_available_courier_feasible(
     travel_model: Any,
     now: int,
     service_radius_meters: float | None = None,
+    geo_index: GeoIndex | None = None,
+    speed_m_per_s: float = 0.0,
 ) -> bool:
     """Check whether a legacy courier can serve the task after finishing its current route."""
     ready_time, ready_location = legacy_courier_ready_state(courier, now)
@@ -118,7 +138,22 @@ def is_available_courier_feasible(
         remaining_capacity = float(getattr(courier, "max_weight"))
     if remaining_capacity < float(getattr(task, "weight")):
         return False
-    if not is_within_service_radius(ready_location, getattr(task, "l_node"), travel_model, service_radius_meters):
+    if not is_deadline_feasible_by_geo(
+        ready_location,
+        getattr(task, "l_node"),
+        int(ready_time),
+        float(getattr(task, "d_time")),
+        speed_m_per_s,
+        geo_index,
+    ):
+        return False
+    if not is_within_service_radius(
+        ready_location,
+        getattr(task, "l_node"),
+        travel_model,
+        service_radius_meters,
+        geo_index=geo_index,
+    ):
         return False
     arrival_time = ready_time + float(travel_model.travel_time(ready_location, getattr(task, "l_node")))
     return arrival_time <= float(getattr(task, "d_time"))
@@ -131,11 +166,21 @@ def select_idle_courier_for_task(
     now: int,
     unit_price_per_km: float = DEFAULT_UNIT_PRICE_PER_KM,
     service_radius_meters: float | None = None,
+    geo_index: GeoIndex | None = None,
+    speed_m_per_s: float = 0.0,
 ) -> GTABid | None:
     """Select the idle feasible courier with the minimum dispatch cost for one task."""
     feasible_bids: list[GTABid] = []
     for courier in couriers:
-        if not is_idle_courier_feasible(task, courier, travel_model, now, service_radius_meters=service_radius_meters):
+        if not is_idle_courier_feasible(
+            task,
+            courier,
+            travel_model,
+            now,
+            service_radius_meters=service_radius_meters,
+            geo_index=geo_index,
+            speed_m_per_s=speed_m_per_s,
+        ):
             continue
         feasible_bids.append(
             GTABid(
@@ -156,6 +201,8 @@ def select_available_courier_for_task(
     now: int,
     unit_price_per_km: float = DEFAULT_UNIT_PRICE_PER_KM,
     service_radius_meters: float | None = None,
+    geo_index: GeoIndex | None = None,
+    speed_m_per_s: float = 0.0,
 ) -> GTABid | None:
     """Select the cheapest feasible courier under the Chengdu route-backed availability model."""
     feasible_bids: list[GTABid] = []
@@ -166,6 +213,8 @@ def select_available_courier_for_task(
             travel_model=travel_model,
             now=now,
             service_radius_meters=service_radius_meters,
+            geo_index=geo_index,
+            speed_m_per_s=speed_m_per_s,
         ):
             continue
         _, ready_location = legacy_courier_ready_state(courier, now)
@@ -292,6 +341,8 @@ def _run_gta_environment(
     timing = TimingAccumulator()
     timed_travel_model = TimedTravelModel(environment.travel_model, timing)
     service_radius_meters = None if getattr(environment, "service_radius_km", None) is None else float(environment.service_radius_km) * 1000.0
+    geo_index = getattr(environment, "geo_index", None)
+    speed_m_per_s = float(getattr(environment, "travel_speed_m_per_s", 0.0))
     current_time = int(float(getattr(tasks[0], "s_time")))
     task_index = 0
     total_profit = 0.0
@@ -331,6 +382,8 @@ def _run_gta_environment(
                 now=current_time,
                 unit_price_per_km=unit_price_per_km,
                 service_radius_meters=service_radius_meters,
+                geo_index=geo_index,
+                speed_m_per_s=speed_m_per_s,
             )
             if local_bid is not None:
                 if algorithm == "basegta" or should_dispatch_inner_task_impgta(
@@ -363,6 +416,8 @@ def _run_gta_environment(
                     now=current_time,
                     unit_price_per_km=unit_price_per_km,
                     service_radius_meters=service_radius_meters,
+                    geo_index=geo_index,
+                    speed_m_per_s=speed_m_per_s,
                 )
                 if partner_bid is None:
                     continue

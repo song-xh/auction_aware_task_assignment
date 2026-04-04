@@ -67,6 +67,8 @@ class CAPAAlgorithmRunner(AlgorithmRunner):
             platform_qualities=environment.platform_qualities,
             movement_callback=environment.movement_callback,
             service_radius_km=getattr(environment, "service_radius_km", None),
+            geo_index=getattr(environment, "geo_index", None),
+            speed_m_per_s=float(getattr(environment, "travel_speed_m_per_s", 0.0)),
         )
         summary = {
             "algorithm": "capa",

@@ -31,6 +31,8 @@ class ExperimentsSeedingTests(unittest.TestCase):
             platform_base_prices={"P1": 1.0},
             platform_sharing_rates={"P1": 0.4},
             platform_qualities={"P1": 0.9},
+            geo_index={"A": (30.0, 104.0)},
+            travel_speed_m_per_s=11.0,
         )
 
         seed = build_environment_seed(environment)
@@ -52,6 +54,8 @@ class ExperimentsSeedingTests(unittest.TestCase):
         self.assertIs(clone_b.station_set[0]["courier_set"][0], clone_b.local_couriers[0])
         self.assertIs(clone_a.station_set[0]["f_pick_task_set"][0], clone_a.tasks[0])
         self.assertIs(clone_b.station_set[0]["f_pick_task_set"][0], clone_b.tasks[0])
+        self.assertEqual(clone_a.geo_index, clone_b.geo_index)
+        self.assertEqual(clone_a.travel_speed_m_per_s, 11.0)
 
     def test_persisted_seed_reconstructs_shared_couriers_and_task_prefixes(self) -> None:
         """Persisted canonical seeds should rebuild identical courier/station state across parcel-count points."""

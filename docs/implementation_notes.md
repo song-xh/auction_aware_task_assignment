@@ -240,10 +240,28 @@ This refactor also adds three reusable performance layers used by CAPA and the r
 - an insertion-result cache keyed by courier route signature and parcel location
 - a legacy courier snapshot cache keyed by the mutable legacy route state
 
+The newer geo/batch optimization layer now sits on top of those cache primitives:
+
+- `GeoIndex` stores node-to-coordinate lookups for the Chengdu graph and applies Haversine lower-bound pruning before exact routing
+- `BatchDistanceMatrix` is now a directed cache, not a symmetric matrix
+- batch warmup is limited to insertion-search pairs only:
+  - route-segment base edges
+  - route-node to parcel
+  - parcel to route-node
+
+This is deliberate. The Chengdu road graph is directional, so mirroring `a -> b` into `b -> a` would be incorrect. Likewise, a full all-pairs warmup over every active node in a large batch is too expensive and is not required by insertion search.
+
 These caches are intentionally transparent:
 
 - they do not change feasibility, bids, or rewards
 - they only avoid recomputing repeated route-projection and insertion-search results within a stable route state
+
+The formal runner path now uses the same optimization context as the ad-hoc experiment helpers:
+
+- `ChengduEnvironment` carries `geo_index` and `travel_speed_m_per_s`
+- environment seeding and cloning preserve that context for `compare`, `sweep`, and `suite`
+- the unified CAPA runner passes it into the batch runner
+- baseline runners read the same environment-level context instead of rebuilding private optimization state
 
 One explicit safety rule remains:
 
