@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from io import TextIOWrapper
 import subprocess
 import sys
 import time
@@ -63,66 +64,74 @@ def run_exp1_split(
     save_environment_seed(build_environment_seed(canonical_environment), seed_path)
 
     processes: dict[int, subprocess.Popen[str]] = {}
+    log_handles: list[TextIOWrapper] = []
     point_output_dirs: dict[int, Path] = {}
-    for value in parcel_values:
-        point_output_dir = tmp_root / f"point_{int(value)}"
-        point_output_dirs[int(value)] = point_output_dir
-        point_output_dir.mkdir(parents=True, exist_ok=True)
-        process = subprocess.Popen(
-            [
-                sys.executable,
-                "-u",
-                str(Path(__file__).with_name("run_exp1_point.py")),
-                "--seed-path",
-                str(seed_path),
-                "--num-parcels",
-                str(int(value)),
-                "--output-dir",
-                str(point_output_dir),
-                "--algorithms",
-                *list(algorithms),
-                "--batch-size",
-                str(batch_size),
-            ],
-            cwd=Path(__file__).resolve().parents[1],
-            stdout=(point_output_dir / "stdout.log").open("w", encoding="utf-8"),
-            stderr=(point_output_dir / "stderr.log").open("w", encoding="utf-8"),
-            text=True,
-        )
-        processes[int(value)] = process
-
-    status_path = tmp_root / "split_status.json"
-    while processes:
-        point_status = {}
-        finished: list[int] = []
-        for value, process in processes.items():
-            return_code = process.poll()
-            point_status[str(value)] = {
-                "pid": process.pid,
-                "returncode": return_code,
-                "output_dir": str(point_output_dirs[value]),
-            }
-            if return_code is not None:
-                finished.append(value)
-        with status_path.open("w", encoding="utf-8") as handle:
-            json.dump(
-                {
-                    "state": "running" if processes else "finished",
-                    "points": point_status,
-                    "updated_at": time.time(),
-                },
-                handle,
-                indent=2,
+    try:
+        for value in parcel_values:
+            point_output_dir = tmp_root / f"point_{int(value)}"
+            point_output_dirs[int(value)] = point_output_dir
+            point_output_dir.mkdir(parents=True, exist_ok=True)
+            stdout_handle = (point_output_dir / "stdout.log").open("w", encoding="utf-8")
+            stderr_handle = (point_output_dir / "stderr.log").open("w", encoding="utf-8")
+            log_handles.extend([stdout_handle, stderr_handle])
+            process = subprocess.Popen(
+                [
+                    sys.executable,
+                    "-u",
+                    str(Path(__file__).with_name("run_exp1_point.py")),
+                    "--seed-path",
+                    str(seed_path),
+                    "--num-parcels",
+                    str(int(value)),
+                    "--output-dir",
+                    str(point_output_dir),
+                    "--algorithms",
+                    *list(algorithms),
+                    "--batch-size",
+                    str(batch_size),
+                ],
+                cwd=Path(__file__).resolve().parents[1],
+                stdout=stdout_handle,
+                stderr=stderr_handle,
+                text=True,
             )
-        if not finished:
-            time.sleep(poll_seconds)
-            continue
-        for value in finished:
-            process = processes.pop(value)
-            if process.returncode != 0:
-                raise RuntimeError(
-                    f"Exp-1 point {value} failed. See {point_output_dirs[value] / 'stderr.log'}"
+            processes[int(value)] = process
+
+        status_path = tmp_root / "split_status.json"
+        while processes:
+            point_status = {}
+            finished: list[int] = []
+            for value, process in processes.items():
+                return_code = process.poll()
+                point_status[str(value)] = {
+                    "pid": process.pid,
+                    "returncode": return_code,
+                    "output_dir": str(point_output_dirs[value]),
+                }
+                if return_code is not None:
+                    finished.append(value)
+            with status_path.open("w", encoding="utf-8") as handle:
+                json.dump(
+                    {
+                        "state": "running" if processes else "finished",
+                        "points": point_status,
+                        "updated_at": time.time(),
+                    },
+                    handle,
+                    indent=2,
                 )
+            if not finished:
+                time.sleep(poll_seconds)
+                continue
+            for value in finished:
+                process = processes.pop(value)
+                if process.returncode != 0:
+                    raise RuntimeError(
+                        f"Exp-1 point {value} failed. See {point_output_dirs[value] / 'stderr.log'}"
+                    )
+    finally:
+        for handle in log_handles:
+            handle.close()
 
     runs = []
     for value in sorted(int(item) for item in parcel_values):

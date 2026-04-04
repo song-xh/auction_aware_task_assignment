@@ -350,6 +350,87 @@ class PaperExperimentTests(unittest.TestCase):
             self.assertTrue(save_seed.called)
             self.assertTrue(save_plots.called)
 
+    def test_collect_split_progress_reports_completed_algorithms_and_points(self) -> None:
+        """The split monitor should summarize per-point algorithm completion from tmp outputs."""
+        from experiments.monitor_exp1_split import collect_split_progress
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_root = Path(tmpdir)
+            point_1000 = tmp_root / "point_1000"
+            point_2000 = tmp_root / "point_2000"
+            (point_1000 / "capa").mkdir(parents=True)
+            (point_1000 / "greedy").mkdir(parents=True)
+            point_2000.mkdir(parents=True)
+            with (point_1000 / "capa" / "summary.json").open("w", encoding="utf-8") as handle:
+                json.dump({"algorithm": "capa"}, handle)
+            with (point_1000 / "greedy" / "summary.json").open("w", encoding="utf-8") as handle:
+                json.dump({"algorithm": "greedy"}, handle)
+            with (point_1000 / "summary.json").open("w", encoding="utf-8") as handle:
+                json.dump({"num_parcels": 1000}, handle)
+            with (tmp_root / "split_status.json").open("w", encoding="utf-8") as handle:
+                json.dump(
+                    {
+                        "state": "running",
+                        "points": {
+                            "1000": {"pid": 11, "returncode": 0, "output_dir": str(point_1000)},
+                            "2000": {"pid": 12, "returncode": None, "output_dir": str(point_2000)},
+                        },
+                    },
+                    handle,
+                    indent=2,
+                )
+
+            progress = collect_split_progress(tmp_root)
+
+        self.assertEqual(progress["completed_points"], 1)
+        self.assertEqual(progress["total_points"], 2)
+        self.assertEqual(progress["points"]["1000"]["completed_algorithms"], ["capa", "greedy"])
+        self.assertTrue(progress["points"]["1000"]["point_complete"])
+        self.assertEqual(progress["points"]["2000"]["completed_algorithms"], [])
+        self.assertFalse(progress["points"]["2000"]["point_complete"])
+
+    def test_monitor_split_progress_writes_snapshot_and_log_line(self) -> None:
+        """The split monitor should write one JSON snapshot and append one human-readable log line."""
+        from experiments.monitor_exp1_split import monitor_split_progress
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_root = Path(tmpdir) / "split"
+            tmp_root.mkdir(parents=True)
+            point_1000 = tmp_root / "point_1000"
+            (point_1000 / "capa").mkdir(parents=True)
+            with (point_1000 / "capa" / "summary.json").open("w", encoding="utf-8") as handle:
+                json.dump({"algorithm": "capa"}, handle)
+            with (point_1000 / "summary.json").open("w", encoding="utf-8") as handle:
+                json.dump({"num_parcels": 1000}, handle)
+            with (tmp_root / "split_status.json").open("w", encoding="utf-8") as handle:
+                json.dump(
+                    {
+                        "state": "finished",
+                        "points": {
+                            "1000": {"pid": 11, "returncode": 0, "output_dir": str(point_1000)},
+                        },
+                    },
+                    handle,
+                    indent=2,
+                )
+            snapshot_path = Path(tmpdir) / "monitor_snapshot.json"
+            log_path = Path(tmpdir) / "monitor.log"
+
+            monitor_split_progress(
+                tmp_root=tmp_root,
+                snapshot_path=snapshot_path,
+                log_path=log_path,
+                poll_seconds=0,
+                max_iterations=1,
+            )
+
+            snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
+            log_text = log_path.read_text(encoding="utf-8")
+
+        self.assertEqual(snapshot["completed_points"], 1)
+        self.assertIn("completed_points=1/1", log_text)
+        self.assertIn("1000:algos=capa", log_text)
+
 
 if __name__ == "__main__":
     unittest.main()
