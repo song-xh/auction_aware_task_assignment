@@ -118,6 +118,8 @@ def run_ramcom_baseline_environment(
     timed_travel_model = TimedTravelModel(environment.travel_model, timing)
     snapshot_cache = LegacyCourierSnapshotCache()
     insertion_cache = InsertionCache()
+    geo_index = getattr(environment, "geo_index", None)
+    speed_m_per_s = float(getattr(environment, "travel_speed_m_per_s", 0.0))
     local_couriers = list(environment.local_couriers)
     partner_couriers_by_platform = {
         platform_id: list(couriers)
@@ -155,6 +157,8 @@ def run_ramcom_baseline_environment(
                 timing=timing,
                 snapshot_cache=snapshot_cache,
                 insertion_cache=insertion_cache,
+                geo_index=geo_index,
+                speed_m_per_s=speed_m_per_s,
             )
             if inner_candidates:
                 chosen = rng.choice(inner_candidates)
@@ -180,6 +184,8 @@ def run_ramcom_baseline_environment(
                     timing=timing,
                     snapshot_cache=snapshot_cache,
                     insertion_cache=insertion_cache,
+                    geo_index=geo_index,
+                    speed_m_per_s=speed_m_per_s,
                 )
                 for insertion in feasible:
                     outer_candidates.append((platform_id, insertion))

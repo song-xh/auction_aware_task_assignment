@@ -7,6 +7,8 @@ import unittest
 from capa.batch_distance import BatchDistanceMatrix
 from capa.constraints import is_deadline_feasible_by_geo, is_within_service_radius
 from capa.geo import GeoIndex, haversine_meters
+from capa.models import Courier, Parcel
+from capa.utility import find_best_local_insertion
 
 
 class _FakeNode:
@@ -25,6 +27,24 @@ class _FakeTravelModel:
         if a == b:
             return 0.0
         return self._distances.get((a, b)) or self._distances.get((b, a)) or 999999.0
+
+    def travel_time(self, a, b):
+        return self.distance(a, b) / self.speed
+
+
+class _CountingTravelModel:
+    def __init__(self, distances: dict[tuple[str, str], float], speed: float = 1.0):
+        self._distances = distances
+        self.speed = speed
+        self.calls: list[tuple[str, str]] = []
+
+    def distance(self, a, b):
+        self.calls.append((a, b))
+        if a == b:
+            return 0.0
+        if (a, b) not in self._distances:
+            raise KeyError((a, b))
+        return self._distances[(a, b)]
 
     def travel_time(self, a, b):
         return self.distance(a, b) / self.speed
@@ -110,6 +130,17 @@ class TestBatchDistanceMatrix(unittest.TestCase):
         self.assertEqual(bdm.distance("B", "A"), 100.0)
         self.assertEqual(bdm.distance("A", "A"), 0.0)
 
+    def test_precompute_preserves_directed_distances(self):
+        model = _CountingTravelModel({
+            ("A", "B"): 100.0,
+            ("B", "A"): 180.0,
+        })
+        bdm = BatchDistanceMatrix(model)
+        bdm.precompute(["A", "B"])
+
+        self.assertEqual(bdm.distance("A", "B"), 100.0)
+        self.assertEqual(bdm.distance("B", "A"), 180.0)
+
     def test_fallback_on_miss(self):
         bdm = BatchDistanceMatrix(self.model)
         bdm.precompute(["A"])  # only self-distance
@@ -120,10 +151,106 @@ class TestBatchDistanceMatrix(unittest.TestCase):
         bdm = BatchDistanceMatrix(self.model)
         self.assertAlmostEqual(bdm.travel_time("A", "B"), 10.0)
 
+    def test_travel_time_reuses_cached_distance_when_speed_is_known(self):
+        model = _CountingTravelModel({
+            ("A", "B"): 100.0,
+        }, speed=10.0)
+        bdm = BatchDistanceMatrix(model)
+        bdm.precompute(["A", "B"])
+        model.calls.clear()
+
+        self.assertAlmostEqual(bdm.travel_time("A", "B"), 10.0)
+        self.assertEqual(model.calls, [])
+
     def test_precompute_deduplicates(self):
         bdm = BatchDistanceMatrix(self.model)
         bdm.precompute(["A", "A", "B", "B"])
         self.assertEqual(bdm.distance("A", "B"), 100.0)
+
+    def test_precompute_for_insertions_only_warms_needed_pairs(self):
+        model = _CountingTravelModel({
+            ("A", "B"): 1.0,
+            ("B", "C"): 1.0,
+            ("A", "P"): 1.0,
+            ("P", "B"): 1.0,
+            ("B", "P"): 1.0,
+            ("P", "C"): 1.0,
+        })
+        courier = Courier(
+            courier_id="c1",
+            current_location="A",
+            depot_location="C",
+            capacity=10.0,
+            current_load=0.0,
+            route_locations=["B"],
+            available_from=0,
+        )
+        parcel = Parcel(
+            parcel_id="p1",
+            location="P",
+            arrival_time=0,
+            deadline=100,
+            weight=1.0,
+            fare=10.0,
+        )
+        bdm = BatchDistanceMatrix(model)
+
+        bdm.precompute_for_insertions([courier], [parcel])
+
+        self.assertEqual(
+            set(model.calls),
+            {
+                ("A", "B"),
+                ("B", "C"),
+                ("A", "P"),
+                ("P", "B"),
+                ("B", "P"),
+                ("P", "C"),
+            },
+        )
+        self.assertEqual(len(model.calls), 6)
+
+    def test_batch_cache_reduces_repeated_insertion_distance_queries(self):
+        model = _CountingTravelModel({
+            ("A", "B"): 1.0,
+            ("B", "C"): 1.0,
+            ("A", "P"): 1.0,
+            ("P", "B"): 1.0,
+            ("B", "P"): 1.0,
+            ("P", "C"): 1.0,
+        })
+        courier = Courier(
+            courier_id="c1",
+            current_location="A",
+            depot_location="C",
+            capacity=10.0,
+            current_load=0.0,
+            route_locations=["B"],
+            available_from=0,
+        )
+        parcel = Parcel(
+            parcel_id="p1",
+            location="P",
+            arrival_time=0,
+            deadline=100,
+            weight=1.0,
+            fare=10.0,
+        )
+
+        find_best_local_insertion(parcel, courier, model)
+        uncached_calls = len(model.calls)
+
+        model.calls.clear()
+        bdm = BatchDistanceMatrix(model)
+        bdm.precompute_for_insertions([courier], [parcel])
+        warmup_calls = len(model.calls)
+        model.calls.clear()
+        find_best_local_insertion(parcel, courier, bdm)
+        cached_calls = len(model.calls)
+
+        self.assertEqual(uncached_calls, 6)
+        self.assertEqual(warmup_calls, 6)
+        self.assertEqual(cached_calls, 0)
 
 
 if __name__ == "__main__":

@@ -1,54 +1,82 @@
-"""Batch-level pre-computed distance matrix for active-node sets."""
+"""Batch-level directed distance cache for insertion-heavy assignment rounds."""
 
 from __future__ import annotations
 
-from typing import Any, Hashable, Iterable
+from typing import Any, Hashable, Iterable, Sequence
 
 
 class BatchDistanceMatrix:
-    """Pre-compute all-pairs distances for a small active-node set.
+    """Cache directed shortest-path lengths for one batch decision epoch.
 
-    Wraps an underlying travel model.  Lookups that hit the pre-computed
-    matrix return instantly; misses fall through to the underlying model
-    (which typically has its own LRU cache).
-
-    Typical usage inside the batch runner::
-
-        nodes = collect_active_nodes(couriers, parcels)
-        bdm = BatchDistanceMatrix(travel_model)
-        bdm.precompute(nodes)
-        # use bdm.distance / bdm.travel_time instead of travel_model
+    The cache is designed around insertion search rather than generic all-pairs
+    graph closure. Callers may still precompute a full directed node set with
+    `precompute()`, but the main fast path is `precompute_for_insertions()`,
+    which warms only the route-segment and parcel-node pairs that local/cross
+    insertion search will query in this epoch.
     """
 
     def __init__(self, travel_model: Any) -> None:
         self._travel_model = travel_model
         self._matrix: dict[tuple[Hashable, Hashable], float] = {}
-        self._speed: float | None = getattr(travel_model, 'speed', None) or getattr(travel_model, '_speed', None)
+        self._speed: float | None = (
+            getattr(travel_model, "speed", None)
+            or getattr(travel_model, "_speed", None)
+            or getattr(getattr(travel_model, "_travel_model", None), "speed", None)
+            or getattr(getattr(travel_model, "_travel_model", None), "_speed", None)
+        )
 
     # ------------------------------------------------------------------
     # Pre-computation
     # ------------------------------------------------------------------
 
     def precompute(self, nodes: Iterable[Hashable]) -> None:
-        """Compute all-pairs distances for *nodes* via the underlying model.
+        """Compute directed distances for every ordered pair in *nodes*."""
+        node_list = list(dict.fromkeys(nodes))
+        pairs: list[tuple[Hashable, Hashable]] = []
+        for start in node_list:
+            for end in node_list:
+                if start == end:
+                    continue
+                pairs.append((start, end))
+        self.precompute_pairs(pairs)
 
-        Only pairs not already cached are queried.  Self-distances are
-        stored as ``0.0`` without a model call.
+    def precompute_pairs(self, pairs: Iterable[tuple[Hashable, Hashable]]) -> None:
+        """Compute only the provided directed pairs via the underlying model."""
+        for start, end in dict.fromkeys(pairs):
+            if start == end:
+                self._matrix[(start, end)] = 0.0
+                continue
+            if (start, end) in self._matrix:
+                continue
+            try:
+                self._matrix[(start, end)] = float(self._travel_model.distance(start, end))
+            except (KeyError, ValueError):
+                continue
+
+    def precompute_for_insertions(self, couriers: Sequence[Any], parcels: Sequence[Any]) -> None:
+        """Warm only the directed pairs required by route insertion search.
+
+        For each courier route segment `(start, end)`, insertion search needs:
+        - the base segment distance `start -> end`
+        - the detour prefix `start -> parcel`
+        - the detour suffix `parcel -> end`
         """
-        node_list = list(dict.fromkeys(nodes))  # deduplicate, preserve order
-        for i, a in enumerate(node_list):
-            for b in node_list[i:]:
-                if a == b:
-                    self._matrix[(a, b)] = 0.0
-                    continue
-                if (a, b) in self._matrix:
-                    continue
-                try:
-                    d = float(self._travel_model.distance(a, b))
-                except (KeyError, ValueError):
-                    continue
-                self._matrix[(a, b)] = d
-                self._matrix[(b, a)] = d
+        pairs: list[tuple[Hashable, Hashable]] = []
+        for courier in couriers:
+            route_nodes = [
+                getattr(courier, "current_location"),
+                *list(getattr(courier, "route_locations", [])),
+                getattr(courier, "depot_location"),
+            ]
+            for index in range(len(route_nodes) - 1):
+                start = route_nodes[index]
+                end = route_nodes[index + 1]
+                pairs.append((start, end))
+                for parcel in parcels:
+                    parcel_location = getattr(parcel, "location")
+                    pairs.append((start, parcel_location))
+                    pairs.append((parcel_location, end))
+        self.precompute_pairs(pairs)
 
     # ------------------------------------------------------------------
     # Public interface (same as DistanceMatrixTravelModel / TimedTravelModel)
@@ -63,11 +91,12 @@ class BatchDistanceMatrix:
             return cached
         d = float(self._travel_model.distance(start, end))
         self._matrix[(start, end)] = d
-        self._matrix[(end, start)] = d
         return d
 
     def travel_time(self, start: Hashable, end: Hashable) -> float:
         """Return travel time derived from pre-computed distance."""
+        if self._speed is not None and self._speed > 0:
+            return self.distance(start, end) / float(self._speed)
         return self._travel_model.travel_time(start, end)
 
     @property

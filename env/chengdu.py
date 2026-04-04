@@ -46,6 +46,8 @@ class ChengduEnvironment:
     movement_callback: Callable[[MutableSequence[Any], MutableSequence[Any], int, Sequence[Any]], None] | None = None
     service_radius_km: float | None = None
     courier_capacity: float | None = None
+    geo_index: GeoIndex | None = None
+    travel_speed_m_per_s: float = 0.0
 
     @classmethod
     def build(
@@ -93,6 +95,8 @@ class ChengduEnvironment:
             "platform_qualities": dict(self.platform_qualities),
             "service_radius_km": self.service_radius_km,
             "courier_capacity": self.courier_capacity,
+            "geo_index": self.geo_index,
+            "travel_speed_m_per_s": self.travel_speed_m_per_s,
         }
 
     def advance(self, seconds: int) -> None:
@@ -524,35 +528,22 @@ def _build_partner_lookup(partner_couriers_by_platform: Mapping[str, Sequence[An
     return platform_lookup
 
 
-def _collect_active_nodes(
-    couriers: Sequence[Courier],
-    parcels: Sequence[Parcel],
-    partner_platforms: Sequence[CooperatingPlatform] | None = None,
-) -> list[object]:
-    """Collect the deduplicated set of node IDs relevant to the current batch."""
-    seen: set[object] = set()
-    nodes: list[object] = []
+def build_geo_index_from_travel_model(travel_model: Any) -> GeoIndex | None:
+    """Build one reusable GeoIndex from the Chengdu travel model when available."""
+    context = getattr(travel_model, "_context", None)
+    nmap = None if context is None else getattr(context, "nMap", None)
+    if nmap is None:
+        return None
+    return GeoIndex(nmap)
 
-    def _add(n: object) -> None:
-        if n not in seen:
-            seen.add(n)
-            nodes.append(n)
 
-    for c in couriers:
-        _add(c.current_location)
-        _add(c.depot_location)
-        for loc in c.route_locations:
-            _add(loc)
-    for p in parcels:
-        _add(p.location)
-    if partner_platforms:
-        for plat in partner_platforms:
-            for c in plat.couriers:
-                _add(c.current_location)
-                _add(c.depot_location)
-                for loc in c.route_locations:
-                    _add(loc)
-    return nodes
+def get_travel_speed_m_per_s(travel_model: Any) -> float:
+    """Return the travel speed encoded by the shared travel model, if any."""
+    for attribute in ("_speed", "speed"):
+        value = getattr(travel_model, attribute, None)
+        if value is not None:
+            return float(value)
+    return 0.0
 
 
 def run_time_stepped_chengdu_batches(
@@ -657,9 +648,8 @@ def run_time_stepped_chengdu_batches(
             for courier in active_local_couriers
         ]
         batch_parcels = [legacy_task_to_parcel(task) for task in eligible_tasks]
-        active_nodes = _collect_active_nodes(local_snapshots, batch_parcels)
         bdm = BatchDistanceMatrix(timed_travel_model)
-        bdm.precompute(active_nodes)
+        bdm.precompute_for_insertions(local_snapshots, batch_parcels)
         cama_result = run_cama(
             batch_parcels,
             local_snapshots,
@@ -704,8 +694,8 @@ def run_time_stepped_chengdu_batches(
                 platform.platform_id: {courier.courier_id: courier for courier in platform.couriers}
                 for platform in partner_platforms
             }
-            cross_nodes = _collect_active_nodes(local_snapshots, remaining_parcels, partner_platforms)
-            bdm.precompute(cross_nodes)
+            partner_snapshots = [courier for platform in partner_platforms for courier in platform.couriers]
+            bdm.precompute_for_insertions(partner_snapshots, remaining_parcels)
             dapa_result = run_dapa(
                 remaining_parcels,
                 partner_platforms,
@@ -867,16 +857,20 @@ def build_framework_chengdu_environment(
 
     from capa.experiments import ChengduGraphTravelModel
 
+    travel_model = ChengduGraphTravelModel()
+
     return LegacyChengduEnvironment(
         tasks=tasks,
         local_couriers=local_couriers,
         partner_couriers_by_platform=partner_couriers_by_platform,
         station_set=station_set,
-        travel_model=ChengduGraphTravelModel(),
+        travel_model=travel_model,
         platform_base_prices={f"P{index + 1}": 1.0 for index in range(cooperating_platform_count)},
         platform_sharing_rates={f"P{index + 1}": 0.4 for index in range(cooperating_platform_count)},
         platform_qualities={f"P{index + 1}": max(0.5, 1.0 - 0.1 * index) for index in range(cooperating_platform_count)},
         movement_callback=framework_movement_callback,
         service_radius_km=service_radius_km,
         courier_capacity=normalized_capacity,
+        geo_index=build_geo_index_from_travel_model(travel_model),
+        travel_speed_m_per_s=get_travel_speed_m_per_s(travel_model),
     )

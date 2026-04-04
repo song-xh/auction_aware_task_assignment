@@ -127,6 +127,8 @@ def run_greedy_baseline_environment(
     timed_travel_model = TimedTravelModel(environment.travel_model, timing)
     snapshot_cache = LegacyCourierSnapshotCache()
     insertion_cache = InsertionCache()
+    geo_index = getattr(environment, "geo_index", None)
+    speed_m_per_s = float(getattr(environment, "travel_speed_m_per_s", 0.0))
     service_radius_meters = (
         None if getattr(environment, "service_radius_km", None) is None else float(environment.service_radius_km) * 1000.0
     )
@@ -163,6 +165,8 @@ def run_greedy_baseline_environment(
                 timing=timing,
                 snapshot_cache=snapshot_cache,
                 insertion_cache=insertion_cache,
+                geo_index=geo_index,
+                speed_m_per_s=speed_m_per_s,
             )
             if selection is not None:
                 courier, insertion_index, _ = selection
