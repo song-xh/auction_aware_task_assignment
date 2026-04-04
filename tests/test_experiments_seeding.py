@@ -53,6 +53,48 @@ class ExperimentsSeedingTests(unittest.TestCase):
         self.assertIs(clone_a.station_set[0]["f_pick_task_set"][0], clone_a.tasks[0])
         self.assertIs(clone_b.station_set[0]["f_pick_task_set"][0], clone_b.tasks[0])
 
+    def test_persisted_seed_reconstructs_shared_couriers_and_task_prefixes(self) -> None:
+        """Persisted canonical seeds should rebuild identical courier/station state across parcel-count points."""
+        from experiments.seeding import (
+            build_environment_seed,
+            derive_environment_from_seed,
+            load_environment_seed,
+            save_environment_seed,
+        )
+
+        station = {"station_id": "s1", "num": "s1", "courier_set": [], "f_pick_task_set": []}
+        local_courier = {"courier_id": "c1", "station": station, "station_num": "s1", "route": []}
+        tasks = [
+            {"task_id": "t1", "num": "t1", "s_time": 0.0, "d_time": 10.0},
+            {"task_id": "t2", "num": "t2", "s_time": 1.0, "d_time": 11.0},
+            {"task_id": "t3", "num": "t3", "s_time": 2.0, "d_time": 12.0},
+        ]
+        station["courier_set"].append(local_courier)
+        station["f_pick_task_set"].extend(tasks)
+        environment = ChengduEnvironment(
+            tasks=tasks,
+            local_couriers=[local_courier],
+            partner_couriers_by_platform={"P1": []},
+            station_set=[station],
+            travel_model=object(),
+            platform_base_prices={"P1": 1.0},
+            platform_sharing_rates={"P1": 0.4},
+            platform_qualities={"P1": 0.9},
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            seed_path = Path(tmpdir) / "seed.pkl"
+            save_environment_seed(build_environment_seed(environment), seed_path)
+            loaded_seed = load_environment_seed(seed_path, travel_model_factory=object, movement_callback=None)
+            env_small = derive_environment_from_seed(loaded_seed, num_parcels=2)
+            env_large = derive_environment_from_seed(loaded_seed, num_parcels=3)
+
+        self.assertEqual([task["task_id"] for task in env_small.tasks], ["t1", "t2"])
+        self.assertEqual([task["task_id"] for task in env_large.tasks], ["t1", "t2", "t3"])
+        self.assertEqual(env_small.local_couriers[0]["courier_id"], env_large.local_couriers[0]["courier_id"])
+        self.assertEqual(env_small.station_set[0]["station_id"], env_large.station_set[0]["station_id"])
+        self.assertEqual([task["task_id"] for task in env_small.station_set[0]["f_pick_task_set"]], ["t1", "t2"])
+
     def test_compare_runner_reuses_one_seeded_environment_per_sweep_value(self) -> None:
         """Comparison sweeps should build once per sweep point, then clone for each algorithm run."""
         from experiments.compare import run_comparison_sweep
