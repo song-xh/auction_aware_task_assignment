@@ -121,6 +121,39 @@ class BaselineRevenueTests(unittest.TestCase):
         self.assertEqual(metrics["TR"], 8.0)
         self.assertEqual(metrics["CR"], 1.0)
 
+    def test_greedy_inner_revenue_uses_fixed_local_payment_ratio(self) -> None:
+        """Greedy completions should use the same local-platform net-revenue rule as CAPA."""
+        from baselines.greedy import run_greedy_baseline_environment
+
+        environment = ChengduEnvironment(
+            tasks=[SimpleNamespace(num="t1", l_node=1, s_time=0, d_time=100, weight=1.0, fare=10.0)],
+            local_couriers=[
+                SimpleNamespace(
+                    num=1,
+                    location=0,
+                    re_schedule=[],
+                    re_weight=0.0,
+                    max_weight=5.0,
+                    w=0.5,
+                    c=0.5,
+                    station_num=1,
+                )
+            ],
+            partner_couriers_by_platform={},
+            station_set=[],
+            travel_model=_LinearTravelModel(),
+            platform_base_prices={},
+            platform_sharing_rates={},
+            platform_qualities={},
+            movement_callback=self._drain_one_step,
+            service_radius_km=1.0,
+        )
+
+        metrics = run_greedy_baseline_environment(environment=environment, batch_size=30)
+
+        self.assertEqual(metrics["TR"], 8.0)
+        self.assertEqual(metrics["CR"], 1.0)
+
 
 if __name__ == "__main__":
     unittest.main()

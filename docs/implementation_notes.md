@@ -271,8 +271,19 @@ This change fixes an earlier inconsistency where some baselines reported:
 
 instead of the CPUL paper's local-platform net revenue.
 
-One remaining boundary still exists:
+The repository now enforces the same Eq. 5 local-platform revenue accounting for:
 
-- the current `Greedy` baseline is delegated to the legacy Chengdu framework, which only exposes aggregate printed revenue rather than per-assignment settlement records
+- CAPA
+- Greedy
+- BaseGTA
+- ImpGTA
+- MRA
+- RamCOM
 
-So the corrected Eq. 5 accounting is fully enforced for the maintained Python baselines (`BaseGTA`, `ImpGTA`, `MRA`, `RamCOM`) and CAPA, while legacy `Greedy` still follows the original framework's aggregate output unless that runner is fully reimplemented inside the unified environment.
+`Greedy` was originally delegated to the legacy Chengdu framework, which only exposed aggregate printed revenue. It is now evaluated through the unified Chengdu environment and settles each accepted local completion as `p_tau - zeta * p_tau`, matching CAPA's metric surface.
+
+One explicit non-change is also important:
+
+- no additional waiting-time or placement-time decay term is applied to experimental TR
+
+During the paper audit, no standalone formula was found that directly modifies experimental platform revenue by a temporal decay factor. The paper discusses delayed matching, task prioritization, and RL discounting over future rewards, but the rendered experimental TR definition remains Eq. 5 net revenue. Therefore the repository does not invent an extra decay heuristic beyond the paper's explicit payment-based formulation.

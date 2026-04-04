@@ -98,35 +98,35 @@ class BaselineRunnerTests(unittest.TestCase):
         self.assertEqual(bid.courier.num, 1)
         self.assertEqual(count_available_couriers([busy_courier, idle_courier], now=0, window_seconds=10), 2)
 
-    def test_greedy_wrapper_forwards_service_radius_to_legacy_entrypoint(self) -> None:
-        """The unified Greedy wrapper should forward the environment service radius into the legacy entrypoint."""
+    def test_greedy_wrapper_respects_service_radius_in_unified_environment(self) -> None:
+        """The unified Greedy runner should reject tasks outside the configured service radius."""
         from baselines.greedy import run_greedy_baseline_environment
 
-        fake_framework = SimpleNamespace()
-        fake_framework_output = (
-            "Greedy Result:-------------------------\n"
-            "程序总耗时:0.11      ,完成任务个数:2    ,总失败个数:8    ,任务完成率:20.00%,"
-            "所有均耗时:0.14    ms,成功均耗时:0.69    ms,所有总耗时:1.38      ms,批处理耗时:0.03    ms,"
-            "任务均报价:6.86 ,平台总报价:13.71     ,平台总收益:2.29      \n"
-        )
-
-        def fake_greedy(*args):
-            print(fake_framework_output, end="")
-            fake_framework.called_args = args
-
-        fake_framework.Greedy = fake_greedy
         environment = SimpleNamespace(
+            tasks=[SimpleNamespace(num="t1", l_node=4000, s_time=0, d_time=100, weight=1.0, fare=10.0)],
+            local_couriers=[
+                SimpleNamespace(
+                    num=1,
+                    location=0,
+                    re_schedule=[],
+                    re_weight=0.0,
+                    max_weight=5.0,
+                    w=0.5,
+                    c=0.5,
+                    station_num=1,
+                )
+            ],
+            partner_couriers_by_platform={},
             station_set=[],
-            local_couriers=[],
-            tasks=[],
+            travel_model=_LinearTravelModel(),
+            movement_callback=lambda local, partner, seconds, station_set: None,
             service_radius_km=1.5,
         )
 
-        with patch.dict("sys.modules", {"Framework_ChengDu": fake_framework}):
-            metrics = run_greedy_baseline_environment(environment=environment, batch_size=300)
+        metrics = run_greedy_baseline_environment(environment=environment, batch_size=300)
 
-        self.assertEqual(metrics["TR"], 2.29)
-        self.assertEqual(fake_framework.called_args[-1], 1.5)
+        self.assertEqual(metrics["TR"], 0.0)
+        self.assertEqual(metrics["CR"], 0.0)
 
     def test_settle_aim_auction_uses_second_price_payment(self) -> None:
         """AIM should choose the lowest bidder and pay the second-lowest bid."""
