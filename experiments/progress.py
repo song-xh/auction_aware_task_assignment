@@ -66,11 +66,26 @@ def compute_point_algorithm_units(point_snapshot: Mapping[str, Any]) -> float:
 
     completed = float(len(point_snapshot.get("completed_algorithms", [])))
     last_event = point_snapshot.get("last_event") or {}
+    phase = str(last_event.get("phase", ""))
     completed_units = float(last_event.get("completed_units", 0.0) or 0.0)
     total_units = float(last_event.get("total_units", 0.0) or 0.0)
+    batch_index = int(last_event.get("batch_index", 1) or 1)
+    total_batches = int(last_event.get("total_batches", 1) or 1)
+    effective_batches = max(total_batches, batch_index, 1)
     if total_units <= 0.0:
-        return completed
-    fractional = min(max(completed_units / total_units, 0.0), 1.0)
+        fractional = 0.0
+    else:
+        unit_fraction = min(max(completed_units / total_units, 0.0), 1.0)
+        if phase == "batch_completed":
+            fractional = batch_index / effective_batches
+        elif phase == "cama_parcel_progress":
+            fractional = ((batch_index - 1) + (0.5 * unit_fraction)) / effective_batches
+        elif phase == "dapa_parcel_progress":
+            fractional = ((batch_index - 1) + 0.5 + (0.5 * unit_fraction)) / effective_batches
+        elif phase == "batch_matching":
+            fractional = (batch_index - 1) / effective_batches
+        else:
+            fractional = min(unit_fraction, 0.05)
     if point_snapshot.get("point_complete"):
         fractional = 0.0
     return completed + fractional
@@ -90,15 +105,18 @@ def enrich_split_snapshot(snapshot: Mapping[str, Any]) -> dict[str, Any]:
     points = {str(key): dict(value) for key, value in snapshot.get("points", {}).items()}
     total_algorithm_units = 0.0
     completed_algorithm_units = 0.0
+    algorithms_per_point = 0
     for point in points.values():
         total_algorithms = float(point.get("total_algorithms", len(point.get("completed_algorithms", [])) or 0))
         if total_algorithms <= 0.0:
             total_algorithms = float(len(point.get("completed_algorithms", [])))
         total_algorithm_units += total_algorithms
         completed_algorithm_units += compute_point_algorithm_units(point)
+        algorithms_per_point = max(algorithms_per_point, int(total_algorithms))
     enriched["points"] = points
-    enriched["completed_algorithm_units"] = completed_algorithm_units
-    enriched["total_algorithm_units"] = total_algorithm_units
+    enriched["completed_algorithm_units"] = float(snapshot.get("completed_algorithm_units", completed_algorithm_units))
+    enriched["total_algorithm_units"] = float(snapshot.get("total_algorithm_units", total_algorithm_units))
+    enriched["algorithms_per_point"] = int(snapshot.get("algorithms_per_point", algorithms_per_point))
     return enriched
 
 
@@ -117,7 +135,8 @@ def format_split_progress_snapshot(snapshot: Mapping[str, Any]) -> str:
         (
             f"Exp-1 state={enriched.get('state', 'unknown')} "
             f"points={enriched.get('completed_points', 0)}/{enriched.get('total_points', 0)} "
-            f"algorithms={enriched['completed_algorithm_units']:.2f}/{max(enriched['total_algorithm_units'], 1.0):.0f}"
+            f"algorithms_per_point={enriched.get('algorithms_per_point', 0)} "
+            f"algorithm_runs={enriched['completed_algorithm_units']:.2f}/{max(enriched['total_algorithm_units'], 1.0):.0f}"
         )
     ]
     updated_at = enriched.get("updated_at")
@@ -126,15 +145,33 @@ def format_split_progress_snapshot(snapshot: Mapping[str, Any]) -> str:
     for point_value in sorted(enriched["points"], key=lambda value: int(value)):
         point = enriched["points"][point_value]
         current_algorithm = point.get("current_algorithm") or "-"
+        algorithm_index = point.get("algorithm_index") or max(0, len(point.get("completed_algorithms", [])))
+        total_algorithms = point.get("total_algorithms") or enriched.get("algorithms_per_point", 0)
         last_event = point.get("last_event") or {}
         phase = last_event.get("phase") or point.get("state") or "waiting"
         detail = last_event.get("detail") or "-"
         completed_algorithms = ",".join(point.get("completed_algorithms", [])) or "-"
         lines.append(
-            f"|Γ|={point_value} done={completed_algorithms} current={current_algorithm} phase={phase} detail={detail}"
+            f"|Γ|={point_value} done={completed_algorithms} algo={algorithm_index}/{total_algorithms}:{current_algorithm} phase={phase} detail={detail}"
         )
     lines.append(f"Overall {render_progress_bar(enriched['completed_algorithm_units'], max(enriched['total_algorithm_units'], 1.0))}")
     return "\n".join(lines)
+
+
+def render_terminal_progress_block(rendered_snapshot: str, overwrite: bool) -> str:
+    """Wrap one rendered progress block for terminal output.
+
+    Args:
+        rendered_snapshot: Human-readable multi-line progress text.
+        overwrite: Whether the block should clear and replace prior terminal content.
+
+    Returns:
+        The terminal-ready block string.
+    """
+
+    if overwrite:
+        return f"\x1b[2J\x1b[H{rendered_snapshot}"
+    return rendered_snapshot
 
 
 def build_point_progress_snapshot(

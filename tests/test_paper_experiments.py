@@ -510,6 +510,54 @@ class PaperExperimentTests(unittest.TestCase):
         self.assertFalse(build_environment.called)
         self.assertFalse(save_seed.called)
 
+    def test_run_exp1_split_clears_stale_point_outputs_before_launch(self) -> None:
+        """The split launcher should remove stale point artifacts before starting a fresh run."""
+        from experiments.run_exp1_split import run_exp1_split
+
+        class FakeProcess:
+            """Represent one already-finished point process for stale-output reset tests."""
+
+            def __init__(self, *args, **kwargs) -> None:
+                self.pid = 3000
+                self.returncode = 0
+
+            def poll(self) -> int:
+                return self.returncode
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_root = Path(tmpdir) / "tmp"
+            output_dir = Path(tmpdir) / "out"
+            point_output_dir = tmp_root / "point_1000"
+            point_output_dir.mkdir(parents=True)
+            (point_output_dir / "summary.json").write_text('{"stale": true}', encoding="utf-8")
+            (point_output_dir / "progress.json").write_text('{"stale": true}', encoding="utf-8")
+            point_summary = {"num_parcels": 1000, "capa": {"metrics": {"TR": 10.0, "CR": 0.5, "BPT": 1.0}}}
+
+            def fake_popen(cmd, cwd=None, stdout=None, stderr=None, text=None):
+                output_path = Path(cmd[cmd.index("--output-dir") + 1])
+                self.assertFalse((output_path / "progress.json").exists())
+                self.assertFalse((output_path / "summary.json").exists())
+                output_path.mkdir(parents=True, exist_ok=True)
+                with (output_path / "summary.json").open("w", encoding="utf-8") as handle:
+                    json.dump(point_summary, handle, indent=2)
+                return FakeProcess()
+
+            with patch("experiments.run_exp1_split.ChengduEnvironment.build", return_value=SimpleNamespace()):
+                with patch("experiments.run_exp1_split.build_environment_seed", return_value="seed-object"):
+                    with patch("experiments.run_exp1_split.save_environment_seed"):
+                        with patch("experiments.run_exp1_split.subprocess.Popen", side_effect=fake_popen):
+                            with patch("experiments.run_exp1_split.save_comparison_plots"):
+                                summary = run_exp1_split(
+                                    tmp_root=tmp_root,
+                                    output_dir=output_dir,
+                                    algorithms=("capa",),
+                                    parcel_values=(1000,),
+                                    batch_size=30,
+                                    poll_seconds=0,
+                                )
+
+        self.assertEqual(summary["runs"][0]["num_parcels"], 1000)
+
 
     def test_collect_split_progress_reports_completed_algorithms_and_points(self) -> None:
         """The split monitor should summarize per-point algorithm completion from tmp outputs."""

@@ -622,7 +622,7 @@ def run_time_stepped_chengdu_batches(
             progress_callback(
                 {
                     "phase": "batch_matching",
-                    "detail": f"batch {batch_index}/{total_batches}",
+                    "detail": format_batch_progress_label(batch_index, total_batches),
                     "batch_index": batch_index,
                     "total_batches": total_batches,
                     "batch_time": batch_end_time,
@@ -655,7 +655,7 @@ def run_time_stepped_chengdu_batches(
                 progress_callback(
                     {
                         "phase": "batch_completed",
-                        "detail": f"batch {batch_index}/{total_batches}",
+                        "detail": format_batch_progress_label(batch_index, total_batches),
                         "batch_index": batch_index,
                         "total_batches": total_batches,
                         "completed_units": batch_index,
@@ -694,6 +694,18 @@ def run_time_stepped_chengdu_batches(
             insertion_cache=insertion_cache,
             geo_index=geo_index,
             speed_m_per_s=speed_m_per_s,
+            progress_callback=(
+                None
+                if progress_callback is None
+                else lambda event, batch_index=batch_index, total_batches=total_batches: progress_callback(
+                    {
+                        **dict(event),
+                        "detail": f"{format_batch_progress_label(batch_index, total_batches)} {event.get('detail', '')}".strip(),
+                        "batch_index": batch_index,
+                        "total_batches": total_batches,
+                    }
+                )
+            ),
         )
         best_local_pairs = _index_best_local_pairs(cama_result)
         task_lookup = {parcel.parcel_id: task for parcel, task in zip(batch_parcels, eligible_tasks)}
@@ -740,6 +752,18 @@ def run_time_stepped_chengdu_batches(
                 insertion_cache=insertion_cache,
                 geo_index=geo_index,
                 speed_m_per_s=speed_m_per_s,
+                progress_callback=(
+                    None
+                    if progress_callback is None
+                    else lambda event, batch_index=batch_index, total_batches=total_batches: progress_callback(
+                        {
+                            **dict(event),
+                            "detail": f"{format_batch_progress_label(batch_index, total_batches)} {event.get('detail', '')}".strip(),
+                            "batch_index": batch_index,
+                            "total_batches": total_batches,
+                        }
+                    )
+                ),
             )
             cross_task_lookup = {parcel.parcel_id: task for parcel, task in zip(remaining_parcels, remaining_tasks)}
 
@@ -786,7 +810,7 @@ def run_time_stepped_chengdu_batches(
             progress_callback(
                 {
                     "phase": "batch_completed",
-                    "detail": f"batch {batch_index}/{total_batches}",
+                    "detail": format_batch_progress_label(batch_index, total_batches),
                     "batch_index": batch_index,
                     "total_batches": total_batches,
                     "completed_units": batch_index,
@@ -834,6 +858,22 @@ def run_time_stepped_chengdu_batches(
         metrics=build_run_metrics(matching_plan, len(tasks), batch_reports, delivered_parcel_count=len(delivered_parcels)),
         delivered_parcels=delivered_parcels,
     )
+
+
+def format_batch_progress_label(batch_index: int, total_batches: int) -> str:
+    """Format one user-facing batch progress label.
+
+    Args:
+        batch_index: One-based matching-round index.
+        total_batches: Number of arrival windows induced by task times.
+
+    Returns:
+        Human-readable batch label that distinguishes carry-over rounds.
+    """
+
+    if batch_index <= total_batches:
+        return f"window {batch_index}/{total_batches}"
+    return f"retry {batch_index - total_batches}"
 
 
 def build_framework_chengdu_environment(
