@@ -74,7 +74,7 @@ def run_exp1_split(
     processes: dict[int, subprocess.Popen[str]] = {}
     log_handles: list[TextIOWrapper] = []
     point_output_dirs: dict[int, Path] = {}
-    last_point_status: dict[str, Any] = {}
+    all_point_status: dict[str, Any] = {}
     overwrite_terminal = sys.stdout.isatty()
     try:
         for value in parcel_values:
@@ -109,14 +109,19 @@ def run_exp1_split(
                 text=True,
             )
             processes[int(value)] = process
+            all_point_status[str(int(value))] = {
+                "pid": process.pid,
+                "returncode": None,
+                "output_dir": str(point_output_dir),
+                "total_algorithms": len(algorithms),
+            }
 
         status_path = tmp_root / "split_status.json"
         while processes:
-            point_status = {}
             finished: list[int] = []
             for value, process in processes.items():
                 return_code = process.poll()
-                point_status[str(value)] = {
+                all_point_status[str(value)] = {
                     "pid": process.pid,
                     "returncode": return_code,
                     "output_dir": str(point_output_dirs[value]),
@@ -124,12 +129,11 @@ def run_exp1_split(
                 }
                 if return_code is not None:
                     finished.append(value)
-            last_point_status = point_status
             with status_path.open("w", encoding="utf-8") as handle:
                 json.dump(
                     {
                         "state": "running" if processes else "finished",
-                        "points": point_status,
+                        "points": all_point_status,
                         "updated_at": time.time(),
                     },
                     handle,
@@ -154,7 +158,7 @@ def run_exp1_split(
             json.dump(
                 {
                     "state": "finished",
-                    "points": last_point_status,
+                    "points": all_point_status,
                     "updated_at": time.time(),
                 },
                 handle,
