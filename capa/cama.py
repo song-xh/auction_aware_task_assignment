@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from time import perf_counter
-from typing import Iterable, List, Sequence
+from typing import Callable, Iterable, List, Mapping, Sequence
 
 from .cache import InsertionCache
 from .constraints import is_deadline_feasible_by_geo, is_within_service_radius
@@ -89,6 +89,7 @@ def run_cama(
     insertion_cache: InsertionCache | None = None,
     geo_index: GeoIndex | None = None,
     speed_m_per_s: float = 0.0,
+    progress_callback: Callable[[Mapping[str, float | int | str]], None] | None = None,
 ) -> CAMAResult:
     """Run Algorithm 2 exactly at the candidate-set level defined in the paper."""
     started = perf_counter()
@@ -98,8 +99,9 @@ def run_cama(
     all_feasible_pairs: List[CandidatePair] = []
     candidate_best_pairs: List[CandidatePair] = []
     auction_pool: List[Parcel] = []
+    progress_stride = max(1, len(parcels) // 100) if parcels else 1
 
-    for parcel in parcels:
+    for parcel_index, parcel in enumerate(parcels, start=1):
         feasible_for_parcel: List[CandidatePair] = []
         for courier in couriers:
             if not is_feasible_local_match(
@@ -124,6 +126,16 @@ def run_cama(
             candidate_best_pairs.append(best_pair)
         else:
             auction_pool.append(parcel)
+        if progress_callback is not None and (parcel_index == len(parcels) or parcel_index % progress_stride == 0):
+            progress_callback(
+                {
+                    "phase": "cama_parcel_progress",
+                    "detail": f"cama {parcel_index}/{len(parcels)}",
+                    "completed_units": parcel_index,
+                    "total_units": len(parcels),
+                    "unit_label": "parcels",
+                }
+            )
 
     threshold = calculate_threshold(
         (pair.utility.value for pair in all_feasible_pairs),

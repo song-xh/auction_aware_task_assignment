@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from time import perf_counter
-from typing import List, Sequence
+from typing import Callable, List, Mapping, Sequence
 
 from .cache import InsertionCache
 from .cama import is_courier_available
@@ -143,6 +143,7 @@ def run_dapa(
     insertion_cache: InsertionCache | None = None,
     geo_index: GeoIndex | None = None,
     speed_m_per_s: float = 0.0,
+    progress_callback: Callable[[Mapping[str, float | int | str]], None] | None = None,
 ) -> DAPAResult:
     """Run Algorithm 3 with explicit FPSA, RVA, and upper-limit filtering."""
     started = perf_counter()
@@ -152,8 +153,9 @@ def run_dapa(
     cross_assignments: List[Assignment] = []
     unassigned_parcels: List[Parcel] = []
     observed_platform_bids: List[PlatformBid] = []
+    progress_stride = max(1, len(parcels) // 100) if parcels else 1
 
-    for parcel in parcels:
+    for parcel_index, parcel in enumerate(parcels, start=1):
         platform_winners: List[PlatformBid] = []
         for platform in platforms:
             feasible_bids: List[tuple[Courier, float]] = []
@@ -192,55 +194,63 @@ def run_dapa(
 
         if not platform_winners:
             unassigned_parcels.append(parcel)
-            continue
-
-        candidate_platforms = [
-            platform for platform in platforms if any(platform.platform_id == bid.platform_id for bid in platform_winners)
-        ]
-        platform_bid_values: List[PlatformBid] = []
-        for winner in platform_winners:
-            platform = next(item for item in candidate_platforms if item.platform_id == winner.platform_id)
-            quality_factor = compute_platform_quality_factor(platform, candidate_platforms)
-            if len(platform_winners) == 1:
-                second_layer_bid = winner.courier_bid + config.cross_platform_sharing_rate_mu2 * parcel.fare
-            else:
-                second_layer_bid = winner.courier_bid + quality_factor * config.cross_platform_sharing_rate_mu2 * parcel.fare
-            platform_bid_values.append(
-                PlatformBid(
-                    platform_id=winner.platform_id,
-                    courier=winner.courier,
-                    courier_bid=winner.courier_bid,
-                    platform_bid=second_layer_bid,
-                )
-            )
-
-        payment_limit = compute_platform_payment_limit(parcel, config)
-        valid_platform_bids = [bid for bid in platform_bid_values if bid.platform_bid <= payment_limit]
-        observed_platform_bids.extend(valid_platform_bids)
-        if not valid_platform_bids:
-            unassigned_parcels.append(parcel)
-            continue
-
-        valid_platform_bids.sort(key=lambda item: item.platform_bid)
-        winner = valid_platform_bids[0]
-        if len(valid_platform_bids) >= 2:
-            platform_payment = valid_platform_bids[1].platform_bid
         else:
-            platform_payment = winner.courier_bid + config.cross_platform_sharing_rate_mu2 * parcel.fare
-            if platform_payment > payment_limit:
-                unassigned_parcels.append(parcel)
-                continue
+            candidate_platforms = [
+                platform for platform in platforms if any(platform.platform_id == bid.platform_id for bid in platform_winners)
+            ]
+            platform_bid_values: List[PlatformBid] = []
+            for winner in platform_winners:
+                platform = next(item for item in candidate_platforms if item.platform_id == winner.platform_id)
+                quality_factor = compute_platform_quality_factor(platform, candidate_platforms)
+                if len(platform_winners) == 1:
+                    second_layer_bid = winner.courier_bid + config.cross_platform_sharing_rate_mu2 * parcel.fare
+                else:
+                    second_layer_bid = winner.courier_bid + quality_factor * config.cross_platform_sharing_rate_mu2 * parcel.fare
+                platform_bid_values.append(
+                    PlatformBid(
+                        platform_id=winner.platform_id,
+                        courier=winner.courier,
+                        courier_bid=winner.courier_bid,
+                        platform_bid=second_layer_bid,
+                    )
+                )
 
-        apply_cross_assignment(parcel, winner.courier, travel_model, timing=timing, insertion_cache=insertion_cache)
-        cross_assignments.append(
-            build_cross_assignment(
-                parcel=parcel,
-                courier=winner.courier,
-                platform_id=winner.platform_id,
-                courier_payment=winner.courier_bid,
-                platform_payment=platform_payment,
+            payment_limit = compute_platform_payment_limit(parcel, config)
+            valid_platform_bids = [bid for bid in platform_bid_values if bid.platform_bid <= payment_limit]
+            observed_platform_bids.extend(valid_platform_bids)
+            if not valid_platform_bids:
+                unassigned_parcels.append(parcel)
+            else:
+                valid_platform_bids.sort(key=lambda item: item.platform_bid)
+                winner = valid_platform_bids[0]
+                if len(valid_platform_bids) >= 2:
+                    platform_payment = valid_platform_bids[1].platform_bid
+                else:
+                    platform_payment = winner.courier_bid + config.cross_platform_sharing_rate_mu2 * parcel.fare
+                    if platform_payment > payment_limit:
+                        unassigned_parcels.append(parcel)
+                        platform_payment = None
+                if platform_payment is not None:
+                    apply_cross_assignment(parcel, winner.courier, travel_model, timing=timing, insertion_cache=insertion_cache)
+                    cross_assignments.append(
+                        build_cross_assignment(
+                            parcel=parcel,
+                            courier=winner.courier,
+                            platform_id=winner.platform_id,
+                            courier_payment=winner.courier_bid,
+                            platform_payment=platform_payment,
+                        )
+                    )
+        if progress_callback is not None and (parcel_index == len(parcels) or parcel_index % progress_stride == 0):
+            progress_callback(
+                {
+                    "phase": "dapa_parcel_progress",
+                    "detail": f"dapa {parcel_index}/{len(parcels)}",
+                    "completed_units": parcel_index,
+                    "total_units": len(parcels),
+                    "unit_label": "parcels",
+                }
             )
-        )
 
     result = DAPAResult(
         cross_assignments=cross_assignments,

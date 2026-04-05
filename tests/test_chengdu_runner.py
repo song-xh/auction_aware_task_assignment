@@ -367,6 +367,7 @@ class ChengduRunnerTests(unittest.TestCase):
         self.assertGreaterEqual(len(completed_events), 1)
         self.assertEqual(completed_events[0]["batch_index"], 1)
         self.assertEqual(completed_events[0]["total_batches"], 1)
+        self.assertTrue(any(event["phase"] == "cama_parcel_progress" for event in progress_events))
 
     def test_generate_origin_schedule_with_retry_skips_oversized_sample_requests(self) -> None:
         """The environment builder should retry when legacy schedule seeding requests more couriers than can be sampled."""

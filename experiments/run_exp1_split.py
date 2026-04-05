@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 from io import TextIOWrapper
+import shutil
 import subprocess
 import sys
 import time
@@ -19,7 +20,7 @@ from experiments.monitor_exp1_split import collect_split_progress
 from experiments.paper_chengdu import DEFAULT_CHENGDU_PAPER_FIXED_CONFIG
 from experiments.paper_config import DEFAULT_CHENGDU_PAPER_ALGORITHMS, PAPER_SUITE_PRESETS
 from experiments.plotting import save_comparison_plots
-from experiments.progress import format_split_progress_snapshot
+from experiments.progress import format_split_progress_snapshot, render_terminal_progress_block
 from experiments.seeding import build_environment_seed, save_environment_seed
 
 
@@ -74,9 +75,12 @@ def run_exp1_split(
     log_handles: list[TextIOWrapper] = []
     point_output_dirs: dict[int, Path] = {}
     last_point_status: dict[str, Any] = {}
+    overwrite_terminal = sys.stdout.isatty()
     try:
         for value in parcel_values:
             point_output_dir = tmp_root / f"point_{int(value)}"
+            if point_output_dir.exists():
+                shutil.rmtree(point_output_dir)
             point_output_dirs[int(value)] = point_output_dir
             point_output_dir.mkdir(parents=True, exist_ok=True)
             stdout_handle = (point_output_dir / "stdout.log").open("w", encoding="utf-8")
@@ -131,7 +135,12 @@ def run_exp1_split(
                     handle,
                     indent=2,
                 )
-            print(format_split_progress_snapshot(collect_split_progress(tmp_root)), flush=True)
+            rendered = render_terminal_progress_block(
+                format_split_progress_snapshot(collect_split_progress(tmp_root)),
+                overwrite=overwrite_terminal,
+            )
+            sys.stdout.write(f"{rendered}\n")
+            sys.stdout.flush()
             if not finished:
                 time.sleep(poll_seconds)
                 continue
@@ -151,7 +160,12 @@ def run_exp1_split(
                 handle,
                 indent=2,
             )
-        print(format_split_progress_snapshot(collect_split_progress(tmp_root)), flush=True)
+        rendered = render_terminal_progress_block(
+            format_split_progress_snapshot(collect_split_progress(tmp_root)),
+            overwrite=overwrite_terminal,
+        )
+        sys.stdout.write(f"{rendered}\n")
+        sys.stdout.flush()
     finally:
         for handle in log_handles:
             handle.close()

@@ -28,10 +28,13 @@ class ExperimentProgressTests(unittest.TestCase):
             "total_points": 4,
             "completed_algorithm_units": 3.5,
             "total_algorithm_units": 24,
+            "algorithms_per_point": 6,
             "points": {
                 "1000": {
                     "completed_algorithms": ["capa"],
                     "current_algorithm": "greedy",
+                    "algorithm_index": 2,
+                    "total_algorithms": 6,
                     "point_complete": False,
                     "last_event": {
                         "phase": "dispatch",
@@ -47,6 +50,16 @@ class ExperimentProgressTests(unittest.TestCase):
 
         self.assertIn("state=running", rendered)
         self.assertIn("|Γ|=1000", rendered)
-        self.assertIn("greedy", rendered)
+        self.assertIn("algo=2/6:greedy", rendered)
         self.assertIn("task 15/100", rendered)
         self.assertIn("Overall", rendered)
+        self.assertIn("algorithm_runs=3.50/24", rendered)
+
+    def test_render_terminal_progress_block_can_clear_previous_output(self) -> None:
+        """Terminal rendering should support ANSI overwrite mode for live refreshes."""
+        from experiments.progress import render_terminal_progress_block
+
+        rendered = render_terminal_progress_block("hello", overwrite=True)
+
+        self.assertTrue(rendered.startswith("\x1b[2J\x1b[H"))
+        self.assertTrue(rendered.endswith("hello"))
