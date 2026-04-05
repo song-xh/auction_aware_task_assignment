@@ -5,7 +5,10 @@ from __future__ import annotations
 import json
 import time
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Literal, Mapping
+
+
+ProgressMode = Literal["overwrite", "append", "auto"]
 
 
 def render_progress_bar(completed: float, total: float, width: int = 36) -> str:
@@ -172,6 +175,23 @@ def render_terminal_progress_block(rendered_snapshot: str, overwrite: bool) -> s
     if overwrite:
         return f"\x1b[2J\x1b[H{rendered_snapshot}"
     return rendered_snapshot
+
+
+def resolve_progress_mode(mode: ProgressMode) -> Literal["overwrite", "append"]:
+    """Resolve one user-facing progress mode into a concrete rendering mode.
+
+    Args:
+        mode: Requested progress mode.
+
+    Returns:
+        The concrete rendering mode used by the split launcher.
+    """
+
+    if mode == "append":
+        return "append"
+    if mode == "overwrite":
+        return "overwrite"
+    return "overwrite"
 
 
 def build_point_progress_snapshot(

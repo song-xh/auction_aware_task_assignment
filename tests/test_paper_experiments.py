@@ -118,6 +118,32 @@ class PaperExperimentTests(unittest.TestCase):
         self.assertEqual(run_experiment.call_args.kwargs["algorithms"], ["capa", "greedy"])
         self.assertEqual(run_experiment.call_args.kwargs["max_workers"], 2)
 
+    def test_run_exp1_split_cli_forwards_progress_mode(self) -> None:
+        """The split-process Exp-1 CLI should forward an explicit progress mode into the runner."""
+        from experiments.run_exp1_split import main
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with patch("experiments.run_exp1_split.run_exp1_split", return_value={"runs": []}) as run_split:
+                with patch(
+                    "sys.argv",
+                    [
+                        "run_exp1_split.py",
+                        "--tmp-root",
+                        f"{tmpdir}/tmp",
+                        "--output-dir",
+                        f"{tmpdir}/out",
+                        "--algorithms",
+                        "capa",
+                        "greedy",
+                        "--progress-mode",
+                        "append",
+                    ],
+                ):
+                    exit_code = main()
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(run_split.call_args.kwargs["progress_mode"], "append")
+
     def test_suite_script_forwards_algorithms_and_workers(self) -> None:
         """The suite script should pass CLI overrides into the suite helper."""
         from experiments.run_chengdu_paper_suite import main
