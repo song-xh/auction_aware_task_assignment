@@ -558,6 +558,90 @@ class PaperExperimentTests(unittest.TestCase):
 
         self.assertEqual(summary["runs"][0]["num_parcels"], 1000)
 
+    def test_run_exp1_split_keeps_completed_points_in_status_snapshot(self) -> None:
+        """The split launcher should keep completed points in status snapshots until the whole run finishes."""
+        from experiments.run_exp1_split import run_exp1_split
+
+        class FakeProcess:
+            """Represent one point process with a scripted poll sequence."""
+
+            _next_pid = 4000
+
+            def __init__(self, poll_sequence: list[int | None]) -> None:
+                self.pid = FakeProcess._next_pid
+                FakeProcess._next_pid += 1
+                self._poll_sequence = list(poll_sequence)
+                self.returncode = None
+
+            def poll(self) -> int | None:
+                if self._poll_sequence:
+                    self.returncode = self._poll_sequence.pop(0)
+                return self.returncode
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_root = Path(tmpdir) / "tmp"
+            output_dir = Path(tmpdir) / "out"
+            point_summaries = {
+                1000: {"num_parcels": 1000, "capa": {"metrics": {"TR": 10.0, "CR": 0.5, "BPT": 1.0}}},
+                2000: {"num_parcels": 2000, "capa": {"metrics": {"TR": 20.0, "CR": 0.6, "BPT": 1.5}}},
+            }
+            processes = {
+                1000: FakeProcess([0]),
+                2000: FakeProcess([None, 0]),
+            }
+            snapshots: list[dict[str, object]] = []
+
+            def fake_popen(cmd, cwd=None, stdout=None, stderr=None, text=None):
+                point_value = int(cmd[cmd.index("--num-parcels") + 1])
+                output_path = Path(cmd[cmd.index("--output-dir") + 1])
+                output_path.mkdir(parents=True, exist_ok=True)
+                with (output_path / "summary.json").open("w", encoding="utf-8") as handle:
+                    json.dump(point_summaries[point_value], handle, indent=2)
+                return processes[point_value]
+
+            def fake_collect_progress(tmp_root_arg: Path):
+                with (tmp_root_arg / "split_status.json").open("r", encoding="utf-8") as handle:
+                    snapshot = json.load(handle)
+                snapshots.append(snapshot)
+                return {
+                    "state": snapshot["state"],
+                    "completed_points": 0,
+                    "total_points": len(snapshot["points"]),
+                    "completed_algorithm_units": 0.0,
+                    "total_algorithm_units": float(len(snapshot["points"])),
+                    "algorithms_per_point": 1,
+                    "points": {
+                        key: {
+                            "completed_algorithms": [],
+                            "point_complete": value["returncode"] == 0,
+                            "current_algorithm": None,
+                            "algorithm_index": 0,
+                            "total_algorithms": 1,
+                            "last_event": {},
+                        }
+                        for key, value in snapshot["points"].items()
+                    },
+                }
+
+            with patch("experiments.run_exp1_split.ChengduEnvironment.build", return_value=SimpleNamespace()):
+                with patch("experiments.run_exp1_split.build_environment_seed", return_value="seed-object"):
+                    with patch("experiments.run_exp1_split.save_environment_seed"):
+                        with patch("experiments.run_exp1_split.subprocess.Popen", side_effect=fake_popen):
+                            with patch("experiments.run_exp1_split.save_comparison_plots"):
+                                with patch("experiments.run_exp1_split.collect_split_progress", side_effect=fake_collect_progress):
+                                    run_exp1_split(
+                                        tmp_root=tmp_root,
+                                        output_dir=output_dir,
+                                        algorithms=("capa",),
+                                        parcel_values=(1000, 2000),
+                                        batch_size=30,
+                                        poll_seconds=0,
+                                    )
+
+        self.assertGreaterEqual(len(snapshots), 2)
+        self.assertEqual(len(snapshots[0]["points"]), 2)
+        self.assertEqual(len(snapshots[1]["points"]), 2)
+
 
     def test_collect_split_progress_reports_completed_algorithms_and_points(self) -> None:
         """The split monitor should summarize per-point algorithm completion from tmp outputs."""
