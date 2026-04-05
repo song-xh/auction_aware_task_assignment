@@ -20,7 +20,7 @@ from experiments.monitor_exp1_split import collect_split_progress
 from experiments.paper_chengdu import DEFAULT_CHENGDU_PAPER_FIXED_CONFIG
 from experiments.paper_config import DEFAULT_CHENGDU_PAPER_ALGORITHMS, PAPER_SUITE_PRESETS
 from experiments.plotting import save_comparison_plots
-from experiments.progress import format_split_progress_snapshot, render_terminal_progress_block
+from experiments.progress import format_split_progress_snapshot, render_terminal_progress_block, resolve_progress_mode
 from experiments.seeding import build_environment_seed, save_environment_seed
 
 
@@ -34,6 +34,7 @@ def run_exp1_split(
     poll_seconds: int = 30,
     seed_path: Path | None = None,
     capa_runner_kwargs: dict[str, float] | None = None,
+    progress_mode: str = "overwrite",
 ) -> dict[str, Any]:
     """Launch one process per Exp-1 parcel-count point from a shared canonical seed.
 
@@ -47,6 +48,7 @@ def run_exp1_split(
         poll_seconds: Launcher polling interval in seconds.
         seed_path: Optional existing canonical seed bundle reused across rounds.
         capa_runner_kwargs: Optional CAPA-only override set forwarded to point processes.
+        progress_mode: Terminal progress rendering mode.
 
     Returns:
         Aggregate Exp-1 comparison summary.
@@ -75,7 +77,8 @@ def run_exp1_split(
     log_handles: list[TextIOWrapper] = []
     point_output_dirs: dict[int, Path] = {}
     all_point_status: dict[str, Any] = {}
-    overwrite_terminal = sys.stdout.isatty()
+    resolved_progress_mode = resolve_progress_mode(progress_mode)  # type: ignore[arg-type]
+    overwrite_terminal = resolved_progress_mode == "overwrite"
     try:
         for value in parcel_values:
             point_output_dir = tmp_root / f"point_{int(value)}"
@@ -223,6 +226,7 @@ def main() -> int:
     parser.add_argument("--local-payment-ratio-zeta", type=float, default=None)
     parser.add_argument("--local-sharing-rate-mu1", type=float, default=None)
     parser.add_argument("--cross-platform-sharing-rate-mu2", type=float, default=None)
+    parser.add_argument("--progress-mode", choices=["overwrite", "append", "auto"], default="overwrite")
     args = parser.parse_args()
     capa_runner_kwargs = {
         key: value
@@ -251,6 +255,7 @@ def main() -> int:
         poll_seconds=args.poll_seconds,
         seed_path=Path(args.seed_path) if args.seed_path is not None else None,
         capa_runner_kwargs=capa_runner_kwargs or None,
+        progress_mode=args.progress_mode,
     )
     return 0
 

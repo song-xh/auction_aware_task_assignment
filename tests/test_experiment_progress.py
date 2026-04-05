@@ -63,3 +63,11 @@ class ExperimentProgressTests(unittest.TestCase):
 
         self.assertTrue(rendered.startswith("\x1b[2J\x1b[H"))
         self.assertTrue(rendered.endswith("hello"))
+
+    def test_resolve_progress_mode_defaults_to_overwrite(self) -> None:
+        """Exp-1 progress mode should default to overwrite-oriented terminal rendering."""
+        from experiments.progress import resolve_progress_mode
+
+        resolved = resolve_progress_mode("auto")
+
+        self.assertEqual(resolved, "overwrite")
