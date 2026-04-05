@@ -59,8 +59,14 @@ class PaperExperimentTests(unittest.TestCase):
                 """Store the algorithm name used in the summary."""
                 self._name = name
 
-            def run(self, environment: ChengduEnvironment, output_dir: Path | None = None) -> dict[str, object]:
+            def run(
+                self,
+                environment: ChengduEnvironment,
+                output_dir: Path | None = None,
+                progress_callback=None,
+            ) -> dict[str, object]:
                 """Return a normalized result for the default-setting comparison."""
+                del progress_callback
                 return {
                     "algorithm": self._name,
                     "metrics": {"TR": 1.0, "CR": 0.5, "BPT": 0.1},
@@ -266,7 +272,8 @@ class PaperExperimentTests(unittest.TestCase):
             def __init__(self, name: str) -> None:
                 self._name = name
 
-            def run(self, environment, output_dir=None) -> dict[str, object]:
+            def run(self, environment, output_dir=None, progress_callback=None) -> dict[str, object]:
+                del progress_callback
                 return {
                     "algorithm": self._name,
                     "metrics": {
@@ -316,7 +323,8 @@ class PaperExperimentTests(unittest.TestCase):
             def __init__(self, name: str) -> None:
                 self._name = name
 
-            def run(self, environment, output_dir=None) -> dict[str, object]:
+            def run(self, environment, output_dir=None, progress_callback=None) -> dict[str, object]:
+                del progress_callback
                 return {"algorithm": self._name, "metrics": {"TR": 1.0, "CR": 1.0, "BPT": 0.1}}
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -341,6 +349,59 @@ class PaperExperimentTests(unittest.TestCase):
         self.assertEqual(observed_kwargs["capa"]["threshold_omega"], 0.8)
         self.assertEqual(observed_kwargs["capa"]["utility_balance_gamma"], 0.3)
         self.assertNotIn("threshold_omega", observed_kwargs["greedy"])
+
+    def test_run_exp1_point_writes_algorithm_progress_snapshot(self) -> None:
+        """One Exp-1 point should persist live progress details for the active algorithm."""
+        from env.chengdu import ChengduEnvironment
+        from experiments.run_exp1_point import run_exp1_point
+        from experiments.seeding import build_environment_seed
+
+        environment = ChengduEnvironment(
+            tasks=[SimpleNamespace(num="t1", s_time=0.0, d_time=10.0)],
+            local_couriers=[SimpleNamespace(num=1)],
+            partner_couriers_by_platform={"P1": [SimpleNamespace(num=2)]},
+            station_set=[SimpleNamespace(num=1, courier_set=[], f_pick_task_set=[])],
+            travel_model=object(),
+            platform_base_prices={"P1": 1.0},
+            platform_sharing_rates={"P1": 0.4},
+            platform_qualities={"P1": 0.9},
+        )
+
+        class FakeRunner:
+            """Emit one progress event before returning a normalized summary."""
+
+            def run(self, environment, output_dir=None, progress_callback=None) -> dict[str, object]:
+                del environment
+                del output_dir
+                if progress_callback is not None:
+                    progress_callback(
+                        {
+                            "phase": "batch_matching",
+                            "detail": "batch 1/3",
+                            "completed_units": 1,
+                            "total_units": 3,
+                            "unit_label": "batches",
+                        }
+                    )
+                return {"algorithm": "capa", "metrics": {"TR": 1.0, "CR": 1.0, "BPT": 0.1}}
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = Path(tmpdir) / "point"
+            with patch("experiments.run_exp1_point.load_environment_seed", return_value=build_environment_seed(environment)):
+                with patch("experiments.run_exp1_point.build_algorithm_runner", return_value=FakeRunner()):
+                    run_exp1_point(
+                        seed_path=Path(tmpdir) / "seed.pkl",
+                        num_parcels=1,
+                        output_dir=output_dir,
+                        algorithms=("capa",),
+                        batch_size=30,
+                    )
+            progress = json.loads((output_dir / "progress.json").read_text(encoding="utf-8"))
+
+        self.assertEqual(progress["state"], "finished")
+        self.assertEqual(progress["current_algorithm"], "capa")
+        self.assertEqual(progress["last_event"]["phase"], "batch_matching")
+        self.assertEqual(progress["last_event"]["detail"], "batch 1/3")
 
     def test_run_exp1_split_aggregates_completed_points(self) -> None:
         """The split Exp-1 launcher should aggregate point summaries after every point finishes."""
@@ -467,6 +528,23 @@ class PaperExperimentTests(unittest.TestCase):
                 json.dump({"algorithm": "greedy"}, handle)
             with (point_1000 / "summary.json").open("w", encoding="utf-8") as handle:
                 json.dump({"num_parcels": 1000}, handle)
+            with (point_1000 / "progress.json").open("w", encoding="utf-8") as handle:
+                json.dump(
+                    {
+                        "state": "running",
+                        "current_algorithm": "greedy",
+                        "algorithm_index": 2,
+                        "total_algorithms": 6,
+                        "last_event": {
+                            "phase": "dispatch",
+                            "detail": "task 15/100",
+                            "completed_units": 15,
+                            "total_units": 100,
+                        },
+                    },
+                    handle,
+                    indent=2,
+                )
             with (tmp_root / "split_status.json").open("w", encoding="utf-8") as handle:
                 json.dump(
                     {
@@ -486,6 +564,8 @@ class PaperExperimentTests(unittest.TestCase):
         self.assertEqual(progress["total_points"], 2)
         self.assertEqual(progress["points"]["1000"]["completed_algorithms"], ["capa", "greedy"])
         self.assertTrue(progress["points"]["1000"]["point_complete"])
+        self.assertEqual(progress["points"]["1000"]["current_algorithm"], "greedy")
+        self.assertEqual(progress["points"]["1000"]["last_event"]["detail"], "task 15/100")
         self.assertEqual(progress["points"]["2000"]["completed_algorithms"], [])
         self.assertFalse(progress["points"]["2000"]["point_complete"])
 

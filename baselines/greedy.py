@@ -6,7 +6,7 @@ import io
 import re
 from contextlib import redirect_stdout
 from time import perf_counter
-from typing import Any, Sequence
+from typing import Any, Callable, Mapping, Sequence
 
 from capa.cache import InsertionCache
 from capa.cama import is_feasible_local_match
@@ -95,6 +95,7 @@ def run_greedy_baseline_environment(
     utility: float = 0.5,
     realtime: int = 1,
     local_payment_ratio: float = DEFAULT_LOCAL_PAYMENT_RATIO,
+    progress_callback: Callable[[Mapping[str, Any]], None] | None = None,
 ) -> dict[str, float]:
     """Run a local-only greedy baseline with CAPA-aligned Eq.5 revenue accounting.
 
@@ -104,6 +105,8 @@ def run_greedy_baseline_environment(
         utility: Legacy greedy bid utility parameter.
         realtime: Time step in seconds between greedy decisions.
         local_payment_ratio: Fixed inner-courier payment ratio `zeta`.
+
+        progress_callback: Optional structured progress sink for live experiment UIs.
 
     Returns:
         Normalized `TR`/`CR`/`BPT` metrics.
@@ -134,6 +137,8 @@ def run_greedy_baseline_environment(
     )
     current_time = int(float(getattr(tasks[0], "s_time")))
     task_index = 0
+    processed_tasks = 0
+    progress_stride = max(1, total_tasks // 100)
     accepted_assignments = 0
     total_revenue = 0.0
     processing_time_seconds = 0.0
@@ -180,6 +185,17 @@ def run_greedy_baseline_environment(
                 0.0,
                 perf_counter() - started - (timing.routing_time_seconds - routing_before) - (timing.insertion_time_seconds - insertion_before),
             )
+            processed_tasks += 1
+            if progress_callback is not None and (processed_tasks == total_tasks or processed_tasks % progress_stride == 0):
+                progress_callback(
+                    {
+                        "phase": "dispatch",
+                        "detail": f"task {processed_tasks}/{total_tasks} at t={current_time}",
+                        "completed_units": processed_tasks,
+                        "total_units": total_tasks,
+                        "unit_label": "tasks",
+                    }
+                )
 
     if accepted_assignments > 0:
         drain_legacy_routes(

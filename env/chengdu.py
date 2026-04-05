@@ -562,6 +562,7 @@ def run_time_stepped_chengdu_batches(
     service_radius_km: float | None = None,
     geo_index: GeoIndex | None = None,
     speed_m_per_s: float = 0.0,
+    progress_callback: Callable[[Mapping[str, Any]], None] | None = None,
 ) -> CAPAResult:
     """Run CAPA over legacy Chengdu batches with one matching round per batch deadline."""
     if step_seconds <= 0:
@@ -588,6 +589,7 @@ def run_time_stepped_chengdu_batches(
     movement = movement_callback or framework_movement_callback
     service_radius_meters = None if service_radius_km is None else float(service_radius_km) * 1000.0
     last_bucket_index = max(bucket_lookup)
+    total_batches = last_bucket_index + 1
     current_time = first_batch_start
     batch_cursor = 0
     batch_index = 0
@@ -616,6 +618,22 @@ def run_time_stepped_chengdu_batches(
         eligible_tasks = [task for task in batch_input_tasks if float(getattr(task, "d_time")) >= current_time]
         expired_tasks = [task for task in batch_input_tasks if float(getattr(task, "d_time")) < current_time]
         terminal_unassigned.extend(expired_tasks)
+        if progress_callback is not None:
+            progress_callback(
+                {
+                    "phase": "batch_matching",
+                    "detail": f"batch {batch_index}/{total_batches}",
+                    "batch_index": batch_index,
+                    "total_batches": total_batches,
+                    "batch_time": batch_end_time,
+                    "completed_units": batch_index - 1,
+                    "total_units": total_batches,
+                    "unit_label": "batches",
+                    "input_tasks": len(batch_input_tasks),
+                    "eligible_tasks": len(eligible_tasks),
+                    "backlog_tasks": len(backlog),
+                }
+            )
         if not eligible_tasks:
             batch_reports.append(
                 BatchReport(
@@ -633,6 +651,21 @@ def run_time_stepped_chengdu_batches(
                 )
             )
             backlog = []
+            if progress_callback is not None:
+                progress_callback(
+                    {
+                        "phase": "batch_completed",
+                        "detail": f"batch {batch_index}/{total_batches}",
+                        "batch_index": batch_index,
+                        "total_batches": total_batches,
+                        "completed_units": batch_index,
+                        "total_units": total_batches,
+                        "unit_label": "batches",
+                        "local_assignments": 0,
+                        "cross_assignments": 0,
+                        "unresolved_tasks": 0,
+                    }
+                )
             batch_cursor += 1
             continue
 
@@ -749,6 +782,21 @@ def run_time_stepped_chengdu_batches(
             delivered_parcel_count=len(accepted_assignment_ids - current_legacy_route_task_ids(active_local_couriers, active_partner_by_platform)),
         )
         batch_reports.append(report)
+        if progress_callback is not None:
+            progress_callback(
+                {
+                    "phase": "batch_completed",
+                    "detail": f"batch {batch_index}/{total_batches}",
+                    "batch_index": batch_index,
+                    "total_batches": total_batches,
+                    "completed_units": batch_index,
+                    "total_units": total_batches,
+                    "unit_label": "batches",
+                    "local_assignments": len(local_assignments),
+                    "cross_assignments": len(cross_assignments),
+                    "unresolved_tasks": len(backlog),
+                }
+            )
         matching_plan.extend(local_assignments)
         matching_plan.extend(cross_assignments)
         batch_cursor += 1

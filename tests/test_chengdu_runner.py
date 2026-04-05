@@ -319,6 +319,55 @@ class ChengduRunnerTests(unittest.TestCase):
         self.assertEqual(result.batch_reports[0].batch_time, 30)
         self.assertEqual(len(result.matching_plan), 2)
 
+    def test_time_stepped_runner_emits_batch_progress_events(self) -> None:
+        """The CAPA batch runner should emit structured batch progress updates to callers."""
+        from env.chengdu import run_time_stepped_chengdu_batches
+
+        local_station = FakeStation(1, "S")
+        local_courier = FakeLegacyCourier(num=1, location="L0", station=local_station)
+        tasks = [
+            FakeTask("t1", "T1", 0, 100, 1.0, 10.0),
+            FakeTask("t2", "T2", 20, 100, 1.0, 10.0),
+        ]
+        progress_events = []
+
+        def movement_callback(local_couriers, partner_couriers, step_seconds, station_set) -> None:
+            del station_set
+            for courier in [*local_couriers, *partner_couriers]:
+                if not courier.re_schedule:
+                    continue
+                head = courier.re_schedule.pop(0)
+                courier.location = head.l_node
+                courier.re_weight -= head.weight
+
+        run_time_stepped_chengdu_batches(
+            tasks=tasks,
+            local_couriers=[local_courier],
+            partner_couriers_by_platform={},
+            station_set=[local_station],
+            travel_model=self.travel,
+            config=CAPAConfig(
+                batch_size=30,
+                utility_balance_gamma=0.5,
+                threshold_omega=1.0,
+                local_payment_ratio_zeta=0.2,
+                local_sharing_rate_mu1=0.5,
+                cross_platform_sharing_rate_mu2=0.4,
+            ),
+            batch_seconds=30,
+            step_seconds=60,
+            platform_base_prices={},
+            platform_sharing_rates={},
+            platform_qualities={},
+            movement_callback=movement_callback,
+            progress_callback=progress_events.append,
+        )
+
+        completed_events = [event for event in progress_events if event["phase"] == "batch_completed"]
+        self.assertGreaterEqual(len(completed_events), 1)
+        self.assertEqual(completed_events[0]["batch_index"], 1)
+        self.assertEqual(completed_events[0]["total_batches"], 1)
+
     def test_generate_origin_schedule_with_retry_skips_oversized_sample_requests(self) -> None:
         """The environment builder should retry when legacy schedule seeding requests more couriers than can be sampled."""
         from env.chengdu import generate_origin_schedule_with_retry

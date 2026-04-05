@@ -319,6 +319,7 @@ def _run_gta_environment(
     prediction_window_seconds: int | None = None,
     unit_price_per_km: float = DEFAULT_UNIT_PRICE_PER_KM,
     local_payment_ratio: float = DEFAULT_LOCAL_PAYMENT_RATIO,
+    progress_callback: Callable[[Mapping[str, Any]], None] | None = None,
 ) -> dict[str, float]:
     """Run one GTA-style baseline over the shared Chengdu environment."""
     tasks = sort_legacy_tasks(list(environment.tasks))
@@ -345,6 +346,8 @@ def _run_gta_environment(
     speed_m_per_s = float(getattr(environment, "travel_speed_m_per_s", 0.0))
     current_time = int(float(getattr(tasks[0], "s_time")))
     task_index = 0
+    processed_tasks = 0
+    progress_stride = max(1, total_task_count // 100)
     total_profit = 0.0
     accepted_assignments = 0
     processing_time_seconds = 0.0
@@ -405,6 +408,17 @@ def _run_gta_environment(
                         0.0,
                         perf_counter() - started - (timing.routing_time_seconds - routing_before) - (timing.insertion_time_seconds - insertion_before),
                     )
+                    processed_tasks += 1
+                    if progress_callback is not None and (processed_tasks == total_task_count or processed_tasks % progress_stride == 0):
+                        progress_callback(
+                            {
+                                "phase": "dispatch",
+                                "detail": f"task {processed_tasks}/{total_task_count} at t={current_time}",
+                                "completed_units": processed_tasks,
+                                "total_units": total_task_count,
+                                "unit_label": "tasks",
+                            }
+                        )
                     continue
 
             outer_bids: list[GTABid] = []
@@ -452,6 +466,17 @@ def _run_gta_environment(
                 0.0,
                 perf_counter() - started - (timing.routing_time_seconds - routing_before) - (timing.insertion_time_seconds - insertion_before),
             )
+            processed_tasks += 1
+            if progress_callback is not None and (processed_tasks == total_task_count or processed_tasks % progress_stride == 0):
+                progress_callback(
+                    {
+                        "phase": "dispatch",
+                        "detail": f"task {processed_tasks}/{total_task_count} at t={current_time}",
+                        "completed_units": processed_tasks,
+                        "total_units": total_task_count,
+                        "unit_label": "tasks",
+                    }
+                )
 
     if accepted_assignments > 0:
         drain_legacy_routes(
@@ -475,6 +500,7 @@ def run_basegta_baseline_environment(
     environment: Any,
     unit_price_per_km: float = DEFAULT_UNIT_PRICE_PER_KM,
     local_payment_ratio: float = DEFAULT_LOCAL_PAYMENT_RATIO,
+    progress_callback: Callable[[Mapping[str, Any]], None] | None = None,
 ) -> dict[str, float]:
     """Run BaseGTA on the shared Chengdu environment."""
     return _run_gta_environment(
@@ -483,6 +509,7 @@ def run_basegta_baseline_environment(
         prediction_window_seconds=None,
         unit_price_per_km=unit_price_per_km,
         local_payment_ratio=local_payment_ratio,
+        progress_callback=progress_callback,
     )
 
 
@@ -491,6 +518,7 @@ def run_impgta_baseline_environment(
     prediction_window_seconds: int = DEFAULT_IMPGTA_WINDOW_SECONDS,
     unit_price_per_km: float = DEFAULT_UNIT_PRICE_PER_KM,
     local_payment_ratio: float = DEFAULT_LOCAL_PAYMENT_RATIO,
+    progress_callback: Callable[[Mapping[str, Any]], None] | None = None,
 ) -> dict[str, float]:
     """Run ImpGTA on the shared Chengdu environment with a fixed future window."""
     return _run_gta_environment(
@@ -499,4 +527,5 @@ def run_impgta_baseline_environment(
         prediction_window_seconds=prediction_window_seconds,
         unit_price_per_km=unit_price_per_km,
         local_payment_ratio=local_payment_ratio,
+        progress_callback=progress_callback,
     )

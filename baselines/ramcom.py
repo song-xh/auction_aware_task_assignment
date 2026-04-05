@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 import random
 from time import perf_counter
-from typing import Any, Sequence
+from typing import Any, Callable, Mapping, Sequence
 
 from capa.cache import InsertionCache
 from capa.revenue import (
@@ -91,6 +91,7 @@ def run_ramcom_baseline_environment(
     environment: Any,
     random_seed: int = 1,
     local_payment_ratio: float = DEFAULT_LOCAL_PAYMENT_RATIO,
+    progress_callback: Callable[[Mapping[str, Any]], None] | None = None,
 ) -> dict[str, float]:
     """Run the Chengdu-adapted RamCOM baseline on the unified environment.
 
@@ -133,8 +134,9 @@ def run_ramcom_baseline_environment(
     accepted_assignments = 0
     total_revenue = 0.0
     processing_time_seconds = 0.0
+    progress_stride = max(1, total_tasks // 100)
 
-    for task in tasks:
+    for task_index, task in enumerate(tasks, start=1):
         arrival_time = int(float(getattr(task, "s_time")))
         if arrival_time > current_time:
             movement_started = perf_counter()
@@ -214,6 +216,16 @@ def run_ramcom_baseline_environment(
             0.0,
             perf_counter() - started - (timing.routing_time_seconds - routing_before) - (timing.insertion_time_seconds - insertion_before),
         )
+        if progress_callback is not None and (task_index == total_tasks or task_index % progress_stride == 0):
+            progress_callback(
+                {
+                    "phase": "dispatch",
+                    "detail": f"task {task_index}/{total_tasks} at t={current_time}",
+                    "completed_units": task_index,
+                    "total_units": total_tasks,
+                    "unit_label": "tasks",
+                }
+            )
 
     if accepted_assignments > 0:
         drain_legacy_routes(
