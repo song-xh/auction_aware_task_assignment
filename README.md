@@ -244,11 +244,7 @@ python3 experiments/run_exp1_managed.py \
 推荐的正式实验命令：
 
 ```bash
-python3 experiments/run_chengdu_exp1_num_parcels.py \
-  --output-dir outputs/plots/exp1_num_parcels \
-  --preset formal \
-  --algorithms capa greedy ramcom mra basegta impgta \
-  --max-workers 4
+python3 -u experiments/run_exp1_split.py --tmp-root /tmp/exp1_formal_20260405 --output-dir outputs/plots/exp1_formal_20260405 --algorithms capa greedy basegta impgta mra ramcom --data-dir Data --local-couriers 200 --platforms 4 --couriers-per-platform 50 --courier-capacity 50 --service-radius-km 1.0 --batch-size 30 --poll-seconds 10
 
 python3 experiments/run_chengdu_exp2_couriers.py \
   --output-dir outputs/plots/exp2_couriers \
