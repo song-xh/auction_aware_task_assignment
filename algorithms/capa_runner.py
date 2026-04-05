@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, Mapping
 
 from capa.experiments import save_experiment_plots
 from capa.models import CAPAConfig
@@ -43,7 +43,12 @@ class CAPAAlgorithmRunner(AlgorithmRunner):
         self._local_sharing_rate_mu1 = local_sharing_rate_mu1
         self._cross_platform_sharing_rate_mu2 = cross_platform_sharing_rate_mu2
 
-    def run(self, environment: Any, output_dir: Path | None = None) -> dict[str, Any]:
+    def run(
+        self,
+        environment: Any,
+        output_dir: Path | None = None,
+        progress_callback: Callable[[Mapping[str, Any]], None] | None = None,
+    ) -> dict[str, Any]:
         """Execute CAPA on the provided Chengdu environment and return a normalized summary."""
         config = CAPAConfig(
             batch_size=self._batch_size,
@@ -69,6 +74,7 @@ class CAPAAlgorithmRunner(AlgorithmRunner):
             service_radius_km=getattr(environment, "service_radius_km", None),
             geo_index=getattr(environment, "geo_index", None),
             speed_m_per_s=float(getattr(environment, "travel_speed_m_per_s", 0.0)),
+            progress_callback=progress_callback,
         )
         summary = {
             "algorithm": "capa",

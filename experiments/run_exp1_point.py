@@ -13,6 +13,7 @@ if __package__ in {None, ""}:
 
 from algorithms.registry import build_algorithm_runner
 from experiments.plotting import save_comparison_plots
+from experiments.progress import build_point_progress_snapshot, write_point_progress
 from experiments.seeding import build_environment_seed, clone_environment_from_seed, derive_environment_from_seed, load_environment_seed
 
 
@@ -42,8 +43,11 @@ def run_exp1_point(
     point_environment = derive_environment_from_seed(seed, num_parcels=num_parcels)
     point_seed = build_environment_seed(point_environment)
     output_dir.mkdir(parents=True, exist_ok=True)
+    progress_path = output_dir / "progress.json"
     point_summary: dict[str, Any] = {"num_parcels": num_parcels}
-    for algorithm in algorithms:
+    completed_algorithms: list[str] = []
+    total_algorithms = len(algorithms)
+    for algorithm_index, algorithm in enumerate(algorithms, start=1):
         runner_kwargs: dict[str, Any] = {}
         if algorithm in {"capa", "greedy", "mra"}:
             runner_kwargs["batch_size"] = batch_size
@@ -52,9 +56,55 @@ def run_exp1_point(
         elif algorithm == "impgta":
             runner_kwargs["prediction_window_seconds"] = 180
         runner = build_algorithm_runner(algorithm, **runner_kwargs)
+        last_event: dict[str, Any] = {}
+
+        def progress_callback(event: dict[str, Any]) -> None:
+            """Persist one live progress event emitted by the active algorithm."""
+
+            nonlocal last_event
+            last_event = dict(event)
+            write_point_progress(
+                progress_path,
+                build_point_progress_snapshot(
+                    num_parcels=num_parcels,
+                    algorithm=algorithm,
+                    algorithm_index=algorithm_index,
+                    total_algorithms=total_algorithms,
+                    completed_algorithms=completed_algorithms,
+                    state="running",
+                    last_event=last_event,
+                ),
+            )
+
+        write_point_progress(
+            progress_path,
+            build_point_progress_snapshot(
+                num_parcels=num_parcels,
+                algorithm=algorithm,
+                algorithm_index=algorithm_index,
+                total_algorithms=total_algorithms,
+                completed_algorithms=completed_algorithms,
+                state="running",
+                last_event={"phase": "starting", "detail": f"starting {algorithm}"},
+            ),
+        )
         point_summary[algorithm] = runner.run(
             environment=clone_environment_from_seed(point_seed),
             output_dir=output_dir / algorithm,
+            progress_callback=progress_callback,
+        )
+        completed_algorithms.append(algorithm)
+        write_point_progress(
+            progress_path,
+            build_point_progress_snapshot(
+                num_parcels=num_parcels,
+                algorithm=algorithm,
+                algorithm_index=algorithm_index,
+                total_algorithms=total_algorithms,
+                completed_algorithms=completed_algorithms,
+                state="finished" if algorithm_index == total_algorithms else "running",
+                last_event=last_event or {"phase": "completed", "detail": f"completed {algorithm}"},
+            ),
         )
     with (output_dir / "summary.json").open("w", encoding="utf-8") as handle:
         json.dump(point_summary, handle, indent=2)

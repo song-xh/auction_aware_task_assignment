@@ -15,9 +15,11 @@ if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from env.chengdu import ChengduEnvironment
+from experiments.monitor_exp1_split import collect_split_progress
 from experiments.paper_chengdu import DEFAULT_CHENGDU_PAPER_FIXED_CONFIG
 from experiments.paper_config import DEFAULT_CHENGDU_PAPER_ALGORITHMS, PAPER_SUITE_PRESETS
 from experiments.plotting import save_comparison_plots
+from experiments.progress import format_split_progress_snapshot
 from experiments.seeding import build_environment_seed, save_environment_seed
 
 
@@ -71,6 +73,7 @@ def run_exp1_split(
     processes: dict[int, subprocess.Popen[str]] = {}
     log_handles: list[TextIOWrapper] = []
     point_output_dirs: dict[int, Path] = {}
+    last_point_status: dict[str, Any] = {}
     try:
         for value in parcel_values:
             point_output_dir = tmp_root / f"point_{int(value)}"
@@ -113,9 +116,11 @@ def run_exp1_split(
                     "pid": process.pid,
                     "returncode": return_code,
                     "output_dir": str(point_output_dirs[value]),
+                    "total_algorithms": len(algorithms),
                 }
                 if return_code is not None:
                     finished.append(value)
+            last_point_status = point_status
             with status_path.open("w", encoding="utf-8") as handle:
                 json.dump(
                     {
@@ -126,6 +131,7 @@ def run_exp1_split(
                     handle,
                     indent=2,
                 )
+            print(format_split_progress_snapshot(collect_split_progress(tmp_root)), flush=True)
             if not finished:
                 time.sleep(poll_seconds)
                 continue
@@ -135,6 +141,17 @@ def run_exp1_split(
                     raise RuntimeError(
                         f"Exp-1 point {value} failed. See {point_output_dirs[value] / 'stderr.log'}"
                     )
+        with status_path.open("w", encoding="utf-8") as handle:
+            json.dump(
+                {
+                    "state": "finished",
+                    "points": last_point_status,
+                    "updated_at": time.time(),
+                },
+                handle,
+                indent=2,
+            )
+        print(format_split_progress_snapshot(collect_split_progress(tmp_root)), flush=True)
     finally:
         for handle in log_handles:
             handle.close()

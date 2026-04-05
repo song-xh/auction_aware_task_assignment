@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
 
 from baselines.mra import run_mra_baseline_environment
 
@@ -23,11 +23,17 @@ class MRAAlgorithmRunner(AlgorithmRunner):
         self._batch_size = batch_size
         self._baseline_runner = baseline_runner or run_mra_baseline_environment
 
-    def run(self, environment: Any, output_dir: Path | None = None) -> dict[str, Any]:
+    def run(
+        self,
+        environment: Any,
+        output_dir: Path | None = None,
+        progress_callback: Callable[[Mapping[str, Any]], None] | None = None,
+    ) -> dict[str, Any]:
         """Execute MRA against a prepared Chengdu environment and return a summary."""
         metrics = self._baseline_runner(
             environment=environment,
             batch_size=self._batch_size,
+            progress_callback=progress_callback,
         )
         summary = {
             "algorithm": "mra",

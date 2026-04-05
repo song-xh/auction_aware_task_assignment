@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
 
 from baselines.gta import run_basegta_baseline_environment
 
@@ -18,9 +18,14 @@ class BaseGTARunner(AlgorithmRunner):
         """Store the optional injected baseline runner."""
         self._baseline_runner = baseline_runner or run_basegta_baseline_environment
 
-    def run(self, environment: Any, output_dir: Path | None = None) -> dict[str, Any]:
+    def run(
+        self,
+        environment: Any,
+        output_dir: Path | None = None,
+        progress_callback: Callable[[Mapping[str, Any]], None] | None = None,
+    ) -> dict[str, Any]:
         """Execute BaseGTA against a prepared Chengdu environment and return a summary."""
-        metrics = self._baseline_runner(environment=environment)
+        metrics = self._baseline_runner(environment=environment, progress_callback=progress_callback)
         summary = {
             "algorithm": "basegta",
             "metrics": metrics,

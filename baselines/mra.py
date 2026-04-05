@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from time import perf_counter
-from typing import Any, Sequence
+from typing import Any, Callable, Mapping, Sequence
 
 from capa.cache import InsertionCache
 from capa.revenue import DEFAULT_LOCAL_PAYMENT_RATIO, compute_local_platform_revenue_for_local_completion
@@ -90,6 +90,7 @@ def run_mra_baseline_environment(
     base_price: float = DEFAULT_MRA_BASE_PRICE,
     sharing_rate: float = DEFAULT_MRA_SHARING_RATE,
     local_payment_ratio: float = DEFAULT_LOCAL_PAYMENT_RATIO,
+    progress_callback: Callable[[Mapping[str, Any]], None] | None = None,
 ) -> dict[str, float]:
     """Run the Chengdu-adapted MRA baseline on the unified environment.
 
@@ -130,6 +131,7 @@ def run_mra_baseline_environment(
     batches = group_legacy_tasks_by_batch(tasks, batch_size)
     first_batch_start = int(float(getattr(min(tasks, key=lambda item: float(getattr(item, "s_time"))), "s_time")))
 
+    total_batches = len(batches)
     for batch_index, bucket in enumerate(batches, start=1):
         now = first_batch_start + (batch_index - 1) * batch_size
         unresolved = list(backlog) + list(bucket)
@@ -217,6 +219,17 @@ def run_mra_baseline_environment(
         movement_started = perf_counter()
         movement(local_couriers, [], batch_size, environment.station_set)
         timing.movement_time_seconds += perf_counter() - movement_started
+        if progress_callback is not None:
+            progress_callback(
+                {
+                    "phase": "batch_completed",
+                    "detail": f"batch {batch_index}/{total_batches}",
+                    "completed_units": batch_index,
+                    "total_units": total_batches,
+                    "unit_label": "batches",
+                    "backlog_tasks": len(backlog),
+                }
+            )
 
     if accepted_assignments > 0:
         drain_legacy_routes(

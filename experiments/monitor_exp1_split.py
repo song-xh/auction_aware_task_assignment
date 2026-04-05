@@ -9,6 +9,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from experiments.progress import enrich_split_snapshot, read_point_progress
+
 
 def collect_split_progress(tmp_root: Path) -> dict[str, Any]:
     """Collect one normalized progress snapshot from a split Exp-1 temp root.
@@ -34,21 +36,32 @@ def collect_split_progress(tmp_root: Path) -> dict[str, Any]:
         point_complete = (output_dir / "summary.json").exists()
         if point_complete:
             completed_points += 1
+        progress_payload = read_point_progress(output_dir / "progress.json") or {}
         points[str(point_value)] = {
             "pid": point_status.get("pid"),
             "returncode": point_status.get("returncode"),
             "output_dir": str(output_dir),
             "completed_algorithms": completed_algorithms,
             "point_complete": point_complete,
+            "current_algorithm": progress_payload.get("current_algorithm"),
+            "algorithm_index": progress_payload.get("algorithm_index"),
+            "total_algorithms": progress_payload.get(
+                "total_algorithms",
+                point_status.get("total_algorithms", len(completed_algorithms)),
+            ),
+            "last_event": progress_payload.get("last_event", {}),
+            "state": progress_payload.get("state", "finished" if point_complete else "running"),
         }
-    return {
+    return enrich_split_snapshot(
+        {
         "state": status.get("state", "unknown"),
         "updated_at": status.get("updated_at"),
         "tmp_root": str(tmp_root),
         "total_points": len(points),
         "completed_points": completed_points,
         "points": points,
-    }
+        }
+    )
 
 
 def monitor_split_progress(
@@ -102,11 +115,14 @@ def _append_log_line(log_path: Path, snapshot: dict[str, Any]) -> None:
         point = snapshot["points"][point_value]
         algorithms = ",".join(point["completed_algorithms"]) or "-"
         suffix = "done" if point["point_complete"] else "running"
-        point_parts.append(f"{point_value}:algos={algorithms}:state={suffix}")
+        current_algorithm = point.get("current_algorithm") or "-"
+        detail = (point.get("last_event") or {}).get("detail") or "-"
+        point_parts.append(f"{point_value}:algos={algorithms}:current={current_algorithm}:detail={detail}:state={suffix}")
     line = (
         f"{datetime.now().isoformat(timespec='seconds')} "
         f"state={snapshot['state']} "
         f"completed_points={snapshot['completed_points']}/{snapshot['total_points']} "
+        f"completed_algorithms={snapshot.get('completed_algorithm_units', 0.0):.2f}/{max(snapshot.get('total_algorithm_units', 1.0), 1.0):.0f} "
         f"{' | '.join(point_parts)}"
     )
     with log_path.open("a", encoding="utf-8") as handle:

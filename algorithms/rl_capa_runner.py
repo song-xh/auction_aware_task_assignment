@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, Mapping
 
 from capa.models import CAPAConfig
 from experiments.seeding import build_environment_seed
@@ -39,7 +39,12 @@ class RLCAPAAlgorithmRunner(AlgorithmRunner):
         self._step_seconds = step_seconds
         self._episodes = episodes
 
-    def run(self, environment: Any, output_dir: Path | None = None) -> dict[str, Any]:
+    def run(
+        self,
+        environment: Any,
+        output_dir: Path | None = None,
+        progress_callback: Callable[[Mapping[str, Any]], None] | None = None,
+    ) -> dict[str, Any]:
         """Train RL-CAPA from the provided Chengdu environment seed and evaluate it.
 
         Args:
@@ -50,6 +55,7 @@ class RLCAPAAlgorithmRunner(AlgorithmRunner):
             Normalized experiment summary with training metadata and evaluation metrics.
         """
 
+        del progress_callback
         normalized_output_dir = Path("outputs/plots/rl_capa_run") if output_dir is None else output_dir
         normalized_output_dir.mkdir(parents=True, exist_ok=True)
         environment_seed = build_environment_seed(environment)
