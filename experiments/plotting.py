@@ -7,6 +7,17 @@ from typing import Any, Sequence
 
 
 PLOT_METRICS = ("TR", "CR", "BPT")
+SERIES_MARKERS = ("o", "s", "^", "D", "v", "P", "X", "*")
+SERIES_COLORS = (
+    "#1f77b4",
+    "#ff7f0e",
+    "#2ca02c",
+    "#d62728",
+    "#9467bd",
+    "#8c564b",
+    "#e377c2",
+    "#7f7f7f",
+)
 
 
 def save_single_algorithm_plots(summary: dict[str, Any], output_dir: Path) -> None:
@@ -78,14 +89,27 @@ def _save_line_plot(
 
     if not x_values:
         return
-    plt.figure(figsize=(8, 5))
-    for label, y_values in series:
-        plt.plot(x_values, y_values, marker="o", label=label)
-    plt.xlabel(x_label)
-    plt.ylabel(y_label)
-    plt.grid(True, linestyle="--", linewidth=0.5, alpha=0.5)
+    figure, axis = plt.subplots(figsize=(9, 5.6))
+    for index, (label, y_values) in enumerate(series):
+        marker = SERIES_MARKERS[index % len(SERIES_MARKERS)]
+        color = SERIES_COLORS[index % len(SERIES_COLORS)]
+        axis.plot(
+            x_values,
+            y_values,
+            marker=marker,
+            markersize=7,
+            linewidth=2,
+            color=color,
+            label=label,
+        )
+    axis.set_xlabel(x_label)
+    axis.set_ylabel(y_label)
+    axis.set_xticks(list(x_values))
+    axis.grid(True, linestyle="--", linewidth=0.6, alpha=0.45)
+    axis.spines["top"].set_visible(False)
+    axis.spines["right"].set_visible(False)
     if len(series) > 1:
-        plt.legend()
-    plt.tight_layout()
-    plt.savefig(output_path)
-    plt.close()
+        axis.legend(loc="best", frameon=False, ncols=2)
+    figure.tight_layout()
+    figure.savefig(output_path, dpi=180)
+    plt.close(figure)
