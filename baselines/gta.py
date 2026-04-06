@@ -9,12 +9,12 @@ from typing import Any, Callable, Mapping, MutableSequence, Sequence
 
 from capa.constraints import is_deadline_feasible_by_geo, is_within_service_radius
 from capa.geo import GeoIndex
-from capa.revenue import (
+from capa.timing import TimedTravelModel, TimingAccumulator
+from capa.utility import (
     DEFAULT_LOCAL_PAYMENT_RATIO,
     compute_local_platform_revenue_for_cross_completion,
     compute_local_platform_revenue_for_local_completion,
 )
-from capa.timing import TimedTravelModel, TimingAccumulator
 from env.chengdu import (
     apply_assignment_to_legacy_courier,
     drain_legacy_routes,

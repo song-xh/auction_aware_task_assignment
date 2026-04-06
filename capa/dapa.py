@@ -18,10 +18,14 @@ from .models import (
     Parcel,
     PlatformBid,
 )
-from .revenue import compute_cooperating_platform_revenue, compute_local_platform_revenue_for_cross_completion
 from .timing import TimingAccumulator
-from .travel import DistanceMatrixTravelModel
-from .utility import find_best_auction_detour_ratio, find_best_local_insertion
+from .utility import (
+    DistanceMatrixTravelModel,
+    compute_cooperating_platform_revenue,
+    compute_local_platform_revenue_for_cross_completion,
+    find_best_auction_detour_ratio,
+    find_best_local_insertion,
+)
 
 
 def is_feasible_cross_match(

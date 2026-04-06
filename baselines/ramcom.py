@@ -8,12 +8,12 @@ from time import perf_counter
 from typing import Any, Callable, Mapping, Sequence
 
 from capa.cache import InsertionCache
-from capa.revenue import (
+from capa.timing import TimedTravelModel, TimingAccumulator
+from capa.utility import (
     DEFAULT_LOCAL_PAYMENT_RATIO,
     compute_local_platform_revenue_for_cross_completion,
     compute_local_platform_revenue_for_local_completion,
 )
-from capa.timing import TimedTravelModel, TimingAccumulator
 from env.chengdu import (
     LegacyCourierSnapshotCache,
     apply_assignment_to_legacy_courier,

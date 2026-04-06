@@ -9,10 +9,14 @@ from .cache import InsertionCache
 from .constraints import is_deadline_feasible_by_geo, is_within_service_radius
 from .geo import GeoIndex
 from .models import Assignment, CAMAResult, CAPAConfig, CandidatePair, Courier, Parcel
-from .revenue import compute_local_courier_payment, compute_local_platform_revenue_for_local_completion
 from .timing import TimingAccumulator
-from .travel import DistanceMatrixTravelModel
-from .utility import calculate_threshold, calculate_utility
+from .utility import (
+    DistanceMatrixTravelModel,
+    calculate_threshold,
+    calculate_utility,
+    compute_local_courier_payment,
+    compute_local_platform_revenue_for_local_completion,
+)
 
 
 def is_courier_available(courier: Courier, now: int) -> bool:

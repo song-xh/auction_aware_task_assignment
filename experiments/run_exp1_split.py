@@ -4,11 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
-from io import TextIOWrapper
-import shutil
-import subprocess
 import sys
-import time
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -16,11 +12,10 @@ if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from env.chengdu import ChengduEnvironment
-from experiments.monitor_exp1_split import collect_split_progress
+from experiments.framework import ExperimentSplitSpec, run_seeded_split_experiment
 from experiments.paper_chengdu import DEFAULT_CHENGDU_PAPER_FIXED_CONFIG
 from experiments.paper_config import DEFAULT_CHENGDU_PAPER_ALGORITHMS, PAPER_SUITE_PRESETS
 from experiments.plotting import save_comparison_plots
-from experiments.progress import format_split_progress_snapshot, render_terminal_progress_block, resolve_progress_mode
 from experiments.seeding import build_environment_seed, save_environment_seed
 
 
@@ -73,136 +68,73 @@ def run_exp1_split(
         seed_path = tmp_root / "canonical_seed.pkl"
         save_environment_seed(build_environment_seed(canonical_environment), seed_path)
 
-    processes: dict[int, subprocess.Popen[str]] = {}
-    log_handles: list[TextIOWrapper] = []
-    point_output_dirs: dict[int, Path] = {}
-    all_point_status: dict[str, Any] = {}
-    resolved_progress_mode = resolve_progress_mode(progress_mode)  # type: ignore[arg-type]
-    overwrite_terminal = resolved_progress_mode == "overwrite"
-    try:
-        for value in parcel_values:
-            point_output_dir = tmp_root / f"point_{int(value)}"
-            if point_output_dir.exists():
-                shutil.rmtree(point_output_dir)
-            point_output_dirs[int(value)] = point_output_dir
-            point_output_dir.mkdir(parents=True, exist_ok=True)
-            stdout_handle = (point_output_dir / "stdout.log").open("w", encoding="utf-8")
-            stderr_handle = (point_output_dir / "stderr.log").open("w", encoding="utf-8")
-            log_handles.extend([stdout_handle, stderr_handle])
-            process = subprocess.Popen(
-                [
-                    sys.executable,
-                    "-u",
-                    str(Path(__file__).with_name("run_exp1_point.py")),
-                    "--seed-path",
-                    str(seed_path),
-                    "--num-parcels",
-                    str(int(value)),
-                    "--output-dir",
-                    str(point_output_dir),
-                    "--algorithms",
-                    *list(algorithms),
-                    "--batch-size",
-                    str(batch_size),
-                    *build_capa_cli_args(capa_runner_kwargs or {}),
-                ],
-                cwd=Path(__file__).resolve().parents[1],
-                stdout=stdout_handle,
-                stderr=stderr_handle,
-                text=True,
-            )
-            processes[int(value)] = process
-            all_point_status[str(int(value))] = {
-                "pid": process.pid,
-                "returncode": None,
-                "output_dir": str(point_output_dir),
-                "total_algorithms": len(algorithms),
-            }
+    split_spec = ExperimentSplitSpec(
+        axis_name="num_parcels",
+        axis_values=tuple(int(value) for value in parcel_values),
+        tmp_root=tmp_root,
+        output_dir=output_dir,
+        algorithms=algorithms,
+        batch_size=batch_size,
+        poll_seconds=poll_seconds,
+        progress_mode=progress_mode,
+        runner_overrides_by_algorithm={} if not capa_runner_kwargs else {"capa": dict(capa_runner_kwargs)},
+    )
 
-        status_path = tmp_root / "split_status.json"
-        while processes:
-            finished: list[int] = []
-            for value, process in processes.items():
-                return_code = process.poll()
-                all_point_status[str(value)] = {
-                    "pid": process.pid,
-                    "returncode": return_code,
-                    "output_dir": str(point_output_dirs[value]),
-                    "total_algorithms": len(algorithms),
-                }
-                if return_code is not None:
-                    finished.append(value)
-            with status_path.open("w", encoding="utf-8") as handle:
-                json.dump(
-                    {
-                        "state": "running" if processes else "finished",
-                        "points": all_point_status,
-                        "updated_at": time.time(),
-                    },
-                    handle,
-                    indent=2,
-                )
-            rendered = render_terminal_progress_block(
-                format_split_progress_snapshot(collect_split_progress(tmp_root)),
-                overwrite=overwrite_terminal,
-            )
-            sys.stdout.write(f"{rendered}\n")
-            sys.stdout.flush()
-            if not finished:
-                time.sleep(poll_seconds)
-                continue
-            for value in finished:
-                process = processes.pop(value)
-                if process.returncode != 0:
-                    raise RuntimeError(
-                        f"Exp-1 point {value} failed. See {point_output_dirs[value] / 'stderr.log'}"
-                    )
-        with status_path.open("w", encoding="utf-8") as handle:
+    def build_point_command(value: int, point_output_dir: Path) -> Sequence[str]:
+        """Build the subprocess command for one Exp-1 point."""
+
+        return [
+            sys.executable,
+            "-u",
+            str(Path(__file__).with_name("run_exp1_point.py")),
+            "--seed-path",
+            str(seed_path),
+            "--num-parcels",
+            str(value),
+            "--output-dir",
+            str(point_output_dir),
+            "--algorithms",
+            *list(algorithms),
+            "--batch-size",
+            str(batch_size),
+            *build_capa_cli_args(capa_runner_kwargs or {}),
+        ]
+
+    def build_aggregate_summary(point_output_dirs: dict[int, Path]) -> dict[str, Any]:
+        """Collect one Exp-1 aggregate summary from finished point directories."""
+
+        runs = []
+        for value in sorted(point_output_dirs):
+            with (point_output_dirs[value] / "summary.json").open("r", encoding="utf-8") as handle:
+                runs.append(json.load(handle))
+        summary = {
+            "sweep_parameter": "num_parcels",
+            "algorithms": list(algorithms),
+            "runs": runs,
+        }
+        with (output_dir / "summary.json").open("w", encoding="utf-8") as handle:
+            json.dump(summary, handle, indent=2)
+        save_comparison_plots(summary=summary, output_dir=output_dir)
+        with (output_dir / "split_manifest.json").open("w", encoding="utf-8") as handle:
             json.dump(
                 {
-                    "state": "finished",
-                    "points": all_point_status,
-                    "updated_at": time.time(),
+                    "seed_path": str(seed_path),
+                    "tmp_root": str(tmp_root),
+                    "algorithms": list(algorithms),
+                    "parcel_values": [int(value) for value in parcel_values],
+                    "batch_size": batch_size,
+                    "summary": str(output_dir / "summary.json"),
                 },
                 handle,
                 indent=2,
             )
-        rendered = render_terminal_progress_block(
-            format_split_progress_snapshot(collect_split_progress(tmp_root)),
-            overwrite=overwrite_terminal,
-        )
-        sys.stdout.write(f"{rendered}\n")
-        sys.stdout.flush()
-    finally:
-        for handle in log_handles:
-            handle.close()
+        return summary
 
-    runs = []
-    for value in sorted(int(item) for item in parcel_values):
-        with (point_output_dirs[value] / "summary.json").open("r", encoding="utf-8") as handle:
-            runs.append(json.load(handle))
-    summary = {
-        "sweep_parameter": "num_parcels",
-        "algorithms": list(algorithms),
-        "runs": runs,
-    }
-    with (output_dir / "summary.json").open("w", encoding="utf-8") as handle:
-        json.dump(summary, handle, indent=2)
-    save_comparison_plots(summary=summary, output_dir=output_dir)
-    with (output_dir / "split_manifest.json").open("w", encoding="utf-8") as handle:
-        json.dump(
-            {
-                "seed_path": str(seed_path),
-                "tmp_root": str(tmp_root),
-                "algorithms": list(algorithms),
-                "parcel_values": [int(value) for value in parcel_values],
-                "batch_size": batch_size,
-                "summary": str(output_dir / "summary.json"),
-            },
-            handle,
-            indent=2,
-        )
-    return summary
+    return run_seeded_split_experiment(
+        split_spec=split_spec,
+        point_command_builder=build_point_command,
+        aggregate_summary_builder=build_aggregate_summary,
+    )
 
 
 def main() -> int:
