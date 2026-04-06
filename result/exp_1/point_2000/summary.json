@@ -1,0 +1,75 @@
+{
+  "num_parcels": 2000,
+  "capa": {
+    "algorithm": "capa",
+    "batch_size": 30,
+    "config": {
+      "utility_balance_gamma": 0.5,
+      "threshold_omega": 1.0,
+      "local_payment_ratio_zeta": 0.2,
+      "local_sharing_rate_mu1": 0.5,
+      "cross_platform_sharing_rate_mu2": 0.4
+    },
+    "metrics": {
+      "TR": 12687.722613835911,
+      "CR": 1.0,
+      "BPT": 1.2342147350468622,
+      "delivered_parcels": 2000,
+      "accepted_assignments": 2000
+    }
+  },
+  "greedy": {
+    "algorithm": "greedy",
+    "batch_size": 30,
+    "metrics": {
+      "TR": 6761.151999999924,
+      "CR": 0.5,
+      "BPT": 3.6128799749894824,
+      "delivered_parcels": 1000,
+      "accepted_assignments": 1000
+    }
+  },
+  "basegta": {
+    "algorithm": "basegta",
+    "metrics": {
+      "TR": 14074.525299999788,
+      "CR": 0.9935,
+      "BPT": 1.5555155298679892,
+      "delivered_parcels": 1987,
+      "accepted_assignments": 1987
+    }
+  },
+  "impgta": {
+    "algorithm": "impgta",
+    "prediction_window_seconds": 180,
+    "metrics": {
+      "TR": 15418.035469999992,
+      "CR": 0.977,
+      "BPT": 3.000643439771011,
+      "delivered_parcels": 1954,
+      "accepted_assignments": 1954
+    }
+  },
+  "mra": {
+    "algorithm": "mra",
+    "batch_size": 30,
+    "metrics": {
+      "TR": 6225.903999999962,
+      "CR": 0.448,
+      "BPT": 48.25912244589745,
+      "delivered_parcels": 896,
+      "accepted_assignments": 896
+    }
+  },
+  "ramcom": {
+    "algorithm": "ramcom",
+    "random_seed": 1,
+    "metrics": {
+      "TR": 6804.899999999929,
+      "CR": 0.7555,
+      "BPT": 5.122569082981499,
+      "delivered_parcels": 1511,
+      "accepted_assignments": 1511
+    }
+  }
+}
