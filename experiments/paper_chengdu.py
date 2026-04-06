@@ -21,7 +21,7 @@ from .compare import run_comparison_sweep
 from .paper_config import DEFAULT_CHENGDU_PAPER_ALGORITHMS, PAPER_SUITE_PRESETS
 from .plotting import save_default_comparison_plots
 from .progress import ProgressMode
-from .seeding import build_environment_seed, clone_environment_from_seed, derive_environment_from_seed, save_environment_seed
+from .seeding import build_environment_seed, clone_environment_from_seed, derive_environment_for_axis, save_environment_seed
 from .suites import run_experiment_suite
 
 
@@ -159,10 +159,10 @@ def run_chengdu_paper_point(
         total_algorithms=len(algorithms),
         detail=f"building environment for {axis}={axis_value}",
     )
-    if axis == "num_parcels" and seed_path is not None:
+    if seed_path is not None:
         point_spec = ExperimentPointSpec(
             axis_name=axis,
-            axis_value=int(axis_value),
+            axis_value=axis_value,
             output_dir=output_dir,
             algorithms=algorithms,
             batch_size=int(fixed_config["batch_size"]),
@@ -171,7 +171,7 @@ def run_chengdu_paper_point(
         return run_seeded_comparison_point(
             seed_path=seed_path,
             point_spec=point_spec,
-            environment_deriver=lambda seed, value: derive_environment_from_seed(seed, num_parcels=value),
+            environment_deriver=lambda seed, value: derive_environment_for_axis(seed, axis, value),
             runner_builder=partial(_build_paper_runner, runner_overrides_by_algorithm=runner_overrides_by_algorithm or {}),
         )
     point_config = apply_sweep_axis(
@@ -241,15 +241,13 @@ def run_chengdu_paper_split_experiment(
     if fixed_config_overrides:
         fixed_config.update(fixed_config_overrides)
     axis_values = PAPER_SUITE_PRESETS["chengdu-paper"][preset_name][axis]
-    if axis == "num_parcels" and seed_path is None:
+    if seed_path is None:
         canonical_environment = ChengduEnvironment.build(
-            data_dir=Path(fixed_config["data_dir"]),
-            num_parcels=max(int(value) for value in axis_values),
-            local_courier_count=int(fixed_config["local_couriers"]),
-            cooperating_platform_count=int(fixed_config["platforms"]),
-            couriers_per_platform=int(fixed_config["couriers_per_platform"]),
-            service_radius_km=fixed_config["service_radius_km"],
-            courier_capacity=fixed_config["courier_capacity"],
+            **_canonical_environment_kwargs_for_axis(
+                axis=axis,
+                axis_values=axis_values,
+                fixed_config=fixed_config,
+            )
         )
         seed_path = tmp_root / "canonical_seed.pkl"
         save_environment_seed(build_environment_seed(canonical_environment), seed_path)
@@ -676,6 +674,46 @@ def _build_capa_override_cli_args(capa_runner_kwargs: dict[str, Any]) -> list[st
         if key in capa_runner_kwargs:
             args.extend([flag, str(capa_runner_kwargs[key])])
     return args
+
+
+def _canonical_environment_kwargs_for_axis(
+    axis: str,
+    axis_values: Sequence[int | float],
+    fixed_config: dict[str, Any],
+) -> dict[str, Any]:
+    """Build canonical Chengdu environment kwargs for one paper sweep axis.
+
+    Args:
+        axis: Sweep axis name.
+        axis_values: Ordered preset values for the axis.
+        fixed_config: Shared fixed configuration for the experiment.
+
+    Returns:
+        Environment build kwargs used to create a canonical seed.
+    """
+
+    kwargs = {
+        "data_dir": Path(fixed_config["data_dir"]),
+        "num_parcels": int(fixed_config["num_parcels"]),
+        "local_courier_count": int(fixed_config["local_couriers"]),
+        "cooperating_platform_count": int(fixed_config["platforms"]),
+        "couriers_per_platform": int(fixed_config["couriers_per_platform"]),
+        "service_radius_km": fixed_config["service_radius_km"],
+        "courier_capacity": fixed_config["courier_capacity"],
+    }
+    if axis == "num_parcels":
+        kwargs["num_parcels"] = max(int(value) for value in axis_values)
+    elif axis == "local_couriers":
+        kwargs["local_courier_count"] = max(int(value) for value in axis_values)
+    elif axis == "platforms":
+        kwargs["cooperating_platform_count"] = max(int(value) for value in axis_values)
+    elif axis == "courier_capacity":
+        kwargs["courier_capacity"] = min(float(value) for value in axis_values)
+    elif axis == "service_radius":
+        pass
+    else:
+        raise ValueError(f"Unsupported canonical seed axis: {axis}")
+    return kwargs
 
 
 def _write_point_bootstrap_progress(

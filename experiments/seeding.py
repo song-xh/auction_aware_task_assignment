@@ -200,6 +200,140 @@ def derive_environment_from_seed(seed: ChengduEnvironmentSeed, num_parcels: int)
     return environment
 
 
+def derive_environment_with_local_couriers_from_seed(
+    seed: ChengduEnvironmentSeed,
+    local_courier_count: int,
+) -> ChengduEnvironment:
+    """Clone one canonical seed and keep only a deterministic local-courier prefix.
+
+    Args:
+        seed: Canonical environment seed built with at least the requested local-courier count.
+        local_courier_count: Requested local courier count.
+
+    Returns:
+        Mutable Chengdu environment with the requested local courier prefix.
+    """
+
+    if local_courier_count <= 0:
+        raise ValueError("local_courier_count must be positive.")
+    environment = clone_environment_from_seed(seed)
+    if local_courier_count > len(environment.local_couriers):
+        raise ValueError(
+            f"Requested {local_courier_count} local couriers but canonical seed only has {len(environment.local_couriers)}."
+        )
+    environment.local_couriers = list(environment.local_couriers)[:local_courier_count]
+    _rebind_station_member_references(environment)
+    return environment
+
+
+def derive_environment_with_platforms_from_seed(
+    seed: ChengduEnvironmentSeed,
+    platform_count: int,
+) -> ChengduEnvironment:
+    """Clone one canonical seed and keep only a deterministic partner-platform prefix.
+
+    Args:
+        seed: Canonical environment seed built with at least the requested partner-platform count.
+        platform_count: Requested cooperating platform count.
+
+    Returns:
+        Mutable Chengdu environment with the requested partner platform prefix.
+    """
+
+    if platform_count <= 0:
+        raise ValueError("platform_count must be positive.")
+    environment = clone_environment_from_seed(seed)
+    platform_items = list(environment.partner_couriers_by_platform.items())
+    if platform_count > len(platform_items):
+        raise ValueError(
+            f"Requested {platform_count} platforms but canonical seed only has {len(platform_items)}."
+        )
+    environment.partner_couriers_by_platform = dict(platform_items[:platform_count])
+    _rebind_station_member_references(environment)
+    return environment
+
+
+def derive_environment_with_service_radius_from_seed(
+    seed: ChengduEnvironmentSeed,
+    service_radius_km: float,
+) -> ChengduEnvironment:
+    """Clone one canonical seed and change only the service-radius parameter.
+
+    Args:
+        seed: Canonical environment seed.
+        service_radius_km: Requested service radius in kilometers.
+
+    Returns:
+        Mutable Chengdu environment with unchanged parcels/couriers and updated radius.
+    """
+
+    if service_radius_km <= 0:
+        raise ValueError("service_radius_km must be positive.")
+    environment = clone_environment_from_seed(seed)
+    environment.service_radius_km = float(service_radius_km)
+    return environment
+
+
+def derive_environment_with_courier_capacity_from_seed(
+    seed: ChengduEnvironmentSeed,
+    courier_capacity: float,
+) -> ChengduEnvironment:
+    """Clone one canonical seed and change only courier-capacity metadata.
+
+    Args:
+        seed: Canonical environment seed built with a capacity not larger than the requested point.
+        courier_capacity: Requested courier capacity.
+
+    Returns:
+        Mutable Chengdu environment with unchanged parcels/couriers and updated capacity.
+    """
+
+    if courier_capacity <= 0:
+        raise ValueError("courier_capacity must be positive.")
+    environment = clone_environment_from_seed(seed)
+    environment.courier_capacity = float(courier_capacity)
+    for courier in [*environment.local_couriers, *[item for items in environment.partner_couriers_by_platform.values() for item in items]]:
+        if isinstance(courier, dict):
+            courier["max_weight"] = float(courier_capacity)
+            if "capacity" in courier:
+                courier["capacity"] = float(courier_capacity)
+        else:
+            if hasattr(courier, "max_weight"):
+                courier.max_weight = float(courier_capacity)
+            if hasattr(courier, "capacity"):
+                courier.capacity = float(courier_capacity)
+    return environment
+
+
+def derive_environment_for_axis(
+    seed: ChengduEnvironmentSeed,
+    axis: str,
+    value: int | float,
+) -> ChengduEnvironment:
+    """Derive one Chengdu environment for the requested paper sweep axis.
+
+    Args:
+        seed: Canonical environment seed.
+        axis: Sweep axis name.
+        value: Concrete point value for the axis.
+
+    Returns:
+        Mutable Chengdu environment for the requested point.
+    """
+
+    if axis == "num_parcels":
+        return derive_environment_from_seed(seed, int(value))
+    if axis == "local_couriers":
+        return derive_environment_with_local_couriers_from_seed(seed, int(value))
+    if axis == "service_radius":
+        return derive_environment_with_service_radius_from_seed(seed, float(value))
+    if axis == "platforms":
+        return derive_environment_with_platforms_from_seed(seed, int(value))
+    if axis == "courier_capacity":
+        return derive_environment_with_courier_capacity_from_seed(seed, float(value))
+    raise ValueError(f"Unsupported canonical derive axis: {axis}")
+
+
 def _rebind_courier_station_references(environment: ChengduEnvironment) -> None:
     """Reconnect cloned courier station references back to the cloned station set."""
     station_lookup = _build_station_lookup(environment.station_set)
