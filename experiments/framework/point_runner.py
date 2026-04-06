@@ -42,7 +42,7 @@ def default_runner_kwargs_for_algorithm(
 def run_seeded_comparison_point(
     seed_path: Path,
     point_spec: ExperimentPointSpec,
-    environment_deriver: Callable[[Any, int], Any],
+    environment_deriver: Callable[[Any, int | float], Any],
     runner_builder: Callable[..., Any] | None = None,
 ) -> dict[str, Any]:
     """Run one comparison point from a persisted canonical environment seed.
@@ -57,11 +57,54 @@ def run_seeded_comparison_point(
         Point-level normalized summary.
     """
 
-    build_runner = runner_builder or build_algorithm_runner
     seed = load_environment_seed(seed_path)
     point_environment = environment_deriver(seed, point_spec.axis_value)
-    point_seed = build_environment_seed(point_environment)
     point_spec.output_dir.mkdir(parents=True, exist_ok=True)
+    return run_environment_comparison_point(
+        environment=point_environment,
+        point_spec=point_spec,
+        runner_builder=runner_builder,
+    )
+
+
+def run_environment_comparison_point(
+    environment: Any,
+    point_spec: ExperimentPointSpec,
+    runner_builder: Callable[..., Any] | None = None,
+) -> dict[str, Any]:
+    """Run one comparison point from an already built environment.
+
+    Args:
+        environment: Prepared mutable environment for the current sweep point.
+        point_spec: Point-level experiment specification.
+        runner_builder: Optional algorithm runner factory.
+
+    Returns:
+        Point-level normalized summary.
+    """
+
+    point_seed = build_environment_seed(environment)
+    point_spec.output_dir.mkdir(parents=True, exist_ok=True)
+    return _run_point_from_seed(point_seed=point_seed, point_spec=point_spec, runner_builder=runner_builder)
+
+
+def _run_point_from_seed(
+    point_seed: Any,
+    point_spec: ExperimentPointSpec,
+    runner_builder: Callable[..., Any] | None = None,
+) -> dict[str, Any]:
+    """Execute one point from a prepared in-memory seed.
+
+    Args:
+        point_seed: Seed object previously built from an environment.
+        point_spec: Point-level experiment specification.
+        runner_builder: Optional algorithm runner factory.
+
+    Returns:
+        Point-level normalized summary.
+    """
+
+    build_runner = runner_builder or build_algorithm_runner
     progress_path = point_spec.output_dir / "progress.json"
     point_summary: dict[str, Any] = {point_spec.axis_name: point_spec.axis_value}
     completed_algorithms: list[str] = []
@@ -85,7 +128,8 @@ def run_seeded_comparison_point(
             write_point_progress(
                 progress_path,
                 build_point_progress_snapshot(
-                    num_parcels=point_spec.axis_value,
+                    axis_name=point_spec.axis_name,
+                    axis_value=point_spec.axis_value,
                     algorithm=algorithm,
                     algorithm_index=algorithm_index,
                     total_algorithms=total_algorithms,
@@ -98,7 +142,8 @@ def run_seeded_comparison_point(
         write_point_progress(
             progress_path,
             build_point_progress_snapshot(
-                num_parcels=point_spec.axis_value,
+                axis_name=point_spec.axis_name,
+                axis_value=point_spec.axis_value,
                 algorithm=algorithm,
                 algorithm_index=algorithm_index,
                 total_algorithms=total_algorithms,
@@ -116,7 +161,8 @@ def run_seeded_comparison_point(
         write_point_progress(
             progress_path,
             build_point_progress_snapshot(
-                num_parcels=point_spec.axis_value,
+                axis_name=point_spec.axis_name,
+                axis_value=point_spec.axis_value,
                 algorithm=algorithm,
                 algorithm_index=algorithm_index,
                 total_algorithms=total_algorithms,

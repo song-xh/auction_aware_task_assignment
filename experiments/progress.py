@@ -280,7 +280,8 @@ def resolve_progress_mode(mode: ProgressMode) -> Literal["overwrite", "append"]:
 
 
 def build_point_progress_snapshot(
-    num_parcels: int,
+    axis_name: str,
+    axis_value: int | float,
     algorithm: str,
     algorithm_index: int,
     total_algorithms: int,
@@ -291,7 +292,8 @@ def build_point_progress_snapshot(
     """Build one normalized point-level progress snapshot.
 
     Args:
-        num_parcels: Current parcel-count point.
+        axis_name: Sweep axis name for the active point.
+        axis_value: Concrete sweep value for the active point.
         algorithm: Active algorithm name.
         algorithm_index: One-based active algorithm index.
         total_algorithms: Number of algorithms in this point.
@@ -305,7 +307,8 @@ def build_point_progress_snapshot(
 
     return {
         "state": state,
-        "num_parcels": int(num_parcels),
+        "axis_name": axis_name,
+        "axis_value": axis_value,
         "current_algorithm": algorithm,
         "algorithm_index": int(algorithm_index),
         "total_algorithms": int(total_algorithms),
