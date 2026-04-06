@@ -122,6 +122,7 @@ def run_cama(
                 config,
                 timing=timing,
                 insertion_cache=insertion_cache,
+                geo_index=geo_index,
             )
             feasible_for_parcel.append(CandidatePair(parcel=parcel, courier=courier, utility=utility))
         if feasible_for_parcel:

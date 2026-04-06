@@ -179,6 +179,9 @@ def run_greedy_baseline_environment(
             if selection is not None:
                 courier, insertion_index, _ = selection
                 apply_assignment_to_legacy_courier(task, courier, insertion_index)
+                courier_cache_id = f"greedy-{getattr(courier, 'num')}"
+                snapshot_cache.invalidate(courier_cache_id)
+                insertion_cache.invalidate_courier(courier_cache_id)
                 accepted_assignments += 1
                 total_revenue += compute_local_platform_revenue_for_local_completion(
                     parcel_fare=float(getattr(task, "fare")),
@@ -272,6 +275,7 @@ def select_greedy_assignment(
             utility=utility,
             timing=timing,
             insertion_cache=insertion_cache,
+            geo_index=geo_index,
         )
         candidate = (courier, insertion_index, bid)
         if best_choice is None or (bid, getattr(courier, "num", 0)) < (best_choice[2], getattr(best_choice[0], "num", 0)):
@@ -287,6 +291,7 @@ def compute_greedy_bid(
     utility: float,
     timing: TimingAccumulator | None = None,
     insertion_cache: InsertionCache | None = None,
+    geo_index: GeoIndex | None = None,
 ) -> tuple[float, int]:
     """Compute the legacy Greedy local bid and insertion index for one courier-task pair.
 
@@ -312,6 +317,7 @@ def compute_greedy_bid(
         travel_model,
         timing=timing,
         insertion_cache=insertion_cache,
+        geo_index=geo_index,
     )
     detour_rate = 0.0 if local_ratio >= 1.0 else 1.0 / max(local_ratio, 1e-9)
     bid = 2.0 + (preference_w * weight_term + preference_c * detour_rate) * float(utility) * float(parcel.fare)

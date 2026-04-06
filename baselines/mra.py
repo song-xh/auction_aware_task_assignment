@@ -7,6 +7,7 @@ from time import perf_counter
 from typing import Any, Callable, Mapping, Sequence
 
 from capa.cache import InsertionCache
+from capa.geo import GeoIndex
 from capa.timing import TimedTravelModel, TimingAccumulator
 from capa.utility import (
     DEFAULT_LOCAL_PAYMENT_RATIO,
@@ -49,6 +50,7 @@ def compute_mra_bid(
     timing: TimingAccumulator | None = None,
     insertion_cache: InsertionCache | None = None,
     snapshot_cache: LegacyCourierSnapshotCache | None = None,
+    geo_index: GeoIndex | None = None,
 ) -> float:
     """Compute the Chengdu-adapted MRA bid described in `docs/mra.md`.
 
@@ -78,6 +80,7 @@ def compute_mra_bid(
         travel_model,
         timing=timing,
         insertion_cache=insertion_cache,
+        geo_index=geo_index,
     )
     detour_term = 1.0 - local_ratio
     if feasible_count <= 1:
@@ -174,6 +177,7 @@ def run_mra_baseline_environment(
                                 timing=timing,
                                 insertion_cache=insertion_cache,
                                 snapshot_cache=snapshot_cache,
+                                geo_index=geo_index,
                             ),
                             insertion_index=insertion.insertion_index,
                         )
@@ -205,6 +209,9 @@ def run_mra_baseline_environment(
 
             for edge in round_assignments:
                 apply_assignment_to_legacy_courier(edge.task, edge.courier, edge.insertion_index)
+                courier_cache_id = f"mra-{getattr(edge.courier, 'num')}"
+                snapshot_cache.invalidate(courier_cache_id)
+                insertion_cache.invalidate_courier(courier_cache_id)
                 total_revenue += compute_local_platform_revenue_for_local_completion(
                     parcel_fare=float(getattr(edge.task, "fare")),
                     local_payment_ratio=local_payment_ratio,

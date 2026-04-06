@@ -7,6 +7,7 @@ from time import perf_counter
 from typing import Hashable, Iterable, List, Mapping, Tuple
 
 from .cache import InsertionCache
+from .geo import GeoIndex
 from .models import CAPAConfig, Courier, Parcel, UtilityEvaluation
 from .timing import TimingAccumulator
 
@@ -85,8 +86,21 @@ def find_best_local_insertion(
     travel_model: DistanceMatrixTravelModel,
     timing: TimingAccumulator | None = None,
     insertion_cache: InsertionCache | None = None,
+    geo_index: GeoIndex | None = None,
 ) -> Tuple[float, int]:
-    """Return the best insertion index and the Eq.6 detour ratio for local matching."""
+    """Return the best insertion index and the Eq.6 detour ratio for local matching.
+
+    Args:
+        parcel: Candidate parcel.
+        courier: Courier snapshot carrying the current route.
+        travel_model: Exact directed travel model.
+        timing: Optional timing accumulator.
+        insertion_cache: Optional route-aware insertion cache.
+        geo_index: Optional geometric index used only for safe lower-bound pruning.
+
+    Returns:
+        `(best_ratio, best_index)` for the exact best insertion position.
+    """
     if insertion_cache is not None:
         cached = insertion_cache.get(courier, parcel.location)
         if cached is not None:
@@ -102,6 +116,15 @@ def find_best_local_insertion(
             start = route_nodes[index]
             end = route_nodes[index + 1]
             base_distance = travel_model.distance(start, end)
+            if geo_index is not None and best_ratio > float("-inf"):
+                lower_bound_start = geo_index.haversine_meters_between(start, parcel.location)
+                lower_bound_end = geo_index.haversine_meters_between(parcel.location, end)
+                if lower_bound_start is not None and lower_bound_end is not None:
+                    lower_bound_detour = lower_bound_start + lower_bound_end
+                    if lower_bound_detour > 0:
+                        upper_bound_ratio = base_distance / lower_bound_detour
+                        if upper_bound_ratio <= best_ratio:
+                            continue
             detour_distance = travel_model.distance(start, parcel.location) + travel_model.distance(parcel.location, end)
             if detour_distance <= 0:
                 ratio = 1.0
@@ -126,6 +149,7 @@ def find_best_auction_detour_ratio(
     travel_model: DistanceMatrixTravelModel,
     timing: TimingAccumulator | None = None,
     insertion_cache: InsertionCache | None = None,
+    geo_index: GeoIndex | None = None,
 ) -> float:
     """Return the Eq.1 detour term used by the FPSA bid function."""
     local_ratio, _ = find_best_local_insertion(
@@ -134,6 +158,7 @@ def find_best_auction_detour_ratio(
         travel_model,
         timing=timing,
         insertion_cache=insertion_cache,
+        geo_index=geo_index,
     )
     return 1.0 - local_ratio
 
@@ -145,6 +170,7 @@ def calculate_utility(
     config: CAPAConfig,
     timing: TimingAccumulator | None = None,
     insertion_cache: InsertionCache | None = None,
+    geo_index: GeoIndex | None = None,
 ) -> UtilityEvaluation:
     """Compute the Eq.6 utility and preserve the best insertion index."""
     detour_ratio, insertion_index = find_best_local_insertion(
@@ -153,6 +179,7 @@ def calculate_utility(
         travel_model,
         timing=timing,
         insertion_cache=insertion_cache,
+        geo_index=geo_index,
     )
     capacity_ratio = calculate_capacity_ratio(parcel, courier)
     utility_value = (

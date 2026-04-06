@@ -62,6 +62,7 @@ def compute_fpsa_bid(
     config: CAPAConfig,
     timing: TimingAccumulator | None = None,
     insertion_cache: InsertionCache | None = None,
+    geo_index: GeoIndex | None = None,
 ) -> float:
     """Compute the Eq.1 FPSA bid for a courier within a cooperating platform."""
     detour_ratio = find_best_auction_detour_ratio(
@@ -70,6 +71,7 @@ def compute_fpsa_bid(
         travel_model,
         timing=timing,
         insertion_cache=insertion_cache,
+        geo_index=geo_index,
     )
     p_tau_prime = config.local_sharing_rate_mu1 * parcel.fare
     return platform.base_price + (
@@ -123,6 +125,7 @@ def apply_cross_assignment(
     travel_model: DistanceMatrixTravelModel,
     timing: TimingAccumulator | None = None,
     insertion_cache: InsertionCache | None = None,
+    geo_index: GeoIndex | None = None,
 ) -> None:
     """Update a courier route and carried load after a cross assignment is accepted."""
     _, insertion_index = find_best_local_insertion(
@@ -131,6 +134,7 @@ def apply_cross_assignment(
         travel_model,
         timing=timing,
         insertion_cache=insertion_cache,
+        geo_index=geo_index,
     )
     courier.route_locations.insert(insertion_index, parcel.location)
     courier.current_load += parcel.weight
@@ -182,6 +186,7 @@ def run_dapa(
                     config,
                     timing=timing,
                     insertion_cache=insertion_cache,
+                    geo_index=geo_index,
                 )
                 feasible_bids.append((courier, courier_bid))
             if not feasible_bids:
@@ -235,7 +240,14 @@ def run_dapa(
                         unassigned_parcels.append(parcel)
                         platform_payment = None
                 if platform_payment is not None:
-                    apply_cross_assignment(parcel, winner.courier, travel_model, timing=timing, insertion_cache=insertion_cache)
+                    apply_cross_assignment(
+                        parcel,
+                        winner.courier,
+                        travel_model,
+                        timing=timing,
+                        insertion_cache=insertion_cache,
+                        geo_index=geo_index,
+                    )
                     cross_assignments.append(
                         build_cross_assignment(
                             parcel=parcel,
