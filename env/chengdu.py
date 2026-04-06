@@ -9,7 +9,7 @@ from pathlib import Path
 from time import perf_counter
 from typing import Any, Callable, Dict, Iterable, List, Mapping, MutableSequence, Sequence
 
-from capa.batch_distance import BatchDistanceMatrix
+from capa.batch_distance import BatchDistanceMatrix, PersistentDirectedDistanceCache
 from capa.cache import InsertionCache
 from capa.cama import run_cama
 from capa.dapa import run_dapa
@@ -318,6 +318,18 @@ def legacy_courier_to_capa(courier: Any, courier_id: str) -> Courier:
     )
 
 
+def local_courier_snapshot_id(courier: Any) -> str:
+    """Return the stable CAPA snapshot identifier for one local legacy courier."""
+
+    return f"local-{getattr(courier, 'num')}"
+
+
+def partner_courier_snapshot_id(platform_id: str, courier: Any) -> str:
+    """Return the stable CAPA snapshot identifier for one partner legacy courier."""
+
+    return f"{platform_id}-{getattr(courier, 'num')}"
+
+
 class LegacyCourierSnapshotCache:
     """Reuse CAPA courier projections while the underlying legacy state is unchanged."""
 
@@ -349,6 +361,15 @@ class LegacyCourierSnapshotCache:
 
         self._entries.clear()
 
+    def invalidate(self, courier_id: str) -> None:
+        """Drop the cached projection for one courier identifier.
+
+        Args:
+            courier_id: Stable synthesized courier identifier.
+        """
+
+        self._entries.pop(courier_id, None)
+
     def _build_signature(self, courier: Any) -> tuple[Any, ...]:
         """Build a stable signature for the legacy courier state used by CAPA."""
 
@@ -379,9 +400,9 @@ def legacy_platform_to_capa(
         platform_id=platform_id,
         couriers=[
             (
-                snapshot_cache.get(courier, courier_id=f"{platform_id}-{getattr(courier, 'num')}")
+                snapshot_cache.get(courier, courier_id=partner_courier_snapshot_id(platform_id, courier))
                 if snapshot_cache is not None
-                else legacy_courier_to_capa(courier, courier_id=f"{platform_id}-{getattr(courier, 'num')}")
+                else legacy_courier_to_capa(courier, courier_id=partner_courier_snapshot_id(platform_id, courier))
             )
             for courier in couriers
         ],
@@ -495,6 +516,90 @@ def current_legacy_route_task_ids(local_couriers: Sequence[Any], partner_courier
     return route_task_ids
 
 
+def partition_terminal_backlog(
+    unresolved_tasks: Sequence[Any],
+    now: int,
+    active_local_couriers: Sequence[Any],
+    active_partner_by_platform: Mapping[str, Sequence[Any]],
+    travel_model: Any,
+    service_radius_meters: float | None,
+    snapshot_cache: LegacyCourierSnapshotCache,
+    geo_index: GeoIndex | None,
+    speed_m_per_s: float,
+) -> tuple[list[Any], list[Any]]:
+    """Split backlog tasks into exact terminally infeasible and still-retriable sets.
+
+    This helper is only intended for the post-arrival phase when future rounds
+    can no longer receive new tasks. A task is marked terminal only when no
+    local courier and no partner courier can satisfy the current feasibility
+    checks.
+
+    Args:
+        unresolved_tasks: Tasks that survived the current matching round.
+        now: Current batch time.
+        active_local_couriers: Current local courier pool.
+        active_partner_by_platform: Current partner courier pools.
+        travel_model: Shared exact travel model.
+        service_radius_meters: Optional courier-to-task radius limit.
+        snapshot_cache: Reusable legacy-to-CAPA snapshot cache.
+        geo_index: Optional geometric lower-bound index.
+        speed_m_per_s: Exact travel speed used by the Chengdu graph model.
+
+    Returns:
+        `(terminal_tasks, retriable_tasks)` in the same task order.
+    """
+
+    from capa.cama import is_feasible_local_match
+    from capa.dapa import is_feasible_cross_match
+
+    terminal_tasks: list[Any] = []
+    retriable_tasks: list[Any] = []
+    local_snapshots = [
+        snapshot_cache.get(courier, courier_id=local_courier_snapshot_id(courier))
+        for courier in active_local_couriers
+    ]
+    partner_snapshots = {
+        platform_id: [
+            snapshot_cache.get(courier, courier_id=partner_courier_snapshot_id(platform_id, courier))
+            for courier in couriers
+        ]
+        for platform_id, couriers in active_partner_by_platform.items()
+    }
+    for task in unresolved_tasks:
+        parcel = legacy_task_to_parcel(task)
+        feasible = any(
+            is_feasible_local_match(
+                parcel,
+                courier,
+                travel_model,
+                now,
+                service_radius_meters=service_radius_meters,
+                geo_index=geo_index,
+                speed_m_per_s=speed_m_per_s,
+            )
+            for courier in local_snapshots
+        )
+        if not feasible:
+            feasible = any(
+                is_feasible_cross_match(
+                    parcel,
+                    courier,
+                    travel_model,
+                    now,
+                    service_radius_meters=service_radius_meters,
+                    geo_index=geo_index,
+                    speed_m_per_s=speed_m_per_s,
+                )
+                for couriers in partner_snapshots.values()
+                for courier in couriers
+            )
+        if feasible:
+            retriable_tasks.append(task)
+        else:
+            terminal_tasks.append(task)
+    return terminal_tasks, retriable_tasks
+
+
 def drain_legacy_routes(
     local_couriers: MutableSequence[Any],
     partner_couriers_by_platform: Mapping[str, MutableSequence[Any]],
@@ -523,7 +628,7 @@ def _build_partner_lookup(partner_couriers_by_platform: Mapping[str, Sequence[An
     platform_lookup: Dict[str, Dict[str, Any]] = {}
     for platform_id, couriers in partner_couriers_by_platform.items():
         platform_lookup[platform_id] = {
-            f"{platform_id}-{getattr(courier, 'num')}": courier for courier in couriers
+            partner_courier_snapshot_id(platform_id, courier): courier for courier in couriers
         }
     return platform_lookup
 
@@ -593,6 +698,9 @@ def run_time_stepped_chengdu_batches(
     current_time = first_batch_start
     batch_cursor = 0
     batch_index = 0
+    persistent_travel_model = PersistentDirectedDistanceCache(travel_model)
+    snapshot_cache = LegacyCourierSnapshotCache()
+    insertion_cache = InsertionCache()
 
     while batch_cursor <= last_bucket_index or backlog:
         batch_index += 1
@@ -673,13 +781,12 @@ def run_time_stepped_chengdu_batches(
         cross_assignments: List[Assignment] = []
         processing_time_seconds = 0.0
         started = perf_counter()
-        timed_travel_model = TimedTravelModel(travel_model, timing)
-        snapshot_cache = LegacyCourierSnapshotCache()
-        insertion_cache = InsertionCache()
+        timed_travel_model = TimedTravelModel(persistent_travel_model, timing)
         local_snapshots = [
-            snapshot_cache.get(courier, courier_id=f"local-{getattr(courier, 'num')}")
+            snapshot_cache.get(courier, courier_id=local_courier_snapshot_id(courier))
             for courier in active_local_couriers
         ]
+        insertion_cache.prune_to_active_routes(local_snapshots)
         batch_parcels = [legacy_task_to_parcel(task) for task in eligible_tasks]
         bdm = BatchDistanceMatrix(timed_travel_model)
         bdm.precompute_for_insertions(local_snapshots, batch_parcels)
@@ -709,7 +816,7 @@ def run_time_stepped_chengdu_batches(
         )
         best_local_pairs = _index_best_local_pairs(cama_result)
         task_lookup = {parcel.parcel_id: task for parcel, task in zip(batch_parcels, eligible_tasks)}
-        local_lookup = {f"local-{getattr(courier, 'num')}": courier for courier in active_local_couriers}
+        local_lookup = {local_courier_snapshot_id(courier): courier for courier in active_local_couriers}
         assigned_task_ids: set[int] = set()
 
         for assignment in cama_result.local_assignments:
@@ -717,6 +824,8 @@ def run_time_stepped_chengdu_batches(
             legacy_courier = local_lookup[assignment.courier.courier_id]
             insertion_index = best_local_pairs[(assignment.parcel.parcel_id, assignment.courier.courier_id)]
             apply_assignment_to_legacy_courier(task, legacy_courier, insertion_index)
+            snapshot_cache.invalidate(assignment.courier.courier_id)
+            insertion_cache.invalidate_courier(assignment.courier.courier_id)
             local_assignments.append(bind_assignment_to_legacy_objects(assignment, task, legacy_courier))
             assigned_task_ids.add(id(task))
             accepted_assignment_ids.add(str(getattr(task, "num")))
@@ -740,6 +849,7 @@ def run_time_stepped_chengdu_batches(
                 for platform in partner_platforms
             }
             partner_snapshots = [courier for platform in partner_platforms for courier in platform.couriers]
+            insertion_cache.prune_to_active_routes([*local_snapshots, *partner_snapshots])
             bdm.precompute_for_insertions(partner_snapshots, remaining_parcels)
             dapa_result = run_dapa(
                 remaining_parcels,
@@ -777,22 +887,30 @@ def run_time_stepped_chengdu_batches(
                     bdm,
                     timing=timing,
                     insertion_cache=insertion_cache,
+                    geo_index=geo_index,
                 )
                 apply_assignment_to_legacy_courier(task, legacy_courier, insertion_index)
+                snapshot_cache.invalidate(assignment.courier.courier_id)
+                insertion_cache.invalidate_courier(assignment.courier.courier_id)
                 cross_assignments.append(bind_assignment_to_legacy_objects(assignment, task, legacy_courier))
                 assigned_task_ids.add(id(task))
                 accepted_assignment_ids.add(str(getattr(task, "num")))
 
         backlog = [task for task in eligible_tasks if id(task) not in assigned_task_ids]
-        if (
-            backlog
-            and not local_assignments
-            and not cross_assignments
-            and batch_cursor >= last_bucket_index
-            and not has_pending_legacy_routes(active_local_couriers, active_partner_by_platform)
-        ):
-            terminal_unassigned.extend(backlog)
-            backlog = []
+        if backlog and batch_cursor >= last_bucket_index and not has_pending_legacy_routes(active_local_couriers, active_partner_by_platform):
+            terminal_tasks, retriable_tasks = partition_terminal_backlog(
+                unresolved_tasks=backlog,
+                now=current_time,
+                active_local_couriers=active_local_couriers,
+                active_partner_by_platform=active_partner_by_platform,
+                travel_model=timed_travel_model,
+                service_radius_meters=service_radius_meters,
+                snapshot_cache=snapshot_cache,
+                geo_index=geo_index,
+                speed_m_per_s=speed_m_per_s,
+            )
+            terminal_unassigned.extend(terminal_tasks)
+            backlog = retriable_tasks
         processing_time_seconds += perf_counter() - started
         report = BatchReport(
             batch_index=batch_index,

@@ -80,6 +80,7 @@ def build_legacy_feasible_insertions(
             timed_travel_model,
             timing=timing,
             insertion_cache=insertion_cache,
+            geo_index=geo_index,
         )
         feasible.append(
             LegacyFeasibleInsertion(

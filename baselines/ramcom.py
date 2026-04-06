@@ -165,6 +165,9 @@ def run_ramcom_baseline_environment(
             if inner_candidates:
                 chosen = rng.choice(inner_candidates)
                 apply_assignment_to_legacy_courier(task, chosen.courier, chosen.insertion_index)
+                courier_cache_id = f"ramcom-inner-{getattr(chosen.courier, 'num')}"
+                snapshot_cache.invalidate(courier_cache_id)
+                insertion_cache.invalidate_courier(courier_cache_id)
                 total_revenue += compute_local_platform_revenue_for_local_completion(
                     parcel_fare=float(getattr(task, "fare")),
                     local_payment_ratio=local_payment_ratio,
@@ -206,6 +209,9 @@ def run_ramcom_baseline_environment(
                         key=lambda item: (item[1].distance_meters, item[0], getattr(item[1].courier, "num", 0)),
                     )
                     apply_assignment_to_legacy_courier(task, selected_insertion.courier, selected_insertion.insertion_index)
+                    courier_cache_id = f"ramcom-{selected_platform}-{getattr(selected_insertion.courier, 'num')}"
+                    snapshot_cache.invalidate(courier_cache_id)
+                    insertion_cache.invalidate_courier(courier_cache_id)
                     total_revenue += compute_local_platform_revenue_for_cross_completion(
                         parcel_fare=float(getattr(task, "fare")),
                         platform_payment=outer_payment,

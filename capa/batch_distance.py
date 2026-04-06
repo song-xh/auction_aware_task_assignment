@@ -1,8 +1,64 @@
-"""Batch-level directed distance cache for insertion-heavy assignment rounds."""
+"""Directed distance caches for insertion-heavy assignment rounds."""
 
 from __future__ import annotations
 
 from typing import Any, Hashable, Iterable, Sequence
+
+
+class PersistentDirectedDistanceCache:
+    """Cache exact directed shortest-path distances across matching rounds.
+
+    The Chengdu road graph is static during one experiment run, so an exact
+    directed distance remains valid across batches and retry rounds. This cache
+    sits underneath per-round timing wrappers and batch-local warming.
+    """
+
+    def __init__(self, travel_model: Any) -> None:
+        """Store the wrapped travel model and infer its travel speed if present."""
+
+        self._travel_model = travel_model
+        self._distances: dict[tuple[Hashable, Hashable], float] = {}
+        self._speed: float | None = (
+            getattr(travel_model, "speed", None)
+            or getattr(travel_model, "_speed", None)
+            or getattr(getattr(travel_model, "_travel_model", None), "speed", None)
+            or getattr(getattr(travel_model, "_travel_model", None), "_speed", None)
+        )
+
+    def distance(self, start: Hashable, end: Hashable) -> float:
+        """Return the cached exact directed distance between two locations."""
+
+        if start == end:
+            return 0.0
+        cached = self._distances.get((start, end))
+        if cached is not None:
+            return cached
+        value = float(self._travel_model.distance(start, end))
+        self._distances[(start, end)] = value
+        return value
+
+    def travel_time(self, start: Hashable, end: Hashable) -> float:
+        """Return travel time derived from the cached exact distance."""
+
+        if self._speed is not None and self._speed > 0:
+            return self.distance(start, end) / float(self._speed)
+        return float(self._travel_model.travel_time(start, end))
+
+    def precompute_pairs(self, pairs: Iterable[tuple[Hashable, Hashable]]) -> None:
+        """Warm the persistent cache for the provided directed location pairs."""
+
+        for start, end in dict.fromkeys(pairs):
+            if start == end:
+                self._distances[(start, end)] = 0.0
+                continue
+            if (start, end) not in self._distances:
+                self._distances[(start, end)] = float(self._travel_model.distance(start, end))
+
+    @property
+    def hits(self) -> int:
+        """Return the number of cached directed distance entries."""
+
+        return len(self._distances)
 
 
 class BatchDistanceMatrix:
