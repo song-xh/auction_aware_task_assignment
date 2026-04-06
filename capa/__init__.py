@@ -4,7 +4,7 @@ from .cama import run_cama
 from .dapa import run_dapa
 from .models import CAPAConfig, CAPAResult, CooperatingPlatform, Courier, Parcel
 from .runner import run_capa
-from .travel import DistanceMatrixTravelModel
+from .utility import DistanceMatrixTravelModel
 
 
 def run_chengdu_experiment(*args, **kwargs):

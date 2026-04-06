@@ -1,14 +1,70 @@
-"""Utility and detour helpers for CAMA and DAPA."""
+"""Shared CAPA helpers for travel lookup, revenue accounting, and insertion utility."""
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from time import perf_counter
-from typing import Iterable, List, Tuple
+from typing import Hashable, Iterable, List, Mapping, Tuple
 
 from .cache import InsertionCache
 from .models import CAPAConfig, Courier, Parcel, UtilityEvaluation
 from .timing import TimingAccumulator
-from .travel import DistanceMatrixTravelModel
+
+
+DEFAULT_LOCAL_PAYMENT_RATIO = 0.2
+
+
+@dataclass(frozen=True)
+class DistanceMatrixTravelModel:
+    """Provide deterministic distance and travel-time lookups for tests and runners."""
+
+    distances: Mapping[Tuple[Hashable, Hashable], float]
+    speed: float = 1.0
+
+    def distance(self, start: Hashable, end: Hashable) -> float:
+        """Return the directed or symmetric distance between two locations."""
+        if start == end:
+            return 0.0
+        direct = self.distances.get((start, end))
+        if direct is not None:
+            return float(direct)
+        reverse = self.distances.get((end, start))
+        if reverse is not None:
+            return float(reverse)
+        raise KeyError(f"Missing distance between {start!r} and {end!r}.")
+
+    def travel_time(self, start: Hashable, end: Hashable) -> float:
+        """Return travel time based on the stored distance matrix and scalar speed."""
+        if self.speed <= 0:
+            raise ValueError("Travel speed must be positive.")
+        return self.distance(start, end) / self.speed
+
+
+def compute_local_courier_payment(parcel_fare: float, local_payment_ratio: float = DEFAULT_LOCAL_PAYMENT_RATIO) -> float:
+    """Return the fixed local-courier payment `Rc(tau, c) = zeta * p_tau`."""
+
+    return float(local_payment_ratio) * float(parcel_fare)
+
+
+def compute_local_platform_revenue_for_local_completion(
+    parcel_fare: float,
+    local_payment_ratio: float = DEFAULT_LOCAL_PAYMENT_RATIO,
+) -> float:
+    """Return local-platform revenue for an inner-courier completion."""
+
+    return float(parcel_fare) - compute_local_courier_payment(parcel_fare, local_payment_ratio)
+
+
+def compute_local_platform_revenue_for_cross_completion(parcel_fare: float, platform_payment: float) -> float:
+    """Return local-platform revenue for a cross-platform completion."""
+
+    return float(parcel_fare) - float(platform_payment)
+
+
+def compute_cooperating_platform_revenue(platform_payment: float, courier_payment: float) -> float:
+    """Return the cooperating platform's retained profit."""
+
+    return float(platform_payment) - float(courier_payment)
 
 
 def build_route_nodes(courier: Courier) -> List[object]:

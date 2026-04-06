@@ -19,6 +19,7 @@ if __package__ in {None, ""}:
 
 from algorithms.registry import build_algorithm_runner
 from experiments.compare import run_comparison_sweep
+from experiments.framework import ManagedRoundSpec, run_managed_rounds
 from experiments.paper_chengdu import DEFAULT_CHENGDU_PAPER_FIXED_CONFIG
 from experiments.paper_config import DEFAULT_CHENGDU_PAPER_ALGORITHMS, PAPER_SUITE_PRESETS
 
@@ -219,102 +220,112 @@ def run_managed_exp1(
     fixed_config["batch_size"] = batch_size
     parcel_values = PAPER_SUITE_PRESETS["chengdu-paper"][preset_name]["num_parcels"]
     status_path = tmp_root / "status.json"
-    round_manifests: list[dict[str, Any]] = []
     managed_started_at = time()
+    framework_round_specs = [
+        ManagedRoundSpec(
+            name=round_spec.name,
+            rationale=round_spec.rationale,
+            runner_overrides_by_algorithm={} if not round_spec.capa_runner_kwargs else {"capa": dict(round_spec.capa_runner_kwargs)},
+        )
+        for round_spec in round_specs
+    ]
 
-    for round_index, round_spec in enumerate(round_specs, start=1):
-        round_output_dir = tmp_root / f"round_{round_index:02d}_{round_spec.name}"
+    def round_output_dir_builder(round_index: int, round_spec: ManagedRoundSpec) -> Path:
+        """Build the output directory for one managed Exp-1 round."""
+
+        return tmp_root / f"round_{round_index:02d}_{round_spec.name}"
+
+    def round_executor(round_spec: ManagedRoundSpec, round_output_dir: Path) -> dict[str, Any]:
+        """Execute one managed Exp-1 round."""
+
         round_output_dir.mkdir(parents=True, exist_ok=True)
         _write_status(
             status_path=status_path,
             payload={
                 "pid": os.getpid(),
                 "state": "running",
-                "round_index": round_index,
                 "round_name": round_spec.name,
                 "round_output_dir": str(round_output_dir),
                 "started_at": managed_started_at,
                 "updated_at": time(),
             },
         )
-        summary = run_comparison_sweep(
+        return run_comparison_sweep(
             algorithms=algorithms,
             output_dir=round_output_dir,
             sweep_parameter="num_parcels",
             sweep_values=parcel_values,
             fixed_config=fixed_config,
-            runner_builder=partial(build_managed_exp1_runner, capa_runner_kwargs=round_spec.capa_runner_kwargs),
+            runner_builder=partial(
+                build_managed_exp1_runner,
+                capa_runner_kwargs=dict(round_spec.runner_overrides_by_algorithm.get("capa", {})),
+            ),
             max_workers=max_workers,
             parallel_backend=parallel_backend,
+        )
+
+    def round_analyzer(summary: dict[str, Any], round_spec: ManagedRoundSpec) -> dict[str, Any]:
+        """Analyze one managed round against the acceptance thresholds."""
+
+        translated_round = Exp1RoundSpec(
+            name=round_spec.name,
+            rationale=round_spec.rationale,
+            capa_runner_kwargs=dict(round_spec.runner_overrides_by_algorithm.get("capa", {})),
         )
         analysis = analyze_exp1_summary(
             summary=summary,
             algorithms=algorithms,
-            round_spec=round_spec,
+            round_spec=translated_round,
             success_tr_ratio=success_tr_ratio,
             success_cr_gap=success_cr_gap,
         )
+        round_output_dir = next(tmp_root.glob(f"round_*_{round_spec.name}"))
         round_manifest = {
-            "round_index": round_index,
             "round_name": round_spec.name,
             "round_output_dir": str(round_output_dir),
             "summary_path": str(round_output_dir / "summary.json"),
             "analysis": analysis,
         }
-        round_manifests.append(round_manifest)
         with (round_output_dir / "analysis.json").open("w", encoding="utf-8") as handle:
             json.dump(analysis, handle, indent=2)
         with (round_output_dir / "round_manifest.json").open("w", encoding="utf-8") as handle:
             json.dump(round_manifest, handle, indent=2)
+        return analysis
 
-        if analysis["accepted"]:
-            promote_round_results(round_output_dir=round_output_dir, final_output_dir=final_output_dir)
-            final_manifest = {
-                "accepted": True,
-                "selected_round": round_manifest,
-                "status_path": str(status_path),
-                "rounds": round_manifests,
+    def round_promoter(round_output_dir: Path) -> None:
+        """Promote the accepted Exp-1 round and update status."""
+
+        promote_round_results(round_output_dir=round_output_dir, final_output_dir=final_output_dir)
+        _write_status(
+            status_path=status_path,
+            payload={
+                "pid": os.getpid(),
+                "state": "accepted",
+                "round_name": round_output_dir.name,
                 "final_output_dir": str(final_output_dir),
-            }
-            with (tmp_root / "final_manifest.json").open("w", encoding="utf-8") as handle:
-                json.dump(final_manifest, handle, indent=2)
-            _write_status(
-                status_path=status_path,
-                payload={
-                    "pid": os.getpid(),
-                    "state": "accepted",
-                    "round_index": round_index,
-                    "round_name": round_spec.name,
-                    "final_output_dir": str(final_output_dir),
-                    "updated_at": time(),
-                },
-            )
-            return final_manifest
+                "updated_at": time(),
+            },
+        )
 
-    final_manifest = {
-        "accepted": False,
-        "selected_round": max(
-            round_manifests,
-            key=lambda item: (
-                item["analysis"]["tr_ratio_vs_best_baseline"],
-                -item["analysis"]["cr_gap_vs_best_baseline"],
-            ),
-        ) if round_manifests else None,
-        "status_path": str(status_path),
-        "rounds": round_manifests,
-        "final_output_dir": str(final_output_dir),
-    }
+    final_manifest = run_managed_rounds(
+        round_specs=framework_round_specs,
+        round_output_dir_builder=round_output_dir_builder,
+        round_executor=round_executor,
+        round_analyzer=round_analyzer,
+        round_promoter=round_promoter,
+    )
     with (tmp_root / "final_manifest.json").open("w", encoding="utf-8") as handle:
         json.dump(final_manifest, handle, indent=2)
-    _write_status(
-        status_path=status_path,
-        payload={
-            "pid": os.getpid(),
-            "state": "exhausted",
-            "updated_at": time(),
-            "final_output_dir": str(final_output_dir),
-        },
-    )
+    if final_manifest["accepted_round_index"] is None:
+        _write_status(
+            status_path=status_path,
+            payload={
+                "pid": os.getpid(),
+                "state": "exhausted",
+                "updated_at": time(),
+                "final_output_dir": str(final_output_dir),
+            },
+        )
     return final_manifest
 
 

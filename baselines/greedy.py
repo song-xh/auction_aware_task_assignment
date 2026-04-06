@@ -11,9 +11,12 @@ from typing import Any, Callable, Mapping, Sequence
 from capa.cache import InsertionCache
 from capa.cama import is_feasible_local_match
 from capa.geo import GeoIndex
-from capa.revenue import DEFAULT_LOCAL_PAYMENT_RATIO, compute_local_platform_revenue_for_local_completion
 from capa.timing import TimedTravelModel, TimingAccumulator
-from capa.utility import find_best_local_insertion
+from capa.utility import (
+    DEFAULT_LOCAL_PAYMENT_RATIO,
+    compute_local_platform_revenue_for_local_completion,
+    find_best_local_insertion,
+)
 from env.chengdu import (
     LegacyCourierSnapshotCache,
     apply_assignment_to_legacy_courier,

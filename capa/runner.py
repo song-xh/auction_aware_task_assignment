@@ -17,7 +17,7 @@ from .models import (
     Courier,
     Parcel,
 )
-from .travel import DistanceMatrixTravelModel
+from .utility import DistanceMatrixTravelModel
 
 
 def index_arrivals_by_time(parcels: Sequence[Parcel]) -> DefaultDict[int, List[Parcel]]:
