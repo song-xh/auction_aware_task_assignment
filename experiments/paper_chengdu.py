@@ -4,14 +4,22 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
+import sys
+from dataclasses import asdict, dataclass
+from functools import partial
+from statistics import mean
 from pathlib import Path
 from typing import Any, Sequence
 
 from algorithms.registry import build_algorithm_runner
 from env.chengdu import ChengduEnvironment
+from experiments.framework import ExperimentPointSpec, ExperimentSplitSpec, ManagedRoundSpec, run_managed_rounds, run_seeded_comparison_point, run_seeded_split_experiment
 from .compare import run_comparison_sweep
 from .paper_config import DEFAULT_CHENGDU_PAPER_ALGORITHMS, PAPER_SUITE_PRESETS
 from .plotting import save_default_comparison_plots
+from .progress import ProgressMode
+from .seeding import build_environment_seed, clone_environment_from_seed, derive_environment_from_seed, save_environment_seed
 from .suites import run_experiment_suite
 
 
@@ -26,6 +34,55 @@ DEFAULT_CHENGDU_PAPER_FIXED_CONFIG: dict[str, Any] = {
     "batch_size": 300,
     "prediction_window_seconds": 180,
 }
+
+
+@dataclass(frozen=True)
+class Exp1RoundSpec:
+    """Define one CAPA parameterization candidate for managed Exp-1 runs."""
+
+    name: str
+    rationale: str
+    capa_runner_kwargs: dict[str, float]
+
+
+DEFAULT_EXP1_ROUNDS: tuple[Exp1RoundSpec, ...] = (
+    Exp1RoundSpec(
+        name="paper-default",
+        rationale="Paper-default CAPA parameters.",
+        capa_runner_kwargs={
+            "utility_balance_gamma": 0.5,
+            "threshold_omega": 1.0,
+            "local_payment_ratio_zeta": 0.2,
+            "local_sharing_rate_mu1": 0.5,
+            "cross_platform_sharing_rate_mu2": 0.4,
+        },
+    ),
+    Exp1RoundSpec(
+        name="lower-threshold",
+        rationale="Lower Eq.7 threshold to keep more feasible parcels in local matching when CR lags.",
+        capa_runner_kwargs={
+            "utility_balance_gamma": 0.5,
+            "threshold_omega": 0.8,
+            "local_payment_ratio_zeta": 0.2,
+            "local_sharing_rate_mu1": 0.5,
+            "cross_platform_sharing_rate_mu2": 0.4,
+        },
+    ),
+    Exp1RoundSpec(
+        name="detour-favoring",
+        rationale="Favor detour efficiency while keeping the lower threshold when TR still lags.",
+        capa_runner_kwargs={
+            "utility_balance_gamma": 0.3,
+            "threshold_omega": 0.8,
+            "local_payment_ratio_zeta": 0.2,
+            "local_sharing_rate_mu1": 0.5,
+            "cross_platform_sharing_rate_mu2": 0.4,
+        },
+    ),
+)
+
+
+PAPER_EXECUTION_MODES = ("direct", "split", "point", "managed")
 
 
 def run_chengdu_paper_experiment(
@@ -63,6 +120,358 @@ def run_chengdu_paper_experiment(
     with (output_dir / "paper_manifest.json").open("w", encoding="utf-8") as handle:
         json.dump(manifest, handle, indent=2)
     return summary
+
+
+def run_chengdu_paper_point(
+    axis: str,
+    axis_value: int | float,
+    output_dir: Path,
+    algorithms: Sequence[str] = DEFAULT_CHENGDU_PAPER_ALGORITHMS,
+    fixed_config_overrides: dict[str, Any] | None = None,
+    seed_path: Path | None = None,
+    runner_overrides_by_algorithm: dict[str, dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Run one Chengdu paper comparison point and persist a point-level summary.
+
+    Args:
+        axis: Sweep axis name.
+        axis_value: Concrete point value on the axis.
+        output_dir: Point output directory.
+        algorithms: Algorithms evaluated at this point.
+        fixed_config_overrides: Base fixed Chengdu configuration.
+        seed_path: Optional canonical seed path reused across split points.
+        runner_overrides_by_algorithm: Optional per-algorithm runner overrides.
+
+    Returns:
+        One normalized point summary keyed by algorithm.
+    """
+
+    fixed_config = dict(DEFAULT_CHENGDU_PAPER_FIXED_CONFIG)
+    if fixed_config_overrides:
+        fixed_config.update(fixed_config_overrides)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    if axis == "num_parcels" and seed_path is not None:
+        point_spec = ExperimentPointSpec(
+            axis_name=axis,
+            axis_value=int(axis_value),
+            output_dir=output_dir,
+            algorithms=algorithms,
+            batch_size=int(fixed_config["batch_size"]),
+            runner_overrides_by_algorithm=runner_overrides_by_algorithm or {},
+        )
+        return run_seeded_comparison_point(
+            seed_path=seed_path,
+            point_spec=point_spec,
+            environment_deriver=lambda seed, value: derive_environment_from_seed(seed, num_parcels=value),
+            runner_builder=partial(_build_paper_runner, runner_overrides_by_algorithm=runner_overrides_by_algorithm or {}),
+        )
+    summary = run_comparison_sweep(
+        algorithms=algorithms,
+        output_dir=output_dir,
+        sweep_parameter=axis,
+        sweep_values=[axis_value],
+        fixed_config=fixed_config,
+        runner_builder=partial(_build_paper_runner, runner_overrides_by_algorithm=runner_overrides_by_algorithm or {}),
+        max_workers=None,
+    )
+    point_summary = summary["runs"][0]
+    with (output_dir / "summary.json").open("w", encoding="utf-8") as handle:
+        json.dump(point_summary, handle, indent=2)
+    return point_summary
+
+
+def run_chengdu_paper_split_experiment(
+    axis: str,
+    script_path: Path,
+    tmp_root: Path,
+    output_dir: Path,
+    algorithms: Sequence[str] = DEFAULT_CHENGDU_PAPER_ALGORITHMS,
+    fixed_config_overrides: dict[str, Any] | None = None,
+    preset_name: str = "formal",
+    poll_seconds: int = 30,
+    progress_mode: ProgressMode = "overwrite",
+    seed_path: Path | None = None,
+    runner_overrides_by_algorithm: dict[str, dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Run one paper sweep as independent point subprocesses with live progress.
+
+    Args:
+        axis: Sweep axis name.
+        script_path: Formal script path used for point subprocesses.
+        tmp_root: Temporary split root.
+        output_dir: Aggregate output directory.
+        algorithms: Algorithms evaluated at each point.
+        fixed_config_overrides: Base fixed Chengdu configuration.
+        preset_name: Preset name controlling sweep values.
+        poll_seconds: Poll interval for point subprocesses.
+        progress_mode: Terminal progress rendering mode.
+        seed_path: Optional canonical seed path reused across split points.
+        runner_overrides_by_algorithm: Optional per-algorithm runner overrides.
+
+    Returns:
+        Aggregate sweep summary.
+    """
+
+    fixed_config = dict(DEFAULT_CHENGDU_PAPER_FIXED_CONFIG)
+    if fixed_config_overrides:
+        fixed_config.update(fixed_config_overrides)
+    axis_values = PAPER_SUITE_PRESETS["chengdu-paper"][preset_name][axis]
+    if axis == "num_parcels" and seed_path is None:
+        canonical_environment = ChengduEnvironment.build(
+            data_dir=Path(fixed_config["data_dir"]),
+            num_parcels=max(int(value) for value in axis_values),
+            local_courier_count=int(fixed_config["local_couriers"]),
+            cooperating_platform_count=int(fixed_config["platforms"]),
+            couriers_per_platform=int(fixed_config["couriers_per_platform"]),
+            service_radius_km=fixed_config["service_radius_km"],
+            courier_capacity=fixed_config["courier_capacity"],
+        )
+        seed_path = tmp_root / "canonical_seed.pkl"
+        save_environment_seed(build_environment_seed(canonical_environment), seed_path)
+    split_spec = ExperimentSplitSpec(
+        experiment_label=_experiment_label_for_axis(axis),
+        axis_name=axis,
+        axis_values=tuple(axis_values),
+        tmp_root=tmp_root,
+        output_dir=output_dir,
+        algorithms=algorithms,
+        batch_size=int(fixed_config["batch_size"]),
+        poll_seconds=poll_seconds,
+        progress_mode=progress_mode,
+        runner_overrides_by_algorithm=runner_overrides_by_algorithm or {},
+    )
+
+    def point_command_builder(value: int | float, point_output_dir: Path) -> Sequence[str]:
+        """Build one point subprocess command routed back to the formal script."""
+
+        command: list[str] = [
+            sys.executable,
+            "-u",
+            str(script_path),
+            "--execution-mode",
+            "point",
+            "--point-value",
+            str(value),
+            "--output-dir",
+            str(point_output_dir),
+            "--algorithms",
+            *list(algorithms),
+            "--data-dir",
+            str(fixed_config["data_dir"]),
+            "--local-couriers",
+            str(fixed_config["local_couriers"]),
+            "--platforms",
+            str(fixed_config["platforms"]),
+            "--couriers-per-platform",
+            str(fixed_config["couriers_per_platform"]),
+            "--courier-capacity",
+            str(fixed_config["courier_capacity"]),
+            "--service-radius-km",
+            str(fixed_config["service_radius_km"]),
+            "--batch-size",
+            str(fixed_config["batch_size"]),
+        ]
+        if seed_path is not None:
+            command.extend(["--seed-path", str(seed_path)])
+        for algorithm, overrides in (runner_overrides_by_algorithm or {}).items():
+            if algorithm != "capa":
+                continue
+            command.extend(_build_capa_override_cli_args(overrides))
+        return command
+
+    def aggregate_summary_builder(point_output_dirs: dict[int | float, Path]) -> dict[str, Any]:
+        """Aggregate finished point summaries into one paper sweep summary."""
+
+        runs = []
+        for value in sorted(point_output_dirs):
+            with (point_output_dirs[value] / "summary.json").open("r", encoding="utf-8") as handle:
+                runs.append(json.load(handle))
+        summary = {
+            "sweep_parameter": axis,
+            "algorithms": list(algorithms),
+            "runs": runs,
+        }
+        output_dir.mkdir(parents=True, exist_ok=True)
+        with (output_dir / "summary.json").open("w", encoding="utf-8") as handle:
+            json.dump(summary, handle, indent=2)
+        from .plotting import save_comparison_plots
+
+        save_comparison_plots(summary=summary, output_dir=output_dir)
+        with (output_dir / "paper_manifest.json").open("w", encoding="utf-8") as handle:
+            json.dump(
+                {
+                    "axis": axis,
+                    "preset": preset_name,
+                    "algorithms": list(algorithms),
+                    "summary": str(output_dir / "summary.json"),
+                    "tmp_root": str(tmp_root),
+                    "seed_path": None if seed_path is None else str(seed_path),
+                    "execution_mode": "split",
+                },
+                handle,
+                indent=2,
+            )
+        return summary
+
+    return run_seeded_split_experiment(
+        split_spec=split_spec,
+        point_command_builder=point_command_builder,
+        aggregate_summary_builder=aggregate_summary_builder,
+    )
+
+
+def analyze_exp1_summary(
+    summary: dict[str, Any],
+    algorithms: Sequence[str],
+    round_spec: Exp1RoundSpec,
+    success_tr_ratio: float,
+    success_cr_gap: float,
+) -> dict[str, Any]:
+    """Score one Exp-1 managed round and decide whether CAPA is competitive enough."""
+
+    runs = summary["runs"]
+    capa_tr_values = [float(run["capa"]["metrics"]["TR"]) for run in runs]
+    capa_cr_values = [float(run["capa"]["metrics"]["CR"]) for run in runs]
+    capa_bpt_values = [float(run["capa"]["metrics"]["BPT"]) for run in runs]
+    baseline_algorithms = [name for name in algorithms if name != "capa"]
+    baseline_scores: dict[str, dict[str, float]] = {}
+    for algorithm in baseline_algorithms:
+        baseline_scores[algorithm] = {
+            "avg_TR": mean(float(run[algorithm]["metrics"]["TR"]) for run in runs),
+            "avg_CR": mean(float(run[algorithm]["metrics"]["CR"]) for run in runs),
+            "avg_BPT": mean(float(run[algorithm]["metrics"]["BPT"]) for run in runs),
+        }
+    capa_scores = {
+        "avg_TR": mean(capa_tr_values),
+        "avg_CR": mean(capa_cr_values),
+        "avg_BPT": mean(capa_bpt_values),
+    }
+    best_baseline_tr = max((score["avg_TR"] for score in baseline_scores.values()), default=0.0)
+    best_baseline_cr = max((score["avg_CR"] for score in baseline_scores.values()), default=0.0)
+    tr_ratio = 1.0 if best_baseline_tr <= 0 else capa_scores["avg_TR"] / best_baseline_tr
+    cr_gap = best_baseline_cr - capa_scores["avg_CR"]
+    accepted = tr_ratio >= success_tr_ratio and cr_gap <= success_cr_gap
+    if accepted:
+        recommendation = "accept"
+        diagnosis = "CAPA remains competitive on both revenue and completion rate under the managed threshold."
+    elif cr_gap > success_cr_gap:
+        recommendation = "retry-lower-threshold"
+        diagnosis = "CAPA completion rate lags the strongest baseline, so the next round lowers omega."
+    else:
+        recommendation = "retry-detour-favoring"
+        diagnosis = "CAPA completion stays close but TR lags, so the next round favors detour efficiency."
+    return {
+        "round": asdict(round_spec),
+        "accepted": accepted,
+        "recommendation": recommendation,
+        "diagnosis": diagnosis,
+        "capa_scores": capa_scores,
+        "baseline_scores": baseline_scores,
+        "best_baseline_TR": best_baseline_tr,
+        "best_baseline_CR": best_baseline_cr,
+        "tr_ratio_vs_best_baseline": tr_ratio,
+        "cr_gap_vs_best_baseline": cr_gap,
+    }
+
+
+def run_chengdu_exp1_managed(
+    script_path: Path,
+    tmp_root: Path,
+    final_output_dir: Path,
+    algorithms: Sequence[str] = DEFAULT_CHENGDU_PAPER_ALGORITHMS,
+    fixed_config_overrides: dict[str, Any] | None = None,
+    preset_name: str = "formal",
+    batch_size: int = 30,
+    poll_seconds: int = 30,
+    progress_mode: ProgressMode = "overwrite",
+    round_specs: Sequence[Exp1RoundSpec] = DEFAULT_EXP1_ROUNDS,
+    success_tr_ratio: float = 0.9,
+    success_cr_gap: float = 0.02,
+) -> dict[str, Any]:
+    """Run managed Exp-1 rounds through the formal paper entrypoint.
+
+    Args:
+        script_path: Formal Exp-1 script path used for round subprocesses.
+        tmp_root: Temporary managed root.
+        final_output_dir: Final accepted-round destination.
+        algorithms: Algorithms included in each round.
+        fixed_config_overrides: Base fixed Chengdu config.
+        preset_name: Exp-1 preset name.
+        batch_size: Shared batch size.
+        poll_seconds: Split poll interval.
+        progress_mode: Terminal progress rendering mode.
+        round_specs: Ordered CAPA parameter candidates.
+        success_tr_ratio: Minimum CAPA TR ratio versus best baseline.
+        success_cr_gap: Maximum allowed CAPA CR gap.
+
+    Returns:
+        Managed final manifest.
+    """
+
+    tmp_root.mkdir(parents=True, exist_ok=True)
+    framework_rounds = [
+        ManagedRoundSpec(
+            name=round_spec.name,
+            rationale=round_spec.rationale,
+            runner_overrides_by_algorithm={"capa": dict(round_spec.capa_runner_kwargs)},
+        )
+        for round_spec in round_specs
+    ]
+
+    def round_output_dir_builder(round_index: int, round_spec: ManagedRoundSpec) -> Path:
+        return tmp_root / f"round_{round_index:02d}_{round_spec.name}"
+
+    def round_executor(round_spec: ManagedRoundSpec, round_output_dir: Path) -> dict[str, Any]:
+        round_tmp_root = round_output_dir / "tmp"
+        return run_chengdu_paper_split_experiment(
+            axis="num_parcels",
+            script_path=script_path,
+            tmp_root=round_tmp_root,
+            output_dir=round_output_dir,
+            algorithms=algorithms,
+            fixed_config_overrides={
+                **(fixed_config_overrides or {}),
+                "batch_size": batch_size,
+            },
+            preset_name=preset_name,
+            poll_seconds=poll_seconds,
+            progress_mode=progress_mode,
+            runner_overrides_by_algorithm=dict(round_spec.runner_overrides_by_algorithm),
+        )
+
+    def round_analyzer(summary: dict[str, Any], round_spec: ManagedRoundSpec) -> dict[str, Any]:
+        translated = Exp1RoundSpec(
+            name=round_spec.name,
+            rationale=round_spec.rationale,
+            capa_runner_kwargs=dict(round_spec.runner_overrides_by_algorithm.get("capa", {})),
+        )
+        analysis = analyze_exp1_summary(
+            summary=summary,
+            algorithms=algorithms,
+            round_spec=translated,
+            success_tr_ratio=success_tr_ratio,
+            success_cr_gap=success_cr_gap,
+        )
+        round_output_dir = next(tmp_root.glob(f"round_*_{round_spec.name}"))
+        with (round_output_dir / "analysis.json").open("w", encoding="utf-8") as handle:
+            json.dump(analysis, handle, indent=2)
+        return analysis
+
+    def round_promoter(round_output_dir: Path) -> None:
+        if final_output_dir.exists():
+            shutil.rmtree(final_output_dir)
+        shutil.copytree(round_output_dir, final_output_dir)
+
+    manifest = run_managed_rounds(
+        round_specs=framework_rounds,
+        round_output_dir_builder=round_output_dir_builder,
+        round_executor=round_executor,
+        round_analyzer=round_analyzer,
+        round_promoter=round_promoter,
+    )
+    with (tmp_root / "final_manifest.json").open("w", encoding="utf-8") as handle:
+        json.dump(manifest, handle, indent=2)
+    return manifest
 
 
 def run_chengdu_paper_suite(
@@ -138,6 +547,12 @@ def build_script_parser(description: str) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=description)
     parser.add_argument("--data-dir", default="Data", help="Path to the Chengdu data directory.")
     parser.add_argument("--output-dir", required=True, help="Directory for plots and summary files.")
+    parser.add_argument("--execution-mode", choices=PAPER_EXECUTION_MODES, default="direct")
+    parser.add_argument("--point-value", type=float, default=None, help="Single sweep-point value used by point mode.")
+    parser.add_argument("--tmp-root", default=None, help="Temporary split root used by split or managed runs.")
+    parser.add_argument("--seed-path", default=None, help="Optional canonical seed path reused by point/split runs.")
+    parser.add_argument("--poll-seconds", type=int, default=30, help="Split progress polling interval in seconds.")
+    parser.add_argument("--progress-mode", choices=("overwrite", "append", "auto"), default="overwrite")
     parser.add_argument("--preset", default="formal", choices=tuple(PAPER_SUITE_PRESETS["chengdu-paper"].keys()), help="Paper preset to execute.")
     parser.add_argument(
         "--algorithms",
@@ -153,6 +568,13 @@ def build_script_parser(description: str) -> argparse.ArgumentParser:
     parser.add_argument("--courier-capacity", type=float, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["courier_capacity"])
     parser.add_argument("--service-radius-km", type=float, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["service_radius_km"])
     parser.add_argument("--batch-size", type=int, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["batch_size"])
+    parser.add_argument("--success-tr-ratio", type=float, default=0.9)
+    parser.add_argument("--success-cr-gap", type=float, default=0.02)
+    parser.add_argument("--utility-balance-gamma", type=float, default=None)
+    parser.add_argument("--threshold-omega", type=float, default=None)
+    parser.add_argument("--local-payment-ratio-zeta", type=float, default=None)
+    parser.add_argument("--local-sharing-rate-mu1", type=float, default=None)
+    parser.add_argument("--cross-platform-sharing-rate-mu2", type=float, default=None)
     return parser
 
 
@@ -169,3 +591,63 @@ def build_fixed_config_from_args(args: argparse.Namespace) -> dict[str, Any]:
         "batch_size": args.batch_size,
         "prediction_window_seconds": 180,
     }
+
+
+def build_capa_runner_overrides_from_args(args: argparse.Namespace) -> dict[str, dict[str, Any]]:
+    """Translate optional CLI CAPA parameter overrides into runner override payloads."""
+
+    overrides = {
+        key: value
+        for key, value in {
+            "utility_balance_gamma": args.utility_balance_gamma,
+            "threshold_omega": args.threshold_omega,
+            "local_payment_ratio_zeta": args.local_payment_ratio_zeta,
+            "local_sharing_rate_mu1": args.local_sharing_rate_mu1,
+            "cross_platform_sharing_rate_mu2": args.cross_platform_sharing_rate_mu2,
+        }.items()
+        if value is not None
+    }
+    return {} if not overrides else {"capa": overrides}
+
+
+def _build_paper_runner(
+    algorithm_name: str,
+    runner_overrides_by_algorithm: dict[str, dict[str, Any]] | None = None,
+    **kwargs: object,
+) -> Any:
+    """Build one algorithm runner while honoring optional per-algorithm overrides."""
+
+    merged_kwargs = dict(kwargs)
+    if runner_overrides_by_algorithm and algorithm_name in runner_overrides_by_algorithm:
+        merged_kwargs.update(dict(runner_overrides_by_algorithm[algorithm_name]))
+    return build_algorithm_runner(algorithm_name, **merged_kwargs)
+
+
+def _experiment_label_for_axis(axis: str) -> str:
+    """Return the human-readable experiment title for one paper axis."""
+
+    labels = {
+        "num_parcels": "Exp-1",
+        "local_couriers": "Exp-2",
+        "service_radius": "Exp-3",
+        "platforms": "Exp-4",
+        "courier_capacity": "Exp-6",
+    }
+    return labels.get(axis, "Experiment")
+
+
+def _build_capa_override_cli_args(capa_runner_kwargs: dict[str, Any]) -> list[str]:
+    """Translate CAPA override kwargs into CLI arguments for formal point scripts."""
+
+    mapping = {
+        "utility_balance_gamma": "--utility-balance-gamma",
+        "threshold_omega": "--threshold-omega",
+        "local_payment_ratio_zeta": "--local-payment-ratio-zeta",
+        "local_sharing_rate_mu1": "--local-sharing-rate-mu1",
+        "cross_platform_sharing_rate_mu2": "--cross-platform-sharing-rate-mu2",
+    }
+    args: list[str] = []
+    for key, flag in mapping.items():
+        if key in capa_runner_kwargs:
+            args.extend([flag, str(capa_runner_kwargs[key])])
+    return args

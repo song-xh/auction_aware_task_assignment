@@ -171,16 +171,17 @@ python3 experiments/run_chengdu_paper_suite.py --output-dir outputs/plots/chengd
 如果要按受控方式运行 `exp_1`，并在 `batch_size=30s` 下做多轮 CAPA 参数试验、把每轮结果先写到 `/tmp`，可以使用：
 
 ```bash
-python3 experiments/run_exp1_managed.py \
+python3 experiments/run_chengdu_exp1_num_parcels.py \
+  --execution-mode managed \
   --tmp-root /tmp/exp1_managed \
-  --final-output-dir /tmp/exp1_selected \
+  --output-dir /tmp/exp1_selected \
   --preset formal \
   --algorithms capa greedy ramcom mra basegta impgta \
   --batch-size 30 \
-  --max-workers 4
+  --poll-seconds 10
 ```
 
-`run_exp1_managed.py` 的行为是：
+`run_chengdu_exp1_num_parcels.py --execution-mode managed` 的行为是：
 
 - 固定 `exp_1` 轴为 `TR / CR / BPT vs |Γ|`
 - 使用 formal 点位 `1000 / 2000 / 3000 / 5000`
@@ -244,35 +245,55 @@ python3 experiments/run_exp1_managed.py \
 推荐的正式实验命令：
 
 ```bash
-python3 -u experiments/run_exp1_split.py --tmp-root /tmp/exp1_formal_20260405 --output-dir outputs/plots/exp1_formal_20260405 --algorithms capa greedy basegta impgta mra ramcom --data-dir Data --local-couriers 200 --platforms 4 --couriers-per-platform 50 --courier-capacity 50 --service-radius-km 1.0 --batch-size 30 --poll-seconds 10
+python3 -u experiments/run_chengdu_exp1_num_parcels.py \
+  --execution-mode split \
+  --tmp-root /tmp/exp1_formal_20260405 \
+  --output-dir outputs/plots/exp1_formal_20260405 \
+  --algorithms capa greedy basegta impgta mra ramcom \
+  --data-dir Data \
+  --local-couriers 200 \
+  --platforms 4 \
+  --couriers-per-platform 50 \
+  --courier-capacity 50 \
+  --service-radius-km 1.0 \
+  --batch-size 30 \
+  --poll-seconds 10
 
 python3 experiments/run_chengdu_exp2_couriers.py \
+  --execution-mode split \
   --output-dir outputs/plots/exp2_couriers \
+  --tmp-root /tmp/exp2_couriers \
   --preset formal \
   --algorithms capa greedy ramcom mra basegta impgta \
-  --max-workers 4
+  --poll-seconds 10
 
 python3 experiments/run_chengdu_exp3_radius.py \
+  --execution-mode split \
   --output-dir outputs/plots/exp3_radius \
+  --tmp-root /tmp/exp3_radius \
   --preset formal \
   --algorithms capa greedy ramcom mra basegta impgta \
-  --max-workers 4
+  --poll-seconds 10
 
 python3 experiments/run_chengdu_exp4_platforms.py \
+  --execution-mode split \
   --output-dir outputs/plots/exp4_platforms \
+  --tmp-root /tmp/exp4_platforms \
   --preset formal \
   --algorithms capa greedy ramcom mra basegta impgta \
-  --max-workers 4
+  --poll-seconds 10
 
 python3 experiments/run_chengdu_exp5_default_compare.py \
   --output-dir outputs/plots/exp5_default_compare \
   --algorithms capa greedy ramcom mra basegta impgta
 
 python3 experiments/run_chengdu_exp6_capacity.py \
+  --execution-mode split \
   --output-dir outputs/plots/exp6_capacity \
+  --tmp-root /tmp/exp6_capacity \
   --preset formal \
   --algorithms capa greedy ramcom mra basegta impgta \
-  --max-workers 4
+  --poll-seconds 10
 ```
 
 如果要一次性跑完整套：
