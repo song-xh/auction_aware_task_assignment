@@ -14,7 +14,9 @@ from typing import Any, Sequence
 
 from algorithms.registry import build_algorithm_runner
 from env.chengdu import ChengduEnvironment
-from experiments.framework import ExperimentPointSpec, ExperimentSplitSpec, ManagedRoundSpec, run_managed_rounds, run_seeded_comparison_point, run_seeded_split_experiment
+from experiments.config import ExperimentConfig, apply_sweep_axis
+from experiments.framework import ExperimentPointSpec, ExperimentSplitSpec, ManagedRoundSpec, run_environment_comparison_point, run_managed_rounds, run_seeded_comparison_point, run_seeded_split_experiment
+from experiments.progress import build_point_progress_snapshot, write_point_progress
 from .compare import run_comparison_sweep
 from .paper_config import DEFAULT_CHENGDU_PAPER_ALGORITHMS, PAPER_SUITE_PRESETS
 from .plotting import save_default_comparison_plots
@@ -150,6 +152,13 @@ def run_chengdu_paper_point(
     if fixed_config_overrides:
         fixed_config.update(fixed_config_overrides)
     output_dir.mkdir(parents=True, exist_ok=True)
+    _write_point_bootstrap_progress(
+        output_dir=output_dir,
+        axis=axis,
+        axis_value=axis_value,
+        total_algorithms=len(algorithms),
+        detail=f"building environment for {axis}={axis_value}",
+    )
     if axis == "num_parcels" and seed_path is not None:
         point_spec = ExperimentPointSpec(
             axis_name=axis,
@@ -165,19 +174,35 @@ def run_chengdu_paper_point(
             environment_deriver=lambda seed, value: derive_environment_from_seed(seed, num_parcels=value),
             runner_builder=partial(_build_paper_runner, runner_overrides_by_algorithm=runner_overrides_by_algorithm or {}),
         )
-    summary = run_comparison_sweep(
-        algorithms=algorithms,
-        output_dir=output_dir,
-        sweep_parameter=axis,
-        sweep_values=[axis_value],
-        fixed_config=fixed_config,
-        runner_builder=partial(_build_paper_runner, runner_overrides_by_algorithm=runner_overrides_by_algorithm or {}),
-        max_workers=None,
+    point_config = apply_sweep_axis(
+        ExperimentConfig(
+            data_dir=Path(fixed_config["data_dir"]),
+            num_parcels=int(fixed_config["num_parcels"]),
+            local_couriers=int(fixed_config["local_couriers"]),
+            platforms=int(fixed_config["platforms"]),
+            couriers_per_platform=int(fixed_config["couriers_per_platform"]),
+            batch_size=int(fixed_config["batch_size"]),
+            prediction_window_seconds=int(fixed_config["prediction_window_seconds"]),
+            service_radius_km=float(fixed_config["service_radius_km"]) if fixed_config["service_radius_km"] is not None else None,
+            courier_capacity=float(fixed_config["courier_capacity"]) if fixed_config["courier_capacity"] is not None else None,
+        ),
+        axis,
+        axis_value,
     )
-    point_summary = summary["runs"][0]
-    with (output_dir / "summary.json").open("w", encoding="utf-8") as handle:
-        json.dump(point_summary, handle, indent=2)
-    return point_summary
+    environment = ChengduEnvironment.build(**point_config.as_environment_kwargs())
+    point_spec = ExperimentPointSpec(
+        axis_name=axis,
+        axis_value=axis_value,
+        output_dir=output_dir,
+        algorithms=algorithms,
+        batch_size=int(fixed_config["batch_size"]),
+        runner_overrides_by_algorithm=runner_overrides_by_algorithm or {},
+    )
+    return run_environment_comparison_point(
+        environment=environment,
+        point_spec=point_spec,
+        runner_builder=partial(_build_paper_runner, runner_overrides_by_algorithm=runner_overrides_by_algorithm or {}),
+    )
 
 
 def run_chengdu_paper_split_experiment(
@@ -651,3 +676,35 @@ def _build_capa_override_cli_args(capa_runner_kwargs: dict[str, Any]) -> list[st
         if key in capa_runner_kwargs:
             args.extend([flag, str(capa_runner_kwargs[key])])
     return args
+
+
+def _write_point_bootstrap_progress(
+    output_dir: Path,
+    axis: str,
+    axis_value: int | float,
+    total_algorithms: int,
+    detail: str,
+) -> None:
+    """Persist an initial point-progress snapshot before environment construction starts.
+
+    Args:
+        output_dir: Point-level output directory.
+        axis: Sweep axis name.
+        axis_value: Concrete point value.
+        total_algorithms: Number of algorithms in the point.
+        detail: Human-readable startup detail text.
+    """
+
+    write_point_progress(
+        output_dir / "progress.json",
+        build_point_progress_snapshot(
+            axis_name=axis,
+            axis_value=axis_value,
+            algorithm="-",
+            algorithm_index=0,
+            total_algorithms=total_algorithms,
+            completed_algorithms=[],
+            state="running",
+            last_event={"phase": "initializing", "detail": detail},
+        ),
+    )
