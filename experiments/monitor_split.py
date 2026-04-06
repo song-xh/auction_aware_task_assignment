@@ -1,4 +1,4 @@
-"""External monitoring helpers for split-process Exp-1 runs."""
+"""External monitoring helpers for generic split-process Chengdu paper runs."""
 
 from __future__ import annotations
 
@@ -13,10 +13,10 @@ from experiments.progress import enrich_split_snapshot, read_point_progress
 
 
 def collect_split_progress(tmp_root: Path) -> dict[str, Any]:
-    """Collect one normalized progress snapshot from a split Exp-1 temp root.
+    """Collect one normalized progress snapshot from a split temp root.
 
     Args:
-        tmp_root: Temporary root used by `run_exp1_split.py`.
+        tmp_root: Temporary root used by one split-process paper experiment.
 
     Returns:
         One progress dictionary summarizing point and algorithm completion.
@@ -54,12 +54,14 @@ def collect_split_progress(tmp_root: Path) -> dict[str, Any]:
         }
     return enrich_split_snapshot(
         {
-        "state": status.get("state", "unknown"),
-        "updated_at": status.get("updated_at"),
-        "tmp_root": str(tmp_root),
-        "total_points": len(points),
-        "completed_points": completed_points,
-        "points": points,
+            "state": status.get("state", "unknown"),
+            "experiment_label": status.get("experiment_label", "Experiment"),
+            "axis_name": status.get("axis_name", "point"),
+            "updated_at": status.get("updated_at"),
+            "tmp_root": str(tmp_root),
+            "total_points": len(points),
+            "completed_points": completed_points,
+            "points": points,
         }
     )
 
@@ -71,10 +73,10 @@ def monitor_split_progress(
     poll_seconds: int = 30,
     max_iterations: int | None = None,
 ) -> dict[str, Any]:
-    """Monitor one split Exp-1 run and write rolling snapshots plus append-only logs.
+    """Monitor one split run and write rolling snapshots plus append-only logs.
 
     Args:
-        tmp_root: Temporary root used by `run_exp1_split.py`.
+        tmp_root: Temporary root used by the split experiment.
         snapshot_path: JSON snapshot output path.
         log_path: Append-only text log path.
         poll_seconds: Sleep interval between polls.
@@ -111,7 +113,7 @@ def _append_log_line(log_path: Path, snapshot: dict[str, Any]) -> None:
     """
 
     point_parts = []
-    for point_value in sorted(snapshot["points"], key=lambda value: int(value)):
+    for point_value in sorted(snapshot["points"], key=lambda value: int(float(value))):
         point = snapshot["points"][point_value]
         algorithms = ",".join(point["completed_algorithms"]) or "-"
         suffix = "done" if point["point_complete"] else "running"
@@ -120,6 +122,7 @@ def _append_log_line(log_path: Path, snapshot: dict[str, Any]) -> None:
         point_parts.append(f"{point_value}:algos={algorithms}:current={current_algorithm}:detail={detail}:state={suffix}")
     line = (
         f"{datetime.now().isoformat(timespec='seconds')} "
+        f"experiment={snapshot.get('experiment_label', 'Experiment')} "
         f"state={snapshot['state']} "
         f"completed_points={snapshot['completed_points']}/{snapshot['total_points']} "
         f"completed_algorithms={snapshot.get('completed_algorithm_units', 0.0):.2f}/{max(snapshot.get('total_algorithm_units', 1.0), 1.0):.0f} "
@@ -130,9 +133,9 @@ def _append_log_line(log_path: Path, snapshot: dict[str, Any]) -> None:
 
 
 def main() -> int:
-    """Parse CLI arguments and start monitoring one split Exp-1 run."""
+    """Parse CLI arguments and start monitoring one split-process experiment."""
 
-    parser = argparse.ArgumentParser(description="Monitor a split-process Exp-1 run from /tmp.")
+    parser = argparse.ArgumentParser(description="Monitor a split-process Chengdu paper run from /tmp.")
     parser.add_argument("--tmp-root", required=True)
     parser.add_argument("--snapshot-path", required=True)
     parser.add_argument("--log-path", required=True)

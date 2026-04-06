@@ -21,7 +21,7 @@ class ExperimentPointSpec:
     """
 
     axis_name: str
-    axis_value: int
+    axis_value: int | float
     output_dir: Path
     algorithms: Sequence[str]
     batch_size: int
@@ -33,6 +33,7 @@ class ExperimentSplitSpec:
     """Describe one split-process seeded comparison experiment.
 
     Args:
+        experiment_label: Human-readable experiment title shown in progress output.
         axis_name: Sweep axis name.
         axis_values: Ordered sweep values.
         tmp_root: Temporary directory for process logs and point outputs.
@@ -44,8 +45,9 @@ class ExperimentSplitSpec:
         runner_overrides_by_algorithm: Optional algorithm-specific runner kwargs.
     """
 
+    experiment_label: str
     axis_name: str
-    axis_values: Sequence[int]
+    axis_values: Sequence[int | float]
     tmp_root: Path
     output_dir: Path
     algorithms: Sequence[str]

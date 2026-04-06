@@ -7,8 +7,24 @@ import time
 from pathlib import Path
 from typing import Any, Literal, Mapping
 
+from rich.console import Group
+from rich.panel import Panel
+from rich.progress import BarColumn, Progress, TextColumn
+from rich.table import Table
+from rich.text import Text
+
 
 ProgressMode = Literal["overwrite", "append", "auto"]
+
+
+AXIS_LABELS: dict[str, str] = {
+    "num_parcels": "|Γ|",
+    "local_couriers": "|C|",
+    "service_radius": "rad",
+    "platforms": "|P|",
+    "courier_capacity": "cap",
+    "batch_size": "Δb",
+}
 
 
 def render_progress_bar(completed: float, total: float, width: int = 36) -> str:
@@ -134,9 +150,12 @@ def format_split_progress_snapshot(snapshot: Mapping[str, Any]) -> str:
     """
 
     enriched = enrich_split_snapshot(snapshot)
+    axis_name = str(enriched.get("axis_name", "point"))
+    axis_label = AXIS_LABELS.get(axis_name, axis_name)
     lines = [
         (
-            f"Exp-1 state={enriched.get('state', 'unknown')} "
+            f"{enriched.get('experiment_label', 'Experiment')} "
+            f"state={enriched.get('state', 'unknown')} "
             f"points={enriched.get('completed_points', 0)}/{enriched.get('total_points', 0)} "
             f"algorithms_per_point={enriched.get('algorithms_per_point', 0)} "
             f"algorithm_runs={enriched['completed_algorithm_units']:.2f}/{max(enriched['total_algorithm_units'], 1.0):.0f}"
@@ -155,7 +174,7 @@ def format_split_progress_snapshot(snapshot: Mapping[str, Any]) -> str:
         detail = last_event.get("detail") or "-"
         completed_algorithms = ",".join(point.get("completed_algorithms", [])) or "-"
         lines.append(
-            f"|Γ|={point_value} done={completed_algorithms} algo={algorithm_index}/{total_algorithms}:{current_algorithm} phase={phase} detail={detail}"
+            f"{axis_label}={point_value} done={completed_algorithms} algo={algorithm_index}/{total_algorithms}:{current_algorithm} phase={phase} detail={detail}"
         )
     lines.append(f"Overall {render_progress_bar(enriched['completed_algorithm_units'], max(enriched['total_algorithm_units'], 1.0))}")
     return "\n".join(lines)
@@ -175,6 +194,72 @@ def render_terminal_progress_block(rendered_snapshot: str, overwrite: bool) -> s
     if overwrite:
         return f"\x1b[2J\x1b[H{rendered_snapshot}"
     return rendered_snapshot
+
+
+def build_split_progress_renderable(snapshot: Mapping[str, Any]) -> Panel:
+    """Build a Rich renderable for one split experiment progress snapshot.
+
+    Args:
+        snapshot: Enriched or raw split progress snapshot.
+
+    Returns:
+        One Rich panel containing summary metadata, point rows, and total progress.
+    """
+
+    enriched = enrich_split_snapshot(snapshot)
+    axis_name = str(enriched.get("axis_name", "point"))
+    axis_label = AXIS_LABELS.get(axis_name, axis_name)
+    header = Text(
+        f"{enriched.get('experiment_label', 'Experiment')}  "
+        f"state={enriched.get('state', 'unknown')}  "
+        f"points={enriched.get('completed_points', 0)}/{enriched.get('total_points', 0)}  "
+        f"algorithms/point={enriched.get('algorithms_per_point', 0)}  "
+        f"algorithm_runs={enriched['completed_algorithm_units']:.2f}/{max(enriched['total_algorithm_units'], 1.0):.0f}",
+        style="bold",
+    )
+    updated_at = enriched.get("updated_at")
+    updated_text = Text()
+    if updated_at is not None:
+        updated_text.append(
+            f"Updated: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(float(updated_at)))}",
+            style="dim",
+        )
+
+    table = Table(show_header=True, header_style="bold cyan", expand=True)
+    table.add_column(axis_label, justify="right", no_wrap=True)
+    table.add_column("Done", overflow="fold")
+    table.add_column("Algo", no_wrap=True)
+    table.add_column("Phase", no_wrap=True)
+    table.add_column("Detail", overflow="fold")
+    for point_value in sorted(enriched["points"], key=lambda value: float(value)):
+        point = enriched["points"][point_value]
+        completed_algorithms = ",".join(point.get("completed_algorithms", [])) or "-"
+        current_algorithm = point.get("current_algorithm") or "-"
+        algorithm_index = point.get("algorithm_index") or max(0, len(point.get("completed_algorithms", [])))
+        total_algorithms = point.get("total_algorithms") or enriched.get("algorithms_per_point", 0)
+        last_event = point.get("last_event") or {}
+        phase = str(last_event.get("phase") or point.get("state") or "waiting")
+        detail = str(last_event.get("detail") or "-")
+        table.add_row(
+            str(point_value),
+            completed_algorithms,
+            f"{algorithm_index}/{total_algorithms}:{current_algorithm}",
+            phase,
+            detail,
+        )
+
+    overall = Progress(
+        TextColumn("[bold]Overall"),
+        BarColumn(bar_width=40),
+        TextColumn("{task.percentage:>5.1f}%"),
+        expand=True,
+    )
+    overall.add_task(
+        "overall",
+        total=max(float(enriched["total_algorithm_units"]), 1.0),
+        completed=float(enriched["completed_algorithm_units"]),
+    )
+    return Panel(Group(header, updated_text, table, overall), border_style="blue")
 
 
 def resolve_progress_mode(mode: ProgressMode) -> Literal["overwrite", "append"]:
