@@ -11,9 +11,9 @@
       "cross_platform_sharing_rate_mu2": 0.4
     },
     "metrics": {
-      "TR": 18300.568248027517,
+      "TR": 17544.785223325856,
       "CR": 0.999,
-      "BPT": 2.0117563819044335,
+      "BPT": 1.0988806839422978,
       "delivered_parcels": 2997,
       "accepted_assignments": 2997
     }
@@ -22,54 +22,54 @@
     "algorithm": "greedy",
     "batch_size": 30,
     "metrics": {
-      "TR": 9274.015999999818,
-      "CR": 0.45966666666666667,
-      "BPT": 5.03719029592321,
-      "delivered_parcels": 1379,
-      "accepted_assignments": 1379
+      "TR": 8404.87999999985,
+      "CR": 0.416,
+      "BPT": 1.523035423913825,
+      "delivered_parcels": 1248,
+      "accepted_assignments": 1248
     }
   },
   "basegta": {
     "algorithm": "basegta",
     "metrics": {
-      "TR": 21145.23344000021,
-      "CR": 0.9936666666666667,
-      "BPT": 2.255062671010819,
-      "delivered_parcels": 2981,
-      "accepted_assignments": 2981
+      "TR": 21096.3439300002,
+      "CR": 0.9913333333333333,
+      "BPT": 1.0372723803448025,
+      "delivered_parcels": 2974,
+      "accepted_assignments": 2974
     }
   },
   "impgta": {
     "algorithm": "impgta",
     "prediction_window_seconds": 180,
     "metrics": {
-      "TR": 23229.017190000184,
-      "CR": 0.9786666666666667,
-      "BPT": 4.760949293511658,
-      "delivered_parcels": 2936,
-      "accepted_assignments": 2936
+      "TR": 23282.006120000122,
+      "CR": 0.9806666666666667,
+      "BPT": 1.9986521599093976,
+      "delivered_parcels": 2942,
+      "accepted_assignments": 2942
     }
   },
   "mra": {
     "algorithm": "mra",
     "batch_size": 30,
     "metrics": {
-      "TR": 7838.879999999898,
-      "CR": 0.379,
-      "BPT": 80.26876511159207,
-      "delivered_parcels": 1137,
-      "accepted_assignments": 1137
+      "TR": 8009.007999999881,
+      "CR": 0.39266666666666666,
+      "BPT": 26.728138106604092,
+      "delivered_parcels": 1178,
+      "accepted_assignments": 1178
     }
   },
   "ramcom": {
     "algorithm": "ramcom",
     "random_seed": 1,
     "metrics": {
-      "TR": 9312.315999999826,
-      "CR": 0.6943333333333334,
-      "BPT": 8.74695497821449,
-      "delivered_parcels": 2083,
-      "accepted_assignments": 2083
+      "TR": 7743.38799999987,
+      "CR": 0.6493333333333333,
+      "BPT": 2.9223558498342754,
+      "delivered_parcels": 1948,
+      "accepted_assignments": 1948
     }
   }
 }
