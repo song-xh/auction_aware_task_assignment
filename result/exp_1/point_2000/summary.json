@@ -11,9 +11,9 @@
       "cross_platform_sharing_rate_mu2": 0.4
     },
     "metrics": {
-      "TR": 12687.722613835911,
+      "TR": 11905.111659384202,
       "CR": 1.0,
-      "BPT": 1.2342147350468622,
+      "BPT": 0.7201435649785708,
       "delivered_parcels": 2000,
       "accepted_assignments": 2000
     }
@@ -22,54 +22,54 @@
     "algorithm": "greedy",
     "batch_size": 30,
     "metrics": {
-      "TR": 6761.151999999924,
-      "CR": 0.5,
-      "BPT": 3.6128799749894824,
-      "delivered_parcels": 1000,
-      "accepted_assignments": 1000
+      "TR": 6353.951999999939,
+      "CR": 0.4685,
+      "BPT": 1.7847489420692,
+      "delivered_parcels": 937,
+      "accepted_assignments": 937
     }
   },
   "basegta": {
     "algorithm": "basegta",
     "metrics": {
-      "TR": 14074.525299999788,
-      "CR": 0.9935,
-      "BPT": 1.5555155298679892,
-      "delivered_parcels": 1987,
-      "accepted_assignments": 1987
+      "TR": 14054.189399999783,
+      "CR": 0.992,
+      "BPT": 0.8733828930235177,
+      "delivered_parcels": 1984,
+      "accepted_assignments": 1984
     }
   },
   "impgta": {
     "algorithm": "impgta",
     "prediction_window_seconds": 180,
     "metrics": {
-      "TR": 15418.035469999992,
-      "CR": 0.977,
-      "BPT": 3.000643439771011,
-      "delivered_parcels": 1954,
-      "accepted_assignments": 1954
+      "TR": 15487.013779999961,
+      "CR": 0.9815,
+      "BPT": 1.9598592620823183,
+      "delivered_parcels": 1963,
+      "accepted_assignments": 1963
     }
   },
   "mra": {
     "algorithm": "mra",
     "batch_size": 30,
     "metrics": {
-      "TR": 6225.903999999962,
-      "CR": 0.448,
-      "BPT": 48.25912244589745,
-      "delivered_parcels": 896,
-      "accepted_assignments": 896
+      "TR": 6442.607999999946,
+      "CR": 0.471,
+      "BPT": 17.695436996773424,
+      "delivered_parcels": 942,
+      "accepted_assignments": 942
     }
   },
   "ramcom": {
     "algorithm": "ramcom",
     "random_seed": 1,
     "metrics": {
-      "TR": 6804.899999999929,
-      "CR": 0.7555,
-      "BPT": 5.122569082981499,
-      "delivered_parcels": 1511,
-      "accepted_assignments": 1511
+      "TR": 6094.479999999945,
+      "CR": 0.7275,
+      "BPT": 4.560643907941994,
+      "delivered_parcels": 1455,
+      "accepted_assignments": 1455
     }
   }
 }
