@@ -277,6 +277,32 @@ This keeps `findNode()` and shortest-path lookup on the main road-network compon
 and removes the cross-process instability that previously collapsed some runs to tiny
 islands.
 
+## 12. Shortlist-driven CAPA warmup
+
+The Chengdu CAPA adapter previously warmed exact route-network distances for the full
+Cartesian product of:
+
+- active courier route segments
+- current batch parcels
+
+before CAMA or DAPA had filtered obviously infeasible courier-task pairs.
+
+The runner now splits candidate preparation into two stages:
+
+- a cheap shortlist stage using only:
+  - courier availability
+  - residual capacity
+  - geometric deadline lower bound
+  - geometric service-radius lower bound
+- an exact stage that reuses that shortlist for:
+  - `BatchDistanceMatrix.precompute_for_candidate_pairs`
+  - `run_cama(..., candidate_couriers_by_parcel=...)`
+  - `run_dapa(..., candidate_couriers_by_parcel=...)`
+
+This keeps exact routing and insertion search on the same paper-faithful candidate
+set, while avoiding the old full-cartesian warmup cost for courier-task pairs that
+were guaranteed to fail anyway.
+
 - `ChengduEnvironment` carries `geo_index` and `travel_speed_m_per_s`
 - environment seeding and cloning preserve that context for `compare`, `sweep`, and `suite`
 - the unified CAPA runner passes it into the batch runner

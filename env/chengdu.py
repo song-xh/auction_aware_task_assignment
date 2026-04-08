@@ -11,8 +11,8 @@ from typing import Any, Callable, Dict, Iterable, List, Mapping, MutableSequence
 
 from capa.batch_distance import BatchDistanceMatrix, PersistentDirectedDistanceCache
 from capa.cache import InsertionCache
-from capa.cama import run_cama
-from capa.dapa import run_dapa
+from capa.cama import build_local_candidate_shortlist, run_cama
+from capa.dapa import build_cross_candidate_shortlist, run_dapa
 from capa.geo import GeoIndex
 from capa.metrics import build_run_metrics
 from capa.models import Assignment, BatchReport, CAPAConfig, CAPAResult, CooperatingPlatform, Courier, Parcel
@@ -789,7 +789,19 @@ def run_time_stepped_chengdu_batches(
         insertion_cache.prune_to_active_routes(local_snapshots)
         batch_parcels = [legacy_task_to_parcel(task) for task in eligible_tasks]
         bdm = BatchDistanceMatrix(timed_travel_model)
-        bdm.precompute_for_insertions(local_snapshots, batch_parcels)
+        local_shortlist = build_local_candidate_shortlist(
+            batch_parcels,
+            local_snapshots,
+            now=current_time,
+            service_radius_meters=service_radius_meters,
+            geo_index=geo_index,
+            speed_m_per_s=speed_m_per_s,
+        )
+        bdm.precompute_for_candidate_pairs(
+            (courier, parcel)
+            for parcel in batch_parcels
+            for courier in local_shortlist.get(parcel.parcel_id, ())
+        )
         cama_result = run_cama(
             batch_parcels,
             local_snapshots,
@@ -801,6 +813,7 @@ def run_time_stepped_chengdu_batches(
             insertion_cache=insertion_cache,
             geo_index=geo_index,
             speed_m_per_s=speed_m_per_s,
+            candidate_couriers_by_parcel=local_shortlist,
             progress_callback=(
                 None
                 if progress_callback is None
@@ -850,7 +863,20 @@ def run_time_stepped_chengdu_batches(
             }
             partner_snapshots = [courier for platform in partner_platforms for courier in platform.couriers]
             insertion_cache.prune_to_active_routes([*local_snapshots, *partner_snapshots])
-            bdm.precompute_for_insertions(partner_snapshots, remaining_parcels)
+            cross_shortlist = build_cross_candidate_shortlist(
+                remaining_parcels,
+                partner_platforms,
+                now=current_time,
+                service_radius_meters=service_radius_meters,
+                geo_index=geo_index,
+                speed_m_per_s=speed_m_per_s,
+            )
+            bdm.precompute_for_candidate_pairs(
+                (courier, parcel)
+                for parcel in remaining_parcels
+                for platform_couriers in cross_shortlist.get(parcel.parcel_id, {}).values()
+                for courier in platform_couriers
+            )
             dapa_result = run_dapa(
                 remaining_parcels,
                 partner_platforms,
@@ -862,6 +888,7 @@ def run_time_stepped_chengdu_batches(
                 insertion_cache=insertion_cache,
                 geo_index=geo_index,
                 speed_m_per_s=speed_m_per_s,
+                candidate_couriers_by_parcel=cross_shortlist,
                 progress_callback=(
                     None
                     if progress_callback is None

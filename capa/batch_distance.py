@@ -117,8 +117,24 @@ class BatchDistanceMatrix:
         - the detour prefix `start -> parcel`
         - the detour suffix `parcel -> end`
         """
+        self.precompute_for_candidate_pairs(
+            (courier, parcel)
+            for courier in couriers
+            for parcel in parcels
+        )
+
+    def precompute_for_candidate_pairs(self, candidate_pairs: Iterable[tuple[Any, Any]]) -> None:
+        """Warm only the directed pairs required by explicit courier-parcel candidates."""
+
+        parcel_locations_by_courier: dict[Hashable, tuple[Any, dict[Hashable, None]]] = {}
         pairs: list[tuple[Hashable, Hashable]] = []
-        for courier in couriers:
+        for courier, parcel in candidate_pairs:
+            courier_key = getattr(courier, "courier_id", id(courier))
+            parcel_location = getattr(parcel, "location")
+            if courier_key not in parcel_locations_by_courier:
+                parcel_locations_by_courier[courier_key] = (courier, {})
+            parcel_locations_by_courier[courier_key][1][parcel_location] = None
+        for courier, parcel_locations in parcel_locations_by_courier.values():
             route_nodes = [
                 getattr(courier, "current_location"),
                 *list(getattr(courier, "route_locations", [])),
@@ -128,8 +144,7 @@ class BatchDistanceMatrix:
                 start = route_nodes[index]
                 end = route_nodes[index + 1]
                 pairs.append((start, end))
-                for parcel in parcels:
-                    parcel_location = getattr(parcel, "location")
+                for parcel_location in parcel_locations.keys():
                     pairs.append((start, parcel_location))
                     pairs.append((parcel_location, end))
         self.precompute_pairs(pairs)
