@@ -258,6 +258,25 @@ These caches are intentionally transparent:
 
 The formal runner path now uses the same optimization context as the ad-hoc experiment helpers:
 
+## 11. Deterministic Chengdu graph component selection
+
+`GraphUtils_ChengDu.py` previously converted active road nodes into a Python `set`,
+then started DFS from `nList[0]` after turning that set into a list. That meant the
+retained graph component depended on the process-specific object-hash / allocation
+order rather than the actual road network structure.
+
+The graph loader now:
+
+- enumerates every connected component reachable through the imported road edges
+- selects the largest component deterministically
+- breaks equal-size ties by the smallest node id
+- stores only the selected component in `ServletContext.nMap`, `ServletContext.eMap`,
+  `ServletContext.nList`, and `ServletContext.eList`
+
+This keeps `findNode()` and shortest-path lookup on the main road-network component
+and removes the cross-process instability that previously collapsed some runs to tiny
+islands.
+
 - `ChengduEnvironment` carries `geo_index` and `travel_speed_m_per_s`
 - environment seeding and cloning preserve that context for `compare`, `sweep`, and `suite`
 - the unified CAPA runner passes it into the batch runner
