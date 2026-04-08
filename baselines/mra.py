@@ -133,7 +133,6 @@ def run_mra_baseline_environment(
     backlog: list[Any] = []
     accepted_assignments = 0
     total_revenue = 0.0
-    processing_time_seconds = 0.0
     batches = group_legacy_tasks_by_batch(tasks, batch_size)
     first_batch_start = int(float(getattr(min(tasks, key=lambda item: float(getattr(item, "s_time"))), "s_time")))
 
@@ -141,12 +140,12 @@ def run_mra_baseline_environment(
     for batch_index, bucket in enumerate(batches, start=1):
         now = first_batch_start + (batch_index - 1) * batch_size
         unresolved = list(backlog) + list(bucket)
-        started = perf_counter()
         remaining = list(unresolved)
         while remaining:
             round_started = perf_counter()
             routing_before = timing.routing_time_seconds
             insertion_before = timing.insertion_time_seconds
+            movement_before = timing.movement_time_seconds
             graph_edges: list[MRAEdge] = []
             for task in remaining:
                 feasible = build_legacy_feasible_insertions(
@@ -220,9 +219,12 @@ def run_mra_baseline_environment(
 
             remaining = [task for task in remaining if str(getattr(task, "num")) not in used_tasks]
             elapsed = perf_counter() - round_started
-            processing_time_seconds += max(
+            timing.decision_time_seconds += max(
                 0.0,
-                elapsed - (timing.routing_time_seconds - routing_before) - (timing.insertion_time_seconds - insertion_before),
+                elapsed
+                - (timing.routing_time_seconds - routing_before)
+                - (timing.insertion_time_seconds - insertion_before)
+                - (timing.movement_time_seconds - movement_before),
             )
 
         backlog = remaining
@@ -253,7 +255,7 @@ def run_mra_baseline_environment(
     return {
         "TR": total_revenue,
         "CR": accepted_assignments / total_tasks,
-        "BPT": processing_time_seconds,
+        "BPT": timing.decision_time_seconds,
         "delivered_parcels": accepted_assignments,
         "accepted_assignments": accepted_assignments,
     }
