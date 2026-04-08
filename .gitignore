@@ -15,4 +15,3 @@ output/
 outputs/
 wandb/
 .ipynb_checkpoints/
-tests/
