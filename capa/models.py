@@ -5,6 +5,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Hashable, List, Literal, Optional, Sequence
 
+from .config import (
+    DEFAULT_CAPA_BATCH_SIZE,
+    DEFAULT_CROSS_PLATFORM_SHARING_RATE_MU2,
+    DEFAULT_LOCAL_PAYMENT_RATIO_ZETA,
+    DEFAULT_LOCAL_SHARING_RATE_MU1,
+    DEFAULT_THRESHOLD_OMEGA,
+    DEFAULT_UTILITY_BALANCE_GAMMA,
+)
 from .timing import BatchTimingBreakdown
 
 
@@ -15,12 +23,12 @@ Location = Hashable
 class CAPAConfig:
     """Store paper-facing CAPA parameters used by CAMA, DAPA, and metrics."""
 
-    batch_size: int = 1
-    utility_balance_gamma: float = 0.5
-    threshold_omega: float = 1.0
-    local_payment_ratio_zeta: float = 0.2
-    local_sharing_rate_mu1: float = 0.5
-    cross_platform_sharing_rate_mu2: float = 0.4
+    batch_size: int = DEFAULT_CAPA_BATCH_SIZE
+    utility_balance_gamma: float = DEFAULT_UTILITY_BALANCE_GAMMA
+    threshold_omega: float = DEFAULT_THRESHOLD_OMEGA
+    local_payment_ratio_zeta: float = DEFAULT_LOCAL_PAYMENT_RATIO_ZETA
+    local_sharing_rate_mu1: float = DEFAULT_LOCAL_SHARING_RATE_MU1
+    cross_platform_sharing_rate_mu2: float = DEFAULT_CROSS_PLATFORM_SHARING_RATE_MU2
 
 
 @dataclass(frozen=True)

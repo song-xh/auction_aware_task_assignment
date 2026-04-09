@@ -12,6 +12,15 @@ from typing import Any, Callable, Dict, Iterable, List, Mapping, MutableSequence
 from capa.batch_distance import BatchDistanceMatrix, PersistentDirectedDistanceCache
 from capa.cache import InsertionCache
 from capa.cama import build_local_candidate_shortlist, run_cama
+from capa.config import (
+    DEFAULT_COURIER_ALPHA,
+    DEFAULT_COURIER_BETA,
+    DEFAULT_COURIER_PREFERENCE,
+    DEFAULT_COURIER_SERVICE_SCORE,
+    build_default_platform_base_prices,
+    build_default_platform_qualities,
+    build_default_platform_sharing_rates,
+)
 from capa.dapa import build_cross_candidate_shortlist, run_dapa
 from capa.geo import GeoIndex
 from capa.metrics import build_run_metrics
@@ -312,9 +321,9 @@ def legacy_courier_to_capa(courier: Any, courier_id: str) -> Courier:
         current_load=float(getattr(courier, "re_weight")),
         route_locations=[getattr(task, "l_node") for task in getattr(courier, "re_schedule", [])],
         available_from=0,
-        alpha=float(getattr(courier, "w", 0.4)),
-        beta=float(getattr(courier, "c", 0.6)),
-        service_score=float(getattr(courier, "service_score", 0.8)),
+        alpha=float(getattr(courier, "w", DEFAULT_COURIER_ALPHA)),
+        beta=float(getattr(courier, "c", DEFAULT_COURIER_BETA)),
+        service_score=float(getattr(courier, "service_score", DEFAULT_COURIER_SERVICE_SCORE)),
     )
 
 
@@ -381,9 +390,9 @@ class LegacyCourierSnapshotCache:
             float(getattr(courier, "max_weight")),
             station_node,
             tuple(getattr(task, "l_node") for task in getattr(courier, "re_schedule", [])),
-            float(getattr(courier, "w", 0.4)),
-            float(getattr(courier, "c", 0.6)),
-            float(getattr(courier, "service_score", 0.8)),
+            float(getattr(courier, "w", DEFAULT_COURIER_ALPHA)),
+            float(getattr(courier, "c", DEFAULT_COURIER_BETA)),
+            float(getattr(courier, "service_score", DEFAULT_COURIER_SERVICE_SCORE)),
         )
 
 
@@ -1062,7 +1071,7 @@ def build_framework_chengdu_environment(
             station_set=station_set,
             required_couriers=required_couriers,
             candidate_seed_count=available_seed_count,
-            preference=0.5,
+            preference=DEFAULT_COURIER_PREFERENCE,
         )
         for courier in seeded_couriers:
             ensure_legacy_courier_station(courier, station_by_num)
@@ -1098,9 +1107,9 @@ def build_framework_chengdu_environment(
         partner_couriers_by_platform=partner_couriers_by_platform,
         station_set=station_set,
         travel_model=travel_model,
-        platform_base_prices={f"P{index + 1}": 1.0 for index in range(cooperating_platform_count)},
-        platform_sharing_rates={f"P{index + 1}": 0.4 for index in range(cooperating_platform_count)},
-        platform_qualities={f"P{index + 1}": max(0.5, 1.0 - 0.1 * index) for index in range(cooperating_platform_count)},
+        platform_base_prices=build_default_platform_base_prices(cooperating_platform_count),
+        platform_sharing_rates=build_default_platform_sharing_rates(cooperating_platform_count),
+        platform_qualities=build_default_platform_qualities(cooperating_platform_count),
         movement_callback=framework_movement_callback,
         service_radius_km=service_radius_km,
         courier_capacity=normalized_capacity,

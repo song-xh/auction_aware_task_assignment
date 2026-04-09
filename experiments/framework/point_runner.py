@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping
 
 from algorithms.registry import build_algorithm_runner
+from capa.config import DEFAULT_IMPGTA_WINDOW_SECONDS
 from experiments.progress import build_point_progress_snapshot, write_point_progress
 from experiments.seeding import build_environment_seed, clone_environment_from_seed, load_environment_seed
 
@@ -33,7 +34,7 @@ def default_runner_kwargs_for_algorithm(
     if algorithm in {"capa", "greedy", "mra"}:
         kwargs["batch_size"] = batch_size
     elif algorithm == "impgta":
-        kwargs["prediction_window_seconds"] = 180
+        kwargs["prediction_window_seconds"] = DEFAULT_IMPGTA_WINDOW_SECONDS
     if overrides and algorithm in overrides:
         kwargs.update(dict(overrides[algorithm]))
     return kwargs

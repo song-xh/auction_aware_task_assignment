@@ -13,6 +13,13 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from algorithms.registry import build_algorithm_runner
+from capa.config import (
+    DEFAULT_CAPA_BATCH_SIZE,
+    DEFAULT_DETOUR_FAVORING_CAPA_RUNNER_KWARGS,
+    DEFAULT_IMPGTA_WINDOW_SECONDS,
+    DEFAULT_LOWER_THRESHOLD_CAPA_RUNNER_KWARGS,
+    DEFAULT_PAPER_CAPA_RUNNER_KWARGS,
+)
 from env.chengdu import ChengduEnvironment
 from experiments.config import ExperimentConfig, apply_sweep_axis
 from experiments.framework import ExperimentPointSpec, ExperimentSplitSpec, ManagedRoundSpec, run_environment_comparison_point, run_managed_rounds, run_seeded_comparison_point, run_seeded_split_experiment
@@ -33,8 +40,8 @@ DEFAULT_CHENGDU_PAPER_FIXED_CONFIG: dict[str, Any] = {
     "couriers_per_platform": 50,
     "courier_capacity": 50.0,
     "service_radius_km": 1.0,
-    "batch_size": 300,
-    "prediction_window_seconds": 180,
+    "batch_size": DEFAULT_CAPA_BATCH_SIZE,
+    "prediction_window_seconds": DEFAULT_IMPGTA_WINDOW_SECONDS,
 }
 
 
@@ -51,35 +58,17 @@ DEFAULT_EXP1_ROUNDS: tuple[Exp1RoundSpec, ...] = (
     Exp1RoundSpec(
         name="paper-default",
         rationale="Paper-default CAPA parameters.",
-        capa_runner_kwargs={
-            "utility_balance_gamma": 0.5,
-            "threshold_omega": 1.0,
-            "local_payment_ratio_zeta": 0.2,
-            "local_sharing_rate_mu1": 0.5,
-            "cross_platform_sharing_rate_mu2": 0.4,
-        },
+        capa_runner_kwargs=dict(DEFAULT_PAPER_CAPA_RUNNER_KWARGS),
     ),
     Exp1RoundSpec(
         name="lower-threshold",
         rationale="Lower Eq.7 threshold to keep more feasible parcels in local matching when CR lags.",
-        capa_runner_kwargs={
-            "utility_balance_gamma": 0.5,
-            "threshold_omega": 0.8,
-            "local_payment_ratio_zeta": 0.2,
-            "local_sharing_rate_mu1": 0.5,
-            "cross_platform_sharing_rate_mu2": 0.4,
-        },
+        capa_runner_kwargs=dict(DEFAULT_LOWER_THRESHOLD_CAPA_RUNNER_KWARGS),
     ),
     Exp1RoundSpec(
         name="detour-favoring",
         rationale="Favor detour efficiency while keeping the lower threshold when TR still lags.",
-        capa_runner_kwargs={
-            "utility_balance_gamma": 0.3,
-            "threshold_omega": 0.8,
-            "local_payment_ratio_zeta": 0.2,
-            "local_sharing_rate_mu1": 0.5,
-            "cross_platform_sharing_rate_mu2": 0.4,
-        },
+        capa_runner_kwargs=dict(DEFAULT_DETOUR_FAVORING_CAPA_RUNNER_KWARGS),
     ),
 )
 
@@ -612,7 +601,7 @@ def build_fixed_config_from_args(args: argparse.Namespace) -> dict[str, Any]:
         "courier_capacity": args.courier_capacity,
         "service_radius_km": args.service_radius_km,
         "batch_size": args.batch_size,
-        "prediction_window_seconds": 180,
+        "prediction_window_seconds": DEFAULT_IMPGTA_WINDOW_SECONDS,
     }
 
 

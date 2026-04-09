@@ -9,11 +9,8 @@ from pathlib import Path
 from typing import Any, Callable, Sequence
 
 from baselines.greedy import run_greedy_baseline_environment
-from baselines.gta import (
-    DEFAULT_IMPGTA_WINDOW_SECONDS,
-    run_basegta_baseline_environment,
-    run_impgta_baseline_environment,
-)
+from baselines.gta import run_basegta_baseline_environment, run_impgta_baseline_environment
+from capa.config import DEFAULT_CAPA_BATCH_SIZE, DEFAULT_IMPGTA_WINDOW_SECONDS, build_default_capa_config
 from env.chengdu import LegacyChengduEnvironment, build_framework_chengdu_environment, run_time_stepped_chengdu_batches
 from .metrics import compute_completion_rate, compute_total_revenue
 from .models import BatchReport, CAPAConfig, CAPAResult, Parcel, RunMetrics
@@ -138,14 +135,7 @@ def save_experiment_plots(batch_reports: Sequence[BatchReport], metrics: RunMetr
 
 def build_default_chengdu_config(batch_size: int) -> CAPAConfig:
     """Construct the default Phase 4 Chengdu experiment configuration."""
-    return CAPAConfig(
-        batch_size=batch_size,
-        utility_balance_gamma=0.5,
-        threshold_omega=1.0,
-        local_payment_ratio_zeta=0.2,
-        local_sharing_rate_mu1=0.5,
-        cross_platform_sharing_rate_mu2=0.4,
-    )
+    return build_default_capa_config(batch_size=batch_size)
 
 
 def run_chengdu_experiment(
@@ -532,7 +522,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--local-couriers", type=int, default=10, help="Number of local couriers.")
     parser.add_argument("--platforms", type=int, default=2, help="Number of cooperating platforms.")
     parser.add_argument("--couriers-per-platform", type=int, default=5, help="Number of couriers in each cooperating platform.")
-    parser.add_argument("--batch-size", type=int, default=300, help="Batch size for Algorithm 1.")
+    parser.add_argument("--batch-size", type=int, default=DEFAULT_CAPA_BATCH_SIZE, help="Batch size for Algorithm 1.")
     parser.add_argument("--output-dir", default="outputs/plots/chengdu_capa", help="Directory for plots and summary files.")
     return parser.parse_args(argv)
 
