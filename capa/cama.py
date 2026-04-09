@@ -5,13 +5,13 @@ from __future__ import annotations
 from time import perf_counter
 from typing import Callable, Iterable, List, Mapping, Sequence
 
-from .cache import InsertionCache
 from .constraints import is_deadline_feasible_by_geo, is_within_service_radius, is_within_service_radius_by_geo
-from .geo import GeoIndex
 from .models import Assignment, CAMAResult, CAPAConfig, CandidatePair, Courier, Parcel
-from .timing import TimingAccumulator
 from .utility import (
     DistanceMatrixTravelModel,
+    GeoIndex,
+    InsertionCache,
+    TimingAccumulator,
     calculate_threshold,
     calculate_utility,
     compute_local_courier_payment,

@@ -7,11 +7,12 @@ import random
 from time import perf_counter
 from typing import Any, Callable, Mapping, Sequence
 
-from capa.cache import InsertionCache
 from capa.config import DEFAULT_RAMCOM_RANDOM_SEED
-from capa.timing import TimedTravelModel, TimingAccumulator
 from capa.utility import (
     DEFAULT_LOCAL_PAYMENT_RATIO,
+    InsertionCache,
+    TimedTravelModel,
+    TimingAccumulator,
     compute_local_platform_revenue_for_cross_completion,
     compute_local_platform_revenue_for_local_completion,
 )

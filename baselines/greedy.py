@@ -8,7 +8,6 @@ from contextlib import redirect_stdout
 from time import perf_counter
 from typing import Any, Callable, Mapping, Sequence
 
-from capa.cache import InsertionCache
 from capa.cama import is_feasible_local_match
 from capa.config import (
     DEFAULT_COURIER_ALPHA,
@@ -17,10 +16,12 @@ from capa.config import (
     DEFAULT_GREEDY_REALTIME,
     DEFAULT_GREEDY_UTILITY,
 )
-from capa.geo import GeoIndex
-from capa.timing import TimedTravelModel, TimingAccumulator
 from capa.utility import (
     DEFAULT_LOCAL_PAYMENT_RATIO,
+    GeoIndex,
+    InsertionCache,
+    TimedTravelModel,
+    TimingAccumulator,
     compute_local_platform_revenue_for_local_completion,
     find_best_local_insertion,
 )

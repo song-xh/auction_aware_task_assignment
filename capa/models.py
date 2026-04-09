@@ -13,10 +13,19 @@ from .config import (
     DEFAULT_THRESHOLD_OMEGA,
     DEFAULT_UTILITY_BALANCE_GAMMA,
 )
-from .timing import BatchTimingBreakdown
 
 
 Location = Hashable
+
+
+@dataclass(frozen=True)
+class BatchTimingBreakdown:
+    """Record decision and excluded timing components for one matching round."""
+
+    decision_time_seconds: float = 0.0
+    routing_time_seconds: float = 0.0
+    insertion_time_seconds: float = 0.0
+    movement_time_seconds: float = 0.0
 
 
 @dataclass(frozen=True)

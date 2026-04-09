@@ -5,10 +5,8 @@ from __future__ import annotations
 from time import perf_counter
 from typing import Callable, List, Mapping, Sequence
 
-from .cache import InsertionCache
 from .cama import is_courier_available
 from .constraints import is_deadline_feasible_by_geo, is_within_service_radius, is_within_service_radius_by_geo
-from .geo import GeoIndex
 from .models import (
     Assignment,
     CAPAConfig,
@@ -18,9 +16,11 @@ from .models import (
     Parcel,
     PlatformBid,
 )
-from .timing import TimingAccumulator
 from .utility import (
     DistanceMatrixTravelModel,
+    GeoIndex,
+    InsertionCache,
+    TimingAccumulator,
     compute_cooperating_platform_revenue,
     compute_local_platform_revenue_for_cross_completion,
     find_best_auction_detour_ratio,

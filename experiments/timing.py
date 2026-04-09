@@ -1,5 +1,5 @@
 """Timing breakdown models for experiment-side auditability."""
 
-from capa.timing import BatchTimingBreakdown
+from capa.models import BatchTimingBreakdown
 
 __all__ = ["BatchTimingBreakdown"]

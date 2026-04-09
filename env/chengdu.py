@@ -9,8 +9,6 @@ from pathlib import Path
 from time import perf_counter
 from typing import Any, Callable, Dict, Iterable, List, Mapping, MutableSequence, Sequence
 
-from capa.batch_distance import BatchDistanceMatrix, PersistentDirectedDistanceCache
-from capa.cache import InsertionCache
 from capa.cama import build_local_candidate_shortlist, run_cama
 from capa.config import (
     DEFAULT_COURIER_ALPHA,
@@ -22,11 +20,17 @@ from capa.config import (
     build_default_platform_sharing_rates,
 )
 from capa.dapa import build_cross_candidate_shortlist, run_dapa
-from capa.geo import GeoIndex
 from capa.metrics import build_run_metrics
 from capa.models import Assignment, BatchReport, CAPAConfig, CAPAResult, CooperatingPlatform, Courier, Parcel
-from capa.timing import TimingAccumulator, TimedTravelModel
-from capa.utility import find_best_local_insertion
+from capa.utility import (
+    BatchDistanceMatrix,
+    GeoIndex,
+    InsertionCache,
+    PersistentDirectedDistanceCache,
+    TimedTravelModel,
+    TimingAccumulator,
+    find_best_local_insertion,
+)
 
 
 @dataclass(frozen=True)
