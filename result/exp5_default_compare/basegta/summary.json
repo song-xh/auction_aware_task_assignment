@@ -1,0 +1,10 @@
+{
+  "algorithm": "basegta",
+  "metrics": {
+    "TR": 21062.395730000197,
+    "CR": 0.9896666666666667,
+    "BPT": 1.0514811090943113,
+    "delivered_parcels": 2969,
+    "accepted_assignments": 2969
+  }
+}

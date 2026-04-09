@@ -1,0 +1,11 @@
+{
+  "algorithm": "mra",
+  "batch_size": 300,
+  "metrics": {
+    "TR": 5241.568000000003,
+    "CR": 0.25533333333333336,
+    "BPT": 59.50146567735101,
+    "delivered_parcels": 766,
+    "accepted_assignments": 766
+  }
+}

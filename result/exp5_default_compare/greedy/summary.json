@@ -1,0 +1,11 @@
+{
+  "algorithm": "greedy",
+  "batch_size": 300,
+  "metrics": {
+    "TR": 8223.967999999853,
+    "CR": 0.409,
+    "BPT": 2.7776074239354784,
+    "delivered_parcels": 1227,
+    "accepted_assignments": 1227
+  }
+}

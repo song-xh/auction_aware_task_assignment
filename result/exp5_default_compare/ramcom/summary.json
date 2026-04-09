@@ -1,0 +1,11 @@
+{
+  "algorithm": "ramcom",
+  "random_seed": 1,
+  "metrics": {
+    "TR": 7865.015999999875,
+    "CR": 0.6593333333333333,
+    "BPT": 4.764711784053361,
+    "delivered_parcels": 1978,
+    "accepted_assignments": 1978
+  }
+}

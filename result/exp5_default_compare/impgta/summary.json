@@ -1,0 +1,11 @@
+{
+  "algorithm": "impgta",
+  "prediction_window_seconds": 180,
+  "metrics": {
+    "TR": 23313.254870000128,
+    "CR": 0.982,
+    "BPT": 2.2375053341893363,
+    "delivered_parcels": 2946,
+    "accepted_assignments": 2946
+  }
+}
