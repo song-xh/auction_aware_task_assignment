@@ -6,6 +6,14 @@ import json
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
+from capa.config import (
+    DEFAULT_CAPA_BATCH_SIZE,
+    DEFAULT_CROSS_PLATFORM_SHARING_RATE_MU2,
+    DEFAULT_LOCAL_PAYMENT_RATIO_ZETA,
+    DEFAULT_LOCAL_SHARING_RATE_MU1,
+    DEFAULT_THRESHOLD_OMEGA,
+    DEFAULT_UTILITY_BALANCE_GAMMA,
+)
 from capa.experiments import save_experiment_plots
 from capa.models import CAPAConfig
 from env.chengdu import run_time_stepped_chengdu_batches
@@ -18,12 +26,12 @@ class CAPAAlgorithmRunner(AlgorithmRunner):
 
     def __init__(
         self,
-        batch_size: int = 300,
-        utility_balance_gamma: float = 0.5,
-        threshold_omega: float = 1.0,
-        local_payment_ratio_zeta: float = 0.2,
-        local_sharing_rate_mu1: float = 0.5,
-        cross_platform_sharing_rate_mu2: float = 0.4,
+        batch_size: int = DEFAULT_CAPA_BATCH_SIZE,
+        utility_balance_gamma: float = DEFAULT_UTILITY_BALANCE_GAMMA,
+        threshold_omega: float = DEFAULT_THRESHOLD_OMEGA,
+        local_payment_ratio_zeta: float = DEFAULT_LOCAL_PAYMENT_RATIO_ZETA,
+        local_sharing_rate_mu1: float = DEFAULT_LOCAL_SHARING_RATE_MU1,
+        cross_platform_sharing_rate_mu2: float = DEFAULT_CROSS_PLATFORM_SHARING_RATE_MU2,
     ) -> None:
         """Store the CAPA configuration used by the environment-backed runner.
 
@@ -103,12 +111,12 @@ class CAPAAlgorithmRunner(AlgorithmRunner):
 
 
 def build_capa_runner(
-    batch_size: int = 300,
-    utility_balance_gamma: float = 0.5,
-    threshold_omega: float = 1.0,
-    local_payment_ratio_zeta: float = 0.2,
-    local_sharing_rate_mu1: float = 0.5,
-    cross_platform_sharing_rate_mu2: float = 0.4,
+    batch_size: int = DEFAULT_CAPA_BATCH_SIZE,
+    utility_balance_gamma: float = DEFAULT_UTILITY_BALANCE_GAMMA,
+    threshold_omega: float = DEFAULT_THRESHOLD_OMEGA,
+    local_payment_ratio_zeta: float = DEFAULT_LOCAL_PAYMENT_RATIO_ZETA,
+    local_sharing_rate_mu1: float = DEFAULT_LOCAL_SHARING_RATE_MU1,
+    cross_platform_sharing_rate_mu2: float = DEFAULT_CROSS_PLATFORM_SHARING_RATE_MU2,
 ) -> CAPAAlgorithmRunner:
     """Build the unified CAPA runner with the provided CAPA parameterization."""
 

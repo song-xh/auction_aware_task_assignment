@@ -7,12 +7,13 @@ from time import perf_counter
 from typing import Hashable, Iterable, List, Mapping, Tuple
 
 from .cache import InsertionCache
+from .config import DEFAULT_LOCAL_PAYMENT_RATIO_ZETA
 from .geo import GeoIndex
 from .models import CAPAConfig, Courier, Parcel, UtilityEvaluation
 from .timing import TimingAccumulator
 
 
-DEFAULT_LOCAL_PAYMENT_RATIO = 0.2
+DEFAULT_LOCAL_PAYMENT_RATIO = DEFAULT_LOCAL_PAYMENT_RATIO_ZETA
 
 
 @dataclass(frozen=True)

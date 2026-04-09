@@ -7,6 +7,12 @@ from time import perf_counter
 from typing import Any, Callable, Mapping, Sequence
 
 from capa.cache import InsertionCache
+from capa.config import (
+    DEFAULT_COURIER_ALPHA,
+    DEFAULT_COURIER_BETA,
+    DEFAULT_MRA_BASE_PRICE,
+    DEFAULT_MRA_SHARING_RATE,
+)
 from capa.geo import GeoIndex
 from capa.timing import TimedTravelModel, TimingAccumulator
 from capa.utility import (
@@ -25,9 +31,6 @@ from env.chengdu import (
 
 from .common import build_legacy_feasible_insertions, project_courier_to_capa
 
-
-DEFAULT_MRA_BASE_PRICE = 2.0
-DEFAULT_MRA_SHARING_RATE = 0.5
 
 
 @dataclass(frozen=True)
@@ -85,8 +88,8 @@ def compute_mra_bid(
     detour_term = 1.0 - local_ratio
     if feasible_count <= 1:
         return base_price + sharing_rate * parcel.fare
-    alpha = float(getattr(courier, "w", 0.5))
-    beta = float(getattr(courier, "c", 0.5))
+    alpha = float(getattr(courier, "w", DEFAULT_COURIER_ALPHA))
+    beta = float(getattr(courier, "c", DEFAULT_COURIER_BETA))
     return base_price + (alpha * capacity_term + beta * detour_term) * sharing_rate * parcel.fare
 
 

@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping
 
 from baselines.ramcom import run_ramcom_baseline_environment
+from capa.config import DEFAULT_RAMCOM_RANDOM_SEED
 
 from .base import AlgorithmRunner
 
@@ -16,7 +17,7 @@ class RamCOMAlgorithmRunner(AlgorithmRunner):
 
     def __init__(
         self,
-        random_seed: int = 1,
+        random_seed: int = DEFAULT_RAMCOM_RANDOM_SEED,
         baseline_runner: Callable[..., dict[str, float]] | None = None,
     ) -> None:
         """Store the random seed and optional injected RamCOM baseline runner."""
@@ -48,7 +49,7 @@ class RamCOMAlgorithmRunner(AlgorithmRunner):
 
 
 def build_ramcom_runner(
-    random_seed: int = 1,
+    random_seed: int = DEFAULT_RAMCOM_RANDOM_SEED,
     baseline_runner: Callable[..., dict[str, float]] | None = None,
 ) -> RamCOMAlgorithmRunner:
     """Build the unified RamCOM runner."""
