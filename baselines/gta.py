@@ -9,10 +9,11 @@ from typing import Any, Callable, Mapping, MutableSequence, Sequence
 
 from capa.config import DEFAULT_GTA_UNIT_PRICE_PER_KM, DEFAULT_IMPGTA_WINDOW_SECONDS
 from capa.constraints import is_deadline_feasible_by_geo, is_within_service_radius
-from capa.geo import GeoIndex
-from capa.timing import TimedTravelModel, TimingAccumulator
 from capa.utility import (
     DEFAULT_LOCAL_PAYMENT_RATIO,
+    GeoIndex,
+    TimedTravelModel,
+    TimingAccumulator,
     compute_local_platform_revenue_for_cross_completion,
     compute_local_platform_revenue_for_local_completion,
 )

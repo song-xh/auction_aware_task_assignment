@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import unittest
 
-from capa.batch_distance import BatchDistanceMatrix
 from capa.models import Courier, Parcel
+from capa.utility import BatchDistanceMatrix
 
 from tests.capa_test_support import FakeTravelModel
 

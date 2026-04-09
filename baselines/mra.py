@@ -6,17 +6,18 @@ from dataclasses import dataclass
 from time import perf_counter
 from typing import Any, Callable, Mapping, Sequence
 
-from capa.cache import InsertionCache
 from capa.config import (
     DEFAULT_COURIER_ALPHA,
     DEFAULT_COURIER_BETA,
     DEFAULT_MRA_BASE_PRICE,
     DEFAULT_MRA_SHARING_RATE,
 )
-from capa.geo import GeoIndex
-from capa.timing import TimedTravelModel, TimingAccumulator
 from capa.utility import (
     DEFAULT_LOCAL_PAYMENT_RATIO,
+    GeoIndex,
+    InsertionCache,
+    TimedTravelModel,
+    TimingAccumulator,
     compute_local_platform_revenue_for_local_completion,
     find_best_local_insertion,
 )

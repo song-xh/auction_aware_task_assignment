@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from .geo import GeoIndex
+    from .utility import GeoIndex
 
 
 def is_within_service_radius(

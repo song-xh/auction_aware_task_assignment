@@ -6,12 +6,9 @@ from dataclasses import dataclass
 from typing import Any, Sequence
 
 from capa.cama import is_feasible_local_match
-from capa.cache import InsertionCache
 from capa.config import DEFAULT_COURIER_ALPHA, DEFAULT_COURIER_BETA, DEFAULT_COURIER_SERVICE_SCORE
-from capa.geo import GeoIndex
 from capa.models import Courier
-from capa.timing import TimedTravelModel, TimingAccumulator
-from capa.utility import find_best_local_insertion
+from capa.utility import GeoIndex, InsertionCache, TimedTravelModel, TimingAccumulator, find_best_local_insertion
 from env.chengdu import LegacyCourierSnapshotCache, legacy_courier_to_capa, legacy_task_to_parcel
 
 
