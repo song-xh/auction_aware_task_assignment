@@ -1,0 +1,16 @@
+{
+  "axis": "local_couriers",
+  "preset": "formal",
+  "algorithms": [
+    "capa",
+    "greedy",
+    "ramcom",
+    "mra",
+    "basegta",
+    "impgta"
+  ],
+  "summary": "outputs/plots/exp2_couriers/summary.json",
+  "tmp_root": "/tmp/exp2_couriers",
+  "seed_path": "/tmp/exp2_couriers/canonical_seed.pkl",
+  "execution_mode": "split"
+}
