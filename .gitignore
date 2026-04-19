@@ -16,3 +16,4 @@ outputs/
 wandb/
 .ipynb_checkpoints/
 tests/
+.worktrees/
