@@ -127,10 +127,16 @@ def _build_runner_kwargs(algorithm_name: str, config: ExperimentConfig) -> dict[
         return {"prediction_window_seconds": config.prediction_window_seconds}
     if algorithm_name == "rl-capa":
         return {
-            "min_batch_size": int(config.extra.get("min_batch_size", 10)),
-            "max_batch_size": int(config.extra.get("max_batch_size", 20)),
-            "step_seconds": int(config.extra.get("step_seconds", 60)),
-            "episodes": int(config.extra.get("episodes", 10)),
+            "min_batch_size": config.rl_min_batch_size,
+            "max_batch_size": config.rl_max_batch_size,
+            "step_seconds": config.rl_step_seconds,
+            "episodes": config.rl_num_episodes,
+            "lr_actor": config.rl_lr_actor,
+            "lr_critic": config.rl_lr_critic,
+            "discount_factor": config.rl_discount_factor,
+            "entropy_coeff": config.rl_entropy_coeff,
+            "max_grad_norm": config.rl_max_grad_norm,
+            "device": config.rl_device,
         }
     return {}
 
@@ -157,6 +163,16 @@ def _run_comparison_point(
         prediction_window_seconds=fixed_config.get("prediction_window_seconds", 180),
         service_radius_km=fixed_config.get("service_radius_km"),
         courier_capacity=fixed_config.get("courier_capacity"),
+        rl_min_batch_size=fixed_config.get("rl_min_batch_size", 10),
+        rl_max_batch_size=fixed_config.get("rl_max_batch_size", 20),
+        rl_step_seconds=fixed_config.get("rl_step_seconds", 60),
+        rl_num_episodes=fixed_config.get("rl_num_episodes", 500),
+        rl_lr_actor=fixed_config.get("rl_lr_actor", 0.001),
+        rl_lr_critic=fixed_config.get("rl_lr_critic", 0.001),
+        rl_discount_factor=fixed_config.get("rl_discount_factor", 0.9),
+        rl_entropy_coeff=fixed_config.get("rl_entropy_coeff", 0.01),
+        rl_max_grad_norm=fixed_config.get("rl_max_grad_norm", 0.5),
+        rl_device=fixed_config.get("rl_device"),
         extra=dict(fixed_config.get("extra", {})),
     )
     point_config = apply_sweep_axis(base_config, sweep_parameter, value)

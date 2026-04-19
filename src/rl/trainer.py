@@ -25,6 +25,7 @@ from src.rl.networks import (
     StateValueCritic,
 )
 from src.rl.state_builder import RunningNormalizer, aggregate_stage2_states
+from src.rl.utils import compute_discounted_returns, select_torch_device
 
 
 @dataclass
@@ -48,6 +49,7 @@ class TrainingConfig:
     entropy_coeff: float = 0.01
     max_grad_norm: float = 0.5
     max_steps_per_episode: int = 500
+    device: str | None = None
 
 
 @dataclass
@@ -120,7 +122,7 @@ class RLCAPATrainer:
         env: object,
         config: TrainingConfig,
         num_batch_actions: int = 11,
-        device: str = "cpu",
+        device: str | None = None,
     ) -> None:
         """Initialize trainer with environment and networks.
 
@@ -132,7 +134,7 @@ class RLCAPATrainer:
         """
         self.env = env
         self.config = config
-        self.device = torch.device(device)
+        self.device = select_torch_device(config.device if device is None else device)
 
         # 4 networks (spec Section 7)
         self.pi1 = BatchSizeActor(
@@ -195,6 +197,7 @@ class RLCAPATrainer:
             episode_buffer.append(record)
 
         if not episode_buffer:
+            self.env.finalize_episode()
             return EpisodeLog(
                 episode=episode_idx,
                 total_reward=0.0,
@@ -214,6 +217,8 @@ class RLCAPATrainer:
             episode_buffer, returns
         )
 
+        self.env.finalize_episode()
+
         total_reward = sum(r.reward for r in episode_buffer)
         batch_sizes = [r.batch_duration for r in episode_buffer]
         total_cross = sum(r.num_cross for r in episode_buffer)
@@ -227,7 +232,7 @@ class RLCAPATrainer:
             loss_v1=loss_v1,
             loss_v2=loss_v2,
             steps=step,
-            assignments=len(self.env.accepted_assignments()),
+            assignments=len(self.env.delivered_parcels()),
             batch_sizes=batch_sizes,
             cross_rate=cross_rate,
         )
@@ -318,13 +323,10 @@ class RLCAPATrainer:
         Returns:
             List of discounted returns, one per step.
         """
-        gamma = self.config.discount_factor
-        returns: List[float] = [0.0] * len(buffer)
-        running = 0.0
-        for t in reversed(range(len(buffer))):
-            running = buffer[t].reward + gamma * running
-            returns[t] = running
-        return returns
+        return compute_discounted_returns(
+            rewards=[record.reward for record in buffer],
+            discount_factor=self.config.discount_factor,
+        )
 
     def _update_networks(
         self,

@@ -24,6 +24,12 @@ class RLCAPAAlgorithmRunner(AlgorithmRunner):
         max_batch_size: int = 20,
         step_seconds: int = 60,
         episodes: int = 10,
+        lr_actor: float = 0.001,
+        lr_critic: float = 0.001,
+        discount_factor: float = 0.9,
+        entropy_coeff: float = 0.01,
+        max_grad_norm: float = 0.5,
+        device: str | None = None,
     ) -> None:
         """Store the RL-CAPA hyperparameters exposed through the unified runner.
 
@@ -32,12 +38,24 @@ class RLCAPAAlgorithmRunner(AlgorithmRunner):
             max_batch_size: Upper bound of the `M_b` action space.
             step_seconds: Simulation time step used by the unified Chengdu environment.
             episodes: Joint-training episode count before evaluation.
+            lr_actor: Actor learning rate for actor-critic training.
+            lr_critic: Critic learning rate for actor-critic training.
+            discount_factor: Gamma used for discounted returns.
+            entropy_coeff: Entropy regularization coefficient.
+            max_grad_norm: Gradient clipping threshold.
+            device: Optional torch device override.
         """
 
         self._min_batch_size = min_batch_size
         self._max_batch_size = max_batch_size
         self._step_seconds = step_seconds
         self._episodes = episodes
+        self._lr_actor = lr_actor
+        self._lr_critic = lr_critic
+        self._discount_factor = discount_factor
+        self._entropy_coeff = entropy_coeff
+        self._max_grad_norm = max_grad_norm
+        self._device = device
 
     def run(
         self,
@@ -95,6 +113,12 @@ def build_rl_capa_runner(
     max_batch_size: int = 20,
     step_seconds: int = 60,
     episodes: int = 10,
+    lr_actor: float = 0.001,
+    lr_critic: float = 0.001,
+    discount_factor: float = 0.9,
+    entropy_coeff: float = 0.01,
+    max_grad_norm: float = 0.5,
+    device: str | None = None,
 ) -> RLCAPAAlgorithmRunner:
     """Build the unified RL-CAPA runner with explicit training hyperparameters."""
 
@@ -103,4 +127,10 @@ def build_rl_capa_runner(
         max_batch_size=max_batch_size,
         step_seconds=step_seconds,
         episodes=episodes,
+        lr_actor=lr_actor,
+        lr_critic=lr_critic,
+        discount_factor=discount_factor,
+        entropy_coeff=entropy_coeff,
+        max_grad_norm=max_grad_norm,
+        device=device,
     )

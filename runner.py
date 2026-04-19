@@ -64,7 +64,13 @@ def _add_common_environment_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--min-batch-size", type=int, default=10, help="Lower bound of the RL-CAPA batch-size action space.")
     parser.add_argument("--max-batch-size", type=int, default=20, help="Upper bound of the RL-CAPA batch-size action space.")
     parser.add_argument("--step-seconds", type=int, default=60, help="Simulation step size in seconds for RL-CAPA.")
-    parser.add_argument("--episodes", type=int, default=10, help="Training episodes used by RL-CAPA before evaluation.")
+    parser.add_argument("--episodes", type=int, default=500, help="Training episodes used by RL-CAPA before evaluation.")
+    parser.add_argument("--rl-lr-actor", type=float, default=0.001, help="Actor learning rate for RL-CAPA.")
+    parser.add_argument("--rl-lr-critic", type=float, default=0.001, help="Critic learning rate for RL-CAPA.")
+    parser.add_argument("--rl-discount-factor", type=float, default=0.9, help="Discount factor used by RL-CAPA.")
+    parser.add_argument("--rl-entropy-coeff", type=float, default=0.01, help="Entropy regularization coefficient for RL-CAPA.")
+    parser.add_argument("--rl-max-grad-norm", type=float, default=0.5, help="Gradient clipping threshold for RL-CAPA.")
+    parser.add_argument("--rl-device", default=None, help="Optional torch device override for RL-CAPA, for example `cpu` or `cuda`.")
     parser.add_argument(
         "--prediction-window-seconds",
         type=int,
@@ -86,6 +92,12 @@ def build_algorithm_kwargs(args: argparse.Namespace) -> dict[str, Any]:
             "max_batch_size": args.max_batch_size,
             "step_seconds": args.step_seconds,
             "episodes": args.episodes,
+            "lr_actor": args.rl_lr_actor,
+            "lr_critic": args.rl_lr_critic,
+            "discount_factor": args.rl_discount_factor,
+            "entropy_coeff": args.rl_entropy_coeff,
+            "max_grad_norm": args.rl_max_grad_norm,
+            "device": args.rl_device,
         }
     return {}
 
@@ -192,6 +204,16 @@ def _build_fixed_config(args: argparse.Namespace) -> dict[str, Any]:
         "service_radius_km": args.service_radius_km,
         "batch_size": args.batch_size,
         "prediction_window_seconds": args.prediction_window_seconds,
+        "rl_min_batch_size": args.min_batch_size,
+        "rl_max_batch_size": args.max_batch_size,
+        "rl_step_seconds": args.step_seconds,
+        "rl_num_episodes": args.episodes,
+        "rl_lr_actor": args.rl_lr_actor,
+        "rl_lr_critic": args.rl_lr_critic,
+        "rl_discount_factor": args.rl_discount_factor,
+        "rl_entropy_coeff": args.rl_entropy_coeff,
+        "rl_max_grad_norm": args.rl_max_grad_norm,
+        "rl_device": args.rl_device,
     }
 
 
