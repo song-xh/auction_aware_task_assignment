@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from .geo import GeoIndex
+    from .utility import GeoIndex
 
 
 def is_within_service_radius(
@@ -29,6 +29,22 @@ def is_within_service_radius(
         if lb is not None and lb > service_radius_meters:
             return False
     return float(travel_model.distance(start_location, task_location)) <= float(service_radius_meters)
+
+
+def is_within_service_radius_by_geo(
+    start_location: Any,
+    task_location: Any,
+    service_radius_meters: float | None,
+    geo_index: GeoIndex | None = None,
+) -> bool:
+    """Return whether a pair survives the geo lower-bound radius filter."""
+
+    if service_radius_meters is None or geo_index is None:
+        return True
+    lb = geo_index.haversine_meters_between(start_location, task_location)
+    if lb is None:
+        return True
+    return lb <= float(service_radius_meters)
 
 
 def is_deadline_feasible_by_geo(

@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Callable, Sequence
 
 from algorithms.registry import build_algorithm_runner
+from capa.config import DEFAULT_CAPA_BATCH_SIZE, DEFAULT_IMPGTA_WINDOW_SECONDS
 from env.chengdu import ChengduEnvironment
 
 from .config import ExperimentConfig, apply_sweep_axis
@@ -52,8 +53,8 @@ def run_comparison_sweep(
         local_couriers=fixed_config.get("local_couriers", 10),
         platforms=fixed_config.get("platforms", 2),
         couriers_per_platform=fixed_config.get("couriers_per_platform", 5),
-        batch_size=fixed_config.get("batch_size", 300),
-        prediction_window_seconds=fixed_config.get("prediction_window_seconds", 180),
+        batch_size=fixed_config.get("batch_size", DEFAULT_CAPA_BATCH_SIZE),
+        prediction_window_seconds=fixed_config.get("prediction_window_seconds", DEFAULT_IMPGTA_WINDOW_SECONDS),
         service_radius_km=fixed_config.get("service_radius_km"),
         courier_capacity=fixed_config.get("courier_capacity"),
         extra=dict(fixed_config.get("extra", {})),
@@ -159,8 +160,8 @@ def _run_comparison_point(
         local_couriers=fixed_config.get("local_couriers", 10),
         platforms=fixed_config.get("platforms", 2),
         couriers_per_platform=fixed_config.get("couriers_per_platform", 5),
-        batch_size=fixed_config.get("batch_size", 300),
-        prediction_window_seconds=fixed_config.get("prediction_window_seconds", 180),
+        batch_size=fixed_config.get("batch_size", DEFAULT_CAPA_BATCH_SIZE),
+        prediction_window_seconds=fixed_config.get("prediction_window_seconds", DEFAULT_IMPGTA_WINDOW_SECONDS),
         service_radius_km=fixed_config.get("service_radius_km"),
         courier_capacity=fixed_config.get("courier_capacity"),
         rl_min_batch_size=fixed_config.get("rl_min_batch_size", 10),

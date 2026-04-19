@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping
 
 from baselines.greedy import run_greedy_baseline_environment
+from capa.config import DEFAULT_CAPA_BATCH_SIZE
 
 from .base import AlgorithmRunner
 
@@ -16,7 +17,7 @@ class GreedyAlgorithmRunner(AlgorithmRunner):
 
     def __init__(
         self,
-        batch_size: int = 300,
+        batch_size: int = DEFAULT_CAPA_BATCH_SIZE,
         baseline_runner: Callable[..., dict[str, float]] | None = None,
     ) -> None:
         """Store the batch size and optional injected baseline runner."""
@@ -48,7 +49,7 @@ class GreedyAlgorithmRunner(AlgorithmRunner):
 
 
 def build_greedy_runner(
-    batch_size: int = 300,
+    batch_size: int = DEFAULT_CAPA_BATCH_SIZE,
     baseline_runner: Callable[..., dict[str, float]] | None = None,
 ) -> GreedyAlgorithmRunner:
     """Build the unified Greedy runner."""

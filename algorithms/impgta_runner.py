@@ -6,7 +6,8 @@ import json
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
-from baselines.gta import DEFAULT_IMPGTA_WINDOW_SECONDS, run_impgta_baseline_environment
+from baselines.gta import run_impgta_baseline_environment
+from capa.config import DEFAULT_IMPGTA_WINDOW_SECONDS
 
 from .base import AlgorithmRunner
 

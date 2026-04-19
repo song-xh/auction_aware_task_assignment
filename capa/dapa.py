@@ -5,10 +5,8 @@ from __future__ import annotations
 from time import perf_counter
 from typing import Callable, List, Mapping, Sequence
 
-from .cache import InsertionCache
 from .cama import is_courier_available
-from .constraints import is_deadline_feasible_by_geo, is_within_service_radius
-from .geo import GeoIndex
+from .constraints import is_deadline_feasible_by_geo, is_within_service_radius, is_within_service_radius_by_geo
 from .models import (
     Assignment,
     CAPAConfig,
@@ -18,9 +16,11 @@ from .models import (
     Parcel,
     PlatformBid,
 )
-from .timing import TimingAccumulator
 from .utility import (
     DistanceMatrixTravelModel,
+    GeoIndex,
+    InsertionCache,
+    TimingAccumulator,
     compute_cooperating_platform_revenue,
     compute_local_platform_revenue_for_cross_completion,
     find_best_auction_detour_ratio,
@@ -52,6 +52,65 @@ def is_feasible_cross_match(
         return False
     arrival_time = now + travel_model.travel_time(courier.current_location, parcel.location)
     return arrival_time <= parcel.deadline
+
+
+def is_feasible_cross_candidate(
+    parcel: Parcel,
+    courier: Courier,
+    now: int,
+    service_radius_meters: float | None = None,
+    geo_index: GeoIndex | None = None,
+    speed_m_per_s: float = 0.0,
+) -> bool:
+    """Cheap shortlist filter for partner couriers before exact DAPA routing."""
+
+    if not is_courier_available(courier, now):
+        return False
+    if courier.current_load + parcel.weight > courier.capacity:
+        return False
+    if not is_deadline_feasible_by_geo(
+        courier.current_location, parcel.location, now, parcel.deadline, speed_m_per_s, geo_index,
+    ):
+        return False
+    return is_within_service_radius_by_geo(
+        courier.current_location,
+        parcel.location,
+        service_radius_meters,
+        geo_index=geo_index,
+    )
+
+
+def build_cross_candidate_shortlist(
+    parcels: Sequence[Parcel],
+    platforms: Sequence[CooperatingPlatform],
+    now: int,
+    service_radius_meters: float | None = None,
+    geo_index: GeoIndex | None = None,
+    speed_m_per_s: float = 0.0,
+) -> dict[str, dict[str, List[Courier]]]:
+    """Build the parcel/platform/courier shortlist used before exact DAPA evaluation."""
+
+    shortlist: dict[str, dict[str, List[Courier]]] = {}
+    for parcel in parcels:
+        platform_candidates: dict[str, List[Courier]] = {}
+        for platform in platforms:
+            candidates = [
+                courier
+                for courier in platform.couriers
+                if is_feasible_cross_candidate(
+                    parcel,
+                    courier,
+                    now,
+                    service_radius_meters=service_radius_meters,
+                    geo_index=geo_index,
+                    speed_m_per_s=speed_m_per_s,
+                )
+            ]
+            if candidates:
+                platform_candidates[platform.platform_id] = candidates
+        if platform_candidates:
+            shortlist[parcel.parcel_id] = platform_candidates
+    return shortlist
 
 
 def compute_fpsa_bid(
@@ -151,6 +210,7 @@ def run_dapa(
     insertion_cache: InsertionCache | None = None,
     geo_index: GeoIndex | None = None,
     speed_m_per_s: float = 0.0,
+    candidate_couriers_by_parcel: Mapping[str, Mapping[str, Sequence[Courier]]] | None = None,
     progress_callback: Callable[[Mapping[str, float | int | str]], None] | None = None,
 ) -> DAPAResult:
     """Run Algorithm 3 with explicit FPSA, RVA, and upper-limit filtering."""
@@ -165,9 +225,19 @@ def run_dapa(
 
     for parcel_index, parcel in enumerate(parcels, start=1):
         platform_winners: List[PlatformBid] = []
+        shortlisted_platforms = (
+            None
+            if candidate_couriers_by_parcel is None
+            else candidate_couriers_by_parcel.get(parcel.parcel_id, {})
+        )
         for platform in platforms:
             feasible_bids: List[tuple[Courier, float]] = []
-            for courier in platform.couriers:
+            platform_couriers = (
+                platform.couriers
+                if shortlisted_platforms is None
+                else shortlisted_platforms.get(platform.platform_id, ())
+            )
+            for courier in platform_couriers:
                 if not is_feasible_cross_match(
                     parcel,
                     courier,

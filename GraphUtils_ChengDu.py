@@ -211,6 +211,71 @@ class GraphUtils(object):
     def __init__(self):
         pass
 
+    def collect_connected_component(self, start, nMap, eMap):
+        """Return the nodes and edges reachable from ``start`` within the road graph."""
+
+        stack = [start]
+        closeList = []
+        edgeList = []
+        closeSet = set()
+        edgeSet = set()
+
+        while len(stack) != 0:
+            cur = stack[len(stack) - 1]
+            stack.pop()
+
+            if cur.nodeId in closeSet:
+                continue
+            closeList.append(cur)
+            closeSet.add(cur.nodeId)
+            for i in range(len(cur.neighbors)):
+                neighbor = nMap[cur.neighbors[i]]
+                if neighbor.nodeId not in closeSet:
+                    stack.append(neighbor)
+                edgePattern = cur.nEdge[neighbor.nodeId]
+                e = eMap[edgePattern]
+                if e.edgeId not in edgeSet:
+                    edgeList.append(e)
+                    edgeSet.add(e.edgeId)
+
+        return closeList, edgeList
+
+    def select_largest_connected_component(self, nMap, eMap):
+        """Select the largest connected component with a stable smallest-node-id tie-breaker."""
+
+        candidate_ids = sorted(
+            {
+                node.nodeId
+                for edge in eMap.values()
+                for node in (edge.startNode, edge.endNode)
+            },
+            key=lambda item: str(item),
+        )
+        visited = set()
+        components = []
+
+        for node_id in candidate_ids:
+            if node_id in visited:
+                continue
+            component_nodes, component_edges = self.collect_connected_component(nMap[node_id], nMap, eMap)
+            component_ids = {node.nodeId for node in component_nodes}
+            visited.update(component_ids)
+            root_id = min(component_ids, key=lambda item: str(item))
+            root_node = nMap[root_id]
+            components.append((component_nodes, component_edges, root_node))
+
+        if len(components) == 0:
+            raise ValueError("graph import produced no connected components")
+
+        components.sort(
+            key=lambda item: (-len(item[0]), str(item[2].nodeId)),
+        )
+        selected_nodes, selected_edges, selected_root = components[0]
+        print("connected components found: %s" % len(components))
+        print("selected component root: %s" % selected_root.nodeId)
+        print("selected component nodeNumber: %s  |  edgeNumber:%s" % (len(selected_nodes), len(selected_edges)))
+        return selected_nodes, selected_edges, selected_root
+
     def saxBigGraphImport(self, filePath, sContext):
         '''
         地图数据导入
@@ -218,8 +283,6 @@ class GraphUtils(object):
         :param sContext:
         :return:
         '''
-        # 打开地图文件
-        file = open(filePath)
         # 节点map
         nMap = {}
         # 边map
@@ -239,7 +302,8 @@ class GraphUtils(object):
             print("-------------Start parsing-------------")
             parser.setContentHandler(Handler)
             # 开始解析地图文件
-            parser.parse(filePath)
+            with open(filePath) as file:
+                parser.parse(file)
             print("end parsing with: nodes : %s  |   edges: %s" % (len(nMap), len(eList)))
 
             for i in range(len(eList)):
@@ -328,15 +392,18 @@ class GraphUtils(object):
                 eMap[finalEdge.edgeId] = finalEdge
             # 深度优先搜索之前的结点个数
             print("before DFS nodeNumber: %s  edgeNumber: %s" % (len(nSet), len(eMap)))
-
-            # 将set转为list
-            nList = list(nSet)
-            # 深度优先搜索后的边的列表
-            edList = self.DFSSearch(nMap, eMap, nList[0], sContext)
+            component_nodes, component_edges, _ = self.select_largest_connected_component(nMap, eMap)
+            component_node_ids = {node.nodeId for node in component_nodes}
+            component_edge_ids = {edge.edgeId for edge in component_edges}
+            sContext.nMap = {node_id: nMap[node_id] for node_id in component_node_ids}
+            sContext.eMap = {edge_id: eMap[edge_id] for edge_id in component_edge_ids}
+            sContext.nList = component_nodes
+            sContext.eList = component_edges
+            print("After DFS nodeNumber: %s  |  edgeNumber:%s" % (len(component_nodes), len(component_edges)))
             # 依次遍历深度优先搜索后的边的列表中的每一条边
             num = 0
-            for i in range(len(edList)):
-                e = edList[i]
+            for i in range(len(component_edges)):
+                e = component_edges[i]
                 # 获取边的起点和终点
                 nStart = e.startNode
                 nEnd = e.endNode

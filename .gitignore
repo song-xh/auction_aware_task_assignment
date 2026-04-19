@@ -15,5 +15,8 @@ output/
 outputs/
 wandb/
 .ipynb_checkpoints/
+<<<<<<< HEAD
 tests/
 .worktrees/
+=======
+>>>>>>> a0d301addb95fa0839fc06deae0a956a5e4f0a22

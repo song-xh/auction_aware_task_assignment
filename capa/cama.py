@@ -5,13 +5,13 @@ from __future__ import annotations
 from time import perf_counter
 from typing import Callable, Iterable, List, Mapping, Sequence
 
-from .cache import InsertionCache
-from .constraints import is_deadline_feasible_by_geo, is_within_service_radius
-from .geo import GeoIndex
+from .constraints import is_deadline_feasible_by_geo, is_within_service_radius, is_within_service_radius_by_geo
 from .models import Assignment, CAMAResult, CAPAConfig, CandidatePair, Courier, Parcel
-from .timing import TimingAccumulator
 from .utility import (
     DistanceMatrixTravelModel,
+    GeoIndex,
+    InsertionCache,
+    TimingAccumulator,
     calculate_threshold,
     calculate_utility,
     compute_local_courier_payment,
@@ -48,6 +48,61 @@ def is_feasible_local_match(
         return False
     arrival_time = now + travel_model.travel_time(courier.current_location, parcel.location)
     return arrival_time <= parcel.deadline
+
+
+def is_feasible_local_candidate(
+    parcel: Parcel,
+    courier: Courier,
+    now: int,
+    service_radius_meters: float | None = None,
+    geo_index: GeoIndex | None = None,
+    speed_m_per_s: float = 0.0,
+) -> bool:
+    """Cheap shortlist filter for local matching before exact routing is warmed."""
+
+    if not is_courier_available(courier, now):
+        return False
+    if courier.current_load + parcel.weight > courier.capacity:
+        return False
+    if not is_deadline_feasible_by_geo(
+        courier.current_location, parcel.location, now, parcel.deadline, speed_m_per_s, geo_index,
+    ):
+        return False
+    return is_within_service_radius_by_geo(
+        courier.current_location,
+        parcel.location,
+        service_radius_meters,
+        geo_index=geo_index,
+    )
+
+
+def build_local_candidate_shortlist(
+    parcels: Sequence[Parcel],
+    couriers: Sequence[Courier],
+    now: int,
+    service_radius_meters: float | None = None,
+    geo_index: GeoIndex | None = None,
+    speed_m_per_s: float = 0.0,
+) -> dict[str, List[Courier]]:
+    """Build the parcel-to-courier shortlist used before exact CAMA evaluation."""
+
+    shortlist: dict[str, List[Courier]] = {}
+    for parcel in parcels:
+        candidates = [
+            courier
+            for courier in couriers
+            if is_feasible_local_candidate(
+                parcel,
+                courier,
+                now,
+                service_radius_meters=service_radius_meters,
+                geo_index=geo_index,
+                speed_m_per_s=speed_m_per_s,
+            )
+        ]
+        if candidates:
+            shortlist[parcel.parcel_id] = candidates
+    return shortlist
 
 
 def apply_local_assignment(parcel: Parcel, courier: Courier, insertion_index: int) -> None:
@@ -93,6 +148,7 @@ def run_cama(
     insertion_cache: InsertionCache | None = None,
     geo_index: GeoIndex | None = None,
     speed_m_per_s: float = 0.0,
+    candidate_couriers_by_parcel: Mapping[str, Sequence[Courier]] | None = None,
     progress_callback: Callable[[Mapping[str, float | int | str]], None] | None = None,
 ) -> CAMAResult:
     """Run Algorithm 2 exactly at the candidate-set level defined in the paper."""
@@ -107,7 +163,12 @@ def run_cama(
 
     for parcel_index, parcel in enumerate(parcels, start=1):
         feasible_for_parcel: List[CandidatePair] = []
-        for courier in couriers:
+        shortlisted_couriers = (
+            couriers
+            if candidate_couriers_by_parcel is None
+            else candidate_couriers_by_parcel.get(parcel.parcel_id, ())
+        )
+        for courier in shortlisted_couriers:
             if not is_feasible_local_match(
                 parcel, courier, travel_model, now,
                 service_radius_meters=service_radius_meters,

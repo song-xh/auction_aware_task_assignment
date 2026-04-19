@@ -8,24 +8,6 @@
 python3 -m unittest discover -s tests -v
 ```
 
-## 单次实验
-
-```bash
-python3 runner.py run --algorithm capa --data-dir Data --num-parcels 100 --local-couriers 10 --platforms 2 --couriers-per-platform 5 --batch-size 300 --output-dir outputs/plots/chengdu_run
-```
-
-```bash
-python3 runner.py run \
-  --algorithm capa \
-  --data-dir Data \
-  --num-parcels 100 \
-  --local-couriers 10 \
-  --platforms 2 \
-  --couriers-per-platform 5 \
-  --batch-size 300 \
-  --output-dir outputs/plots/chengdu_run
-```
-
 支持的 `--algorithm`：
 
 - `capa`
@@ -35,6 +17,7 @@ python3 runner.py run \
 - `basegta`
 - `impgta`
 - `rl-capa`
+<<<<<<< HEAD
 
 RL-CAPA 现在走 actor-critic 主线，可直接通过统一 runner 训练并评估：
 
@@ -83,6 +66,8 @@ python3 runner.py \
   --batch-size 300 \
   --output-dir outputs/plots/chengdu_run
 ```
+=======
+>>>>>>> a0d301addb95fa0839fc06deae0a956a5e4f0a22
 
 ## 单算法 Sweep
 
@@ -111,27 +96,6 @@ python3 runner.py sweep \
 
 `service_radius` 使用公里单位，通过 `--values 0.5 1.0 1.5 ...` 传入。
 
-当前统一实现将其解释为：
-
-- courier 当前节点到 pick-up 节点的最短路最大服务半径
-- 该约束会一致应用到 CAPA、Greedy、BaseGTA、ImpGTA 的可行性过滤
-
-示例：
-
-```bash
-python3 runner.py compare \
-  --algorithms capa greedy \
-  --axis service_radius \
-  --values 0.5 1.0 1.5 2.0 2.5 \
-  --data-dir Data \
-  --num-parcels 100 \
-  --local-couriers 10 \
-  --platforms 2 \
-  --couriers-per-platform 5 \
-  --batch-size 300 \
-  --output-dir outputs/plots/chengdu_compare_service_radius
-```
-
 ## 多算法对比 Sweep
 
 ```bash
@@ -154,57 +118,7 @@ python3 runner.py compare \
 - 同一点位上的不同算法从同一个环境 seed 克隆运行
 - 对比时不会为每个算法单独重新 build 环境
 
-## 预定义 Suite
-
-```bash
-python3 runner.py suite \
-  --suite chengdu-paper \
-  --preset formal \
-  --algorithms capa greedy ramcom mra basegta impgta \
-  --data-dir Data \
-  --num-parcels 3000 \
-  --local-couriers 200 \
-  --platforms 4 \
-  --couriers-per-platform 50 \
-  --courier-capacity 50 \
-  --service-radius-km 1.0 \
-  --batch-size 300 \
-  --max-workers 4 \
-  --output-dir outputs/plots/chengdu_suite_paper
-```
-
-当前 `chengdu-paper` 支持两个 preset：
-
-- `smoke`
-- `formal`
-
-`formal` 是当前 Chengdu 环境下参考论文实验设计的正式 preset，会批量跑这些轴：
-
-- `num_parcels`
-- `local_couriers`
-- `service_radius`
-- `platforms`
-- `courier_capacity`
-
-`smoke` 只用于快速联调，轴值更小。
-
-## Paper-Style 脚本
-
-`experiments/` 目录下提供了与论文实验部分对齐的 Chengdu 脚本入口：
-
-```bash
-python3 experiments/run_chengdu_exp1_num_parcels.py --output-dir outputs/plots/exp1 --preset formal --max-workers 4
-python3 experiments/run_chengdu_exp2_couriers.py --output-dir outputs/plots/exp2 --preset formal --max-workers 4
-python3 experiments/run_chengdu_exp3_radius.py --output-dir outputs/plots/exp3 --preset formal --max-workers 4
-python3 experiments/run_chengdu_exp4_platforms.py --output-dir outputs/plots/exp4 --preset formal --max-workers 4
-python3 experiments/run_chengdu_exp5_default_compare.py --output-dir outputs/plots/exp5
-python3 experiments/run_chengdu_exp6_capacity.py --output-dir outputs/plots/exp6 --preset formal --max-workers 4
-python3 experiments/run_chengdu_paper_suite.py --output-dir outputs/plots/chengdu_suite --preset formal --max-workers 4
-```
-
-这些脚本共用同一套参数约定。
-
-常用参数含义：
+## 常用参数含义
 
 - `--output-dir`：最终结果目录，保存 `summary.json`、图表和每个点位的结果。
 - `--data-dir`：Chengdu 数据目录，默认是 `Data`。
@@ -433,10 +347,3 @@ python3 experiments/run_chengdu_paper_suite.py \
 - 每个 sweep 点的算法子目录
 - 对比或 suite 的聚合 summary
 - CAPA 单次运行时的 `TR/CR/BPT` 批次图
-
-## 说明
-
-- Chengdu 正式实验复用了 [chengdu.py](/root/code/auction_aware_task_assignment/env/chengdu.py) 中的 legacy 仿真推进逻辑
-- `TR`、`CR`、`BPT` 是统一 summary 的默认指标
-- `BaseGTA` 和 `ImpGTA` 基于参考文献 [17] 的规则做了仓库适配，具体边界见 [implementation_notes.md](/root/code/auction_aware_task_assignment/docs/implementation_notes.md)
-- `capa.experiments` 仍可作为兼容层存在，但不再是推荐入口
