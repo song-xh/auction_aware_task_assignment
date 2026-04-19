@@ -1,613 +1,500 @@
-# RL-CAPA 算法实现细节分析
+# RL-CAPA Implementation Specification
 
-> 本文档基于论文 Section 3.4 "Dual-Stage Adaptive Assignment Optimization" 和 Section 4.1 实验设置，
-> 逐字逐句分析 RL-CAPA 的完整实现逻辑。供 Claude Code 在当前代码架构下实现算法时参考。
-
----
-
-## 1. RL-CAPA 与 CAPA 的关系：不是替换，而是增强
-
-### 1.1 CAPA（Algorithm 1）的固定决策点
-
-CAPA 中有两个固定的决策：
-
-| 决策点 | CAPA 的做法 | 位置 |
-|--------|-----------|------|
-| 批次大小 | 固定值 `Δb`（作为输入参数） | Algorithm 1 Line 5: `if t_cum == Δb` |
-| 未分配 parcel 去向 | CAMA 产生的 `L_cr` 全部送入 DAPA | Algorithm 1 Line 9: `M_cr ← DAPA(P_S, L_cr)` |
-
-### 1.2 RL-CAPA 的改动范围
-
-RL-CAPA **保留了 CAMA 和 DAPA 的全部内部逻辑不变**，只用 DDQN 替换了上面两个决策点：
-
-| 决策点 | RL-CAPA 的做法 | 对应 MDP |
-|--------|---------------|---------|
-| 批次大小 | DDQN-1 从离散动作空间 `A_b = [h_L, ..., h_M]` 中选择 | M_b |
-| 未分配 parcel 去向 | DDQN-2 对每个未分配 parcel 做 binary 决策：送去 DAPA (a_m=1) 或推迟到下一批次 (a_m=0) | M_m |
-
-**关键理解**：CAMA 仍然正常执行——它仍然会：
-- 计算 utility u(τ,c)
-- 计算 threshold T_h
-- 将 u ≥ T_h 的 parcel 分配到 M_lo（本地匹配）
-- 将 u < T_h 或无可行 courier 的 parcel 输出到 L_cr
-
-RL-CAPA 的 M_m 只作用于 CAMA 输出的 `L_cr`（auction pool），而不是所有 parcel。
+本文档是 RL-CAPA 的唯一有效实现规范。所有实现必须严格遵循此文档。
+旧版 DDQN 设计已废弃，不再适用。
 
 ---
 
-## 2. RL-CAPA 的完整执行流程
+## 1. 总体架构
 
-下面用伪代码展示一个 episode 内的完整执行流程，精确标注每一步对应论文的哪段描述。
+RL-CAPA 是一个**两阶段 hierarchical actor-critic** 方法，包含 4 个网络：
 
-```
-输入：parcel stream Γ, couriers C, cooperating platforms P
-输出：matching plan M
+| 网络 | 符号 | 参数 | 输入 | 输出 | 角色 |
+|------|------|------|------|------|------|
+| Actor 1 | π1 | θ1 | s_t^(1) | a_t^(1) 的概率分布 | 选择 batch time-window size |
+| Actor 2 | π2 | θ2 | s_{t,i}^(2), a_t^(1) | a_{t,i} 的概率 (0 or 1) | 每个 parcel 的 cross-or-not 决策 |
+| Critic 1 | V1 | φ1 | s_t^(1) | 标量 | 第一阶段决策前的状态价值 |
+| Critic 2 | V2 | φ2 | s_t^(2), a_t^(1) | 标量 | 第一阶段动作确定后的条件状态价值 |
 
-M ← ∅
-Γ_carry ← ∅                          # 被推迟的 parcels（上一批次 M_m 决策 a_m=0 的）
-t_cur ← 0                            # 当前时间指针
-
-while timeline t is not terminal:     # 一个 episode = 一天的完整时间线
-
-    #===== 阶段 1：M_b 决策——选择批次大小 =====
-    # 论文："The local platform is modeled as an agent that observes the environment
-    #        and selects a batch size from the discrete action space A_b"
-    
-    s_b ← observe_batch_state(t_cur)  # 构建 S_b 状态
-    a_b ← DDQN_batch.select(s_b)      # 选择批次持续时间（秒）
-    
-    #===== 阶段 2：按批次大小累积 parcels =====
-    # 这对应 Algorithm 1 Lines 2-4 但用 a_b 替换了固定的 Δb
-    
-    Γ_batch ← ∅
-    for each time step t in [t_cur, t_cur + a_b):
-        Γ_t ← retrieve_arriving_parcels(t)
-        Γ_batch ← Γ_batch ∪ Γ_t
-    Γ_batch ← Γ_batch ∪ Γ_carry       # 合并上一批次推迟过来的 parcels
-    Γ_carry ← ∅                        # 清空 carry 池
-    t_cur ← t_cur + a_b
-    
-    #===== 阶段 3：执行 CAMA 本地匹配 =====
-    # 论文 Algorithm 1 Line 8，完全不变
-    
-    C_S ← retrieve_available_inner_couriers()
-    M_lo, L_cr ← CAMA(Γ_batch, C_S)
-    
-    # 此时：
-    # M_lo = 本地匹配成功的 (parcel, courier) 对
-    # L_cr = CAMA 认为应该进入跨平台拍卖的 parcels
-    #        包括：u < T_h 的 parcels + 没有 feasible courier 的 parcels
-    
-    #===== 阶段 4：M_m 决策——对 L_cr 中每个 parcel 做 cross-or-not =====
-    # 论文："each parcel is treated as an agent making the cross-or-not decision"
-    # 注意：M_m 的决策对象是 L_cr，不是全部 parcels
-    
-    L_cross ← ∅     # 最终送去 DAPA 的 parcels
-    for each parcel τ in L_cr:
-        s_m ← observe_parcel_state(τ, t_cur, a_b)  # 构建 S_m 状态
-        a_m ← DDQN_cross.select(s_m)               # binary: 0 or 1
-        
-        if a_m == 1:
-            L_cross ← L_cross ∪ {τ}    # 送去跨平台拍卖
-        else:  # a_m == 0
-            Γ_carry ← Γ_carry ∪ {τ}    # 推迟到下一批次
-    
-    #===== 阶段 5：执行 DAPA 跨平台拍卖 =====
-    # 论文 Algorithm 1 Line 9，对 L_cross（不是原始 L_cr）执行
-    
-    P_S ← retrieve_available_platforms()
-    M_cr ← DAPA(P_S, L_cross)
-    
-    #===== 阶段 6：合并结果 =====
-    M ← M ∪ M_lo ∪ M_cr
-    
-    #===== 阶段 7：处理 DAPA 也未能分配的 parcels =====
-    # 论文 Section 3.2："The parcels that are not allocated in the current batch
-    #                    will reenter the next batch for re-matching"
-    # M_m 决策 a_m=1 但 DAPA 也没有匹配上的 parcels
-    
-    L_dapa_failed ← L_cross \ {τ | (τ, c) ∈ M_cr}
-    Γ_carry ← Γ_carry ∪ L_dapa_failed
-    
-    #===== 阶段 8：计算 rewards，存储 transitions =====
-    # (详见第 4 节 reward 计算)
-    
-    r_b ← compute_batch_reward(M_lo, M_cr)
-    for each parcel τ and its action a_m:
-        r_m ← compute_parcel_reward(τ, a_m)
-    
-    # 存储到 replay buffers 并优化（详见第 6 节）
-
-return M
-```
+关键设计：
+- V2 将 a_t^(1) 视为**已知环境条件**（非待选动作），因为进入第二阶段时 batch size 已确定
+- π2 按 parcel 因子化：π2(a_t^(2) | s_t^(2), a_t^(1)) = ∏_i π2(a_{t,i} | s_{t,i}^(2), a_t^(1))，所有 parcel 共享同一网络参数
+- 所有网络共享同一个环境，优化同一个平台级回报 R_t
 
 ---
 
-## 3. MDP M_b：批次大小选择（全局级决策）
+## 2. 与 CAPA 的关系
 
-### 3.1 时间粒度
+RL-CAPA 不替换 CAPA，只替换 Algorithm 1 中的**两个固定决策点**：
 
-论文给出了一个例子：`h_L = 10, h_M = 20`，动作空间为 `{10, 11, ..., 20}`，单位是**秒**。
-每个 action 代表一个 "specific batch duration"。
+| CAPA 中的固定决策 | RL-CAPA 的替换 |
+|-------------------|---------------|
+| 固定 batch size Δb | π1 动态选择 a_t^(1) ∈ A_b |
+| 自动路由到 DAPA（所有未匹配 parcel 进入拍卖池） | π2 逐 parcel 决策 a_{t,i} ∈ {0, 1} |
 
-### 3.2 状态空间 S_b
-
-论文原文定义：
-
-```
-s_t = (|Γ_t^Loc|, |C_t^Loc|, |D|, |T|)
-```
-
-四个分量的含义和计算方式：
-
-| 分量 | 含义 | 计算方式 |
-|------|------|---------|
-| `|Γ_t^Loc|` | 当前待处理 parcels 数量 | 当前时刻 local platform 的 pending parcels 数量（包括新到达的 + carry over 的） |
-| `|C_t^Loc|` | 当前可用 couriers 数量 | local platform 的 available inner couriers 数量（排除已满载或已过 deadline 的） |
-| `|D|` | courier 与 pick-up tasks 的平均距离 | `mean(dist(c, τ)) for all feasible (c, τ) pairs`，论文说 "lower values imply closer proximity" |
-| `|T|` | 任务紧迫度 | 论文引用 [22] 的定义："task urgency relative to the current time slice and task deadline"，具体计算为 `mean((t_τ - t_cur) / t_τ)` 或类似的归一化紧迫度 |
-
-**状态维度：4**
-
-### 3.3 实现要点
-
-- 状态在**每个批次开始前**观测一次（即选择 a_b 之前）
-- `|D|` 的计算需要在选择批次大小之前就能得到——用上一个时刻的 courier 位置和当前 pending parcels 的位置计算
-- `|T|` 需要归一化，论文引用 [22] 的处理方式
-
-### 3.4 动作空间 A_b
-
-```
-A_b = [h_L, h_L+1, ..., h_M]
-```
-
-- 离散动作，动作数量 = `h_M - h_L + 1`
-- 论文例子：h_L=10, h_M=20 → 11 个动作
-- 每个动作对应一个**时间持续时长（秒）**
-- Q 网络的输出维度 = `h_M - h_L + 1`
-- 实际批次大小 = `h_L + action_index`
-
-### 3.5 奖励函数 R_b
-
-论文原文：
-
-> "the agent receives an immediate reward R(s_{t+1} | s_t, a_t), defined as the total matching revenue Rev_S(Γ_Loc, C_Loc, P) obtained in the batch (see Eq. 5)"
-
-```
-R_b = Rev_S(Γ_Loc, C_Loc, P)
-    = Σ_{(τ_i, c_i) ∈ M_lo} (p_τ_i - Rc(τ_i, c_i))     # 本地匹配的收入
-    + Σ_{(τ_j, c_j) ∈ M_cr} (p_τ_j - p'(τ_j, c_j))      # 跨平台匹配的收入
-```
-
-其中 `Rc(τ, c) = ζ · p_τ`（本地 courier 支付），`p'(τ, c)` 是 DAPA 决定的跨平台支付。
-
-**R_b 是整个批次执行完毕后（CAMA + M_m决策 + DAPA 全部完成后）才能计算的。**
-
-### 3.6 transition 定义
-
-一个 transition for M_b:
-```
-(s_b, a_b, r_b, s_b_next, done)
-```
-- `s_b`：批次开始前的全局状态
-- `a_b`：选择的批次大小
-- `r_b`：该批次的总收入（Eq.5）
-- `s_b_next`：下一个批次开始前的全局状态
-- `done`：时间线是否结束
+CAMA、DAPA、utility 计算、约束检查等**全部复用** CAPA 的模块，通过 import 调用。
 
 ---
 
-## 4. MDP M_m：Cross-or-not 决策（parcel 级决策）
+## 3. 状态空间定义
 
-### 4.1 决策对象
-
-**M_m 的决策对象是 CAMA 输出的 `L_cr` 中的每一个 parcel**，不是全部 parcel。
-
-论文原文："each parcel is treated as an agent making the cross-or-not decision. Action a_m = 1 assigns the parcel to the cross-platform auction pool, while a_m = 0 defers it to the next batch."
-
-### 4.2 状态空间 S_m
-
-论文原文定义：
+### 3.1 第一阶段状态 S_b
 
 ```
-s_m = (|ΔΓ|, t_τ, t_cur, Δb)
+s_t^(1) = (|Γ_t^Loc|, |C_t^Loc|, |D|, |T|)
 ```
 
-| 分量 | 含义 | 计算方式 |
-|------|------|---------|
-| `|ΔΓ|` | 未分配 parcels 的数量 | `len(L_cr)` — 即 CAMA 输出的 auction pool 大小 |
-| `t_τ` | 当前 parcel 的 deadline | parcel 的属性 `t_τ`，直接使用 |
-| `t_cur` | 当前时间 | 当前时间指针 |
-| `Δb` | 本批次的批次大小 | **来自 M_b 的 action**——这是两个 MDP 耦合的关键 |
+| 特征 | 符号 | 含义 | 计算方式 |
+|------|------|------|----------|
+| 待处理 parcel 数 | \|Γ_t^Loc\| | 本地平台当前待分配 parcel 数量 | 直接计数 |
+| 可用 courier 数 | \|C_t^Loc\| | 本地平台当前可用 courier 数量 | 直接计数 |
+| 平均距离 | \|D\| | courier 与 pick-up 任务的平均距离 | 对所有可行 (courier, parcel) 对求平均距离 |
+| 任务紧迫度 | \|T\| | 相对于当前时间和 deadline 的紧迫程度 | 对所有 parcel 求 (deadline - t_cur) 的平均值 |
 
-**状态维度：4**
+维度：4
 
-### 4.3 关于耦合的实现细节
-
-`Δb` 出现在 S_m 中意味着：
-- 每个 parcel agent 在做 cross-or-not 决策时，知道当前批次有多大
-- 如果 M_b 选了一个较小的 Δb，parcel 知道批次较短，可能更倾向于 cross（因为下一批次来得快）
-- 如果 M_b 选了一个较大的 Δb，parcel 知道批次较长，可能更倾向于 defer（积累更多 parcels）
-
-### 4.4 动作空间 A_m
+### 3.2 第二阶段状态 S_m（per-parcel）
 
 ```
-A_m = {0, 1}
-```
-- `a_m = 0`：推迟到下一批次（defer）
-- `a_m = 1`：进入跨平台 auction pool（cross）
-
-Q 网络的输出维度 = 2
-
-### 4.5 奖励函数 R_m（三分支）
-
-论文给出了明确的三分支定义：
-
-```
-R_m(s_m, a_m) = {
-    p_τ - Rc(τ, c)      if a_m = 0 AND I(τ) = 1    # Case 1
-    p_τ - p'_τ(τ, c)    if a_m = 1 AND I(τ) = 1    # Case 2
-    0                    otherwise                    # Case 3
-}
+s_{t,i}^(2) = (t_τi, t_cur, v_τi, |ΔΓ_t|, |C_t^Loc|, ū_t^Loc, |C_t^Cross|, b̄_t^Cross, Δb)
 ```
 
-**对每个 case 的详细分析：**
+| 特征 | 符号 | 含义 | 计算方式 |
+|------|------|------|----------|
+| parcel deadline | t_τi | parcel τ_i 的截止时间 | 从 parcel 对象读取 |
+| 当前时间 | t_cur | 当前环境时间 | 从环境读取 |
+| 估计本地净收益 | v_τi | p_τi - Rc_hat(τi) | parcel 价格减去估计服务成本 |
+| 未分配 parcel 数 | \|ΔΓ_t\| | 当前 batch 内未分配 parcel 数 | 直接计数 |
+| 本地可用 courier 数 | \|C_t^Loc\| | 同 S_b 中的定义 | 直接计数 |
+| 本地 courier 平均剩余容量 | ū_t^Loc | 本地 courier 的平均剩余载货容量 | 对可用 courier 求平均 remaining_capacity |
+| 跨平台可用 courier 总数 | \|C_t^Cross\| | 所有合作平台可用 courier 的总和 | 对各平台可用 courier 求和 |
+| 跨平台近期平均中标价 | b̄_t^Cross | 近 N 个 batch 的 cross-platform 中标价滑动平均 | 维护一个滑动窗口 |
+| batch size | Δb | 第一阶段选定的 batch 时间窗 | = a_t^(1) |
 
-**Case 1：a_m = 0 且 I(τ) = 1**
-- parcel 被推迟到下一批次
-- 在下一批次中，这个 parcel 重新进入 CAMA
-- 如果在下一批次中被 CAMA 成功分配给 inner courier（I(τ)=1），reward = 本地收入 = `p_τ - ζ·p_τ`
-- **实现难点**：这个 reward 不是立即可得的，需要等到下一批次执行完才能确定
+维度：9
 
-**Case 2：a_m = 1 且 I(τ) = 1**
-- parcel 进入 DAPA
-- DAPA 成功将其分配给 cross courier（I(τ)=1），reward = 跨平台收入 = `p_τ - p'(τ, c)`
-- `p'(τ, c)` 是 DAPA 拍卖产生的支付价格
-- **这个 reward 在当前批次结束时就可以得到**
-
-**Case 3：otherwise（I(τ) = 0）**
-- 不管选了 a_m=0 还是 a_m=1，parcel 最终未被分配
-- reward = 0
-- 如果 a_m=0：被推迟到下一批次，下一批次也没分配上 → reward = 0
-- 如果 a_m=1：进入 DAPA 但没有平台/courier 能接 → reward = 0
-- **论文明确说明**："if a parcel τ is not assigned, i.e., I(τ) = 0, it reappears as a new agent in the next batch to re-evaluate the cross-or-not decision"
-
-### 4.6 R_m 的 reward 时机问题——实现策略
-
-上面的分析揭示了一个关键的实现问题：
-
-- 如果 `a_m = 1`（cross）：reward 在**当前批次** DAPA 执行后就能知道
-- 如果 `a_m = 0`（defer）：reward 要等到**下一个（或更后面的）批次**才能知道
-
-**推荐的实现策略**：
-
-```
-对 a_m = 1 的 parcels:
-    DAPA 执行后，立即计算 reward：
-    - 如果 DAPA 匹配成功：r_m = p_τ - p'(τ, c)
-    - 如果 DAPA 匹配失败：r_m = 0（parcel 进入 carry）
-
-对 a_m = 0 的 parcels:
-    当前批次不计算 reward，将 parcel 放入 carry 池。
-    在 parcel 最终被分配或确定无法分配时，回填 reward：
-    - 如果在后续某个批次被 CAMA 本地分配：r_m = p_τ - ζ·p_τ
-    - 如果在后续某个批次被再次送入 DAPA 并成功：不适用（那时是一个新的 M_m 决策）
-    - 如果直到 episode 结束仍未分配：r_m = 0
-```
-
-**简化方案**（更易实现，也合理）：
-
-由于 a_m=0 的 parcel 在下一批次重新进入 CAMA → 可能再次进入 L_cr → 做新的 M_m 决策，
-本质上是一个新的 episode step。因此可以将 a_m=0 视为：
-```
-r_m = 0（defer 本身没有立即 reward）
-parcel 以新 agent 身份出现在下一批次
-```
-
-这个简化与论文"it reappears as a new agent in the next batch"一致。
-
-### 4.7 transition 定义
-
-一个 transition for M_m (per parcel):
-```
-(s_m, a_m, r_m, s_m_next, done)
-```
-
-- `s_m`：该 parcel 在当前批次的状态 (|ΔΓ|, t_τ, t_cur, Δb)
-- `a_m`：0 或 1
-- `r_m`：按上面的三分支计算
-- `s_m_next`：
-  - 如果 a_m=1 且成功分配：terminal state（该 parcel 已完成）
-  - 如果 a_m=1 且 DAPA 失败：parcel 进入下一批次的状态
-  - 如果 a_m=0：parcel 进入下一批次的状态
-- `done`：时间线是否结束 或 parcel 是否被分配/过期
-
-### 4.8 Centralized Q-network
-
-论文原文：
-
-> "the number of decision agents (i.e., parcels) varies dynamically across matching batches, making decentralized learning approaches infeasible... we adopt a centralized Q-network framework, where all agents share a common Q-function that generalizes across varying parcel states and actions."
-
-实现含义：
-- 只有**一个** CrossQNetwork 实例
-- 每个 parcel 输入自己的 s_m，通过同一个网络得到 Q(s_m, 0) 和 Q(s_m, 1)
-- 一个批次中所有 parcel 的 transitions 都存入同一个 replay buffer
-- 训练时从这个 buffer 采样 mini-batch 更新同一个网络
+**实现注意**：
+- v_τi 中的 Rc_hat(τi) 可简化为到最近可用 courier 的路由成本估计
+- b̄_t^Cross 在训练初期（无历史数据时）初始化为 0 或全局平均 parcel 价格
+- 所有特征需要做归一化（建议用 running mean/std 或 min-max）
 
 ---
 
-## 5. DDQN 网络架构与训练细节
+## 4. 动作空间定义
 
-### 5.1 网络架构
+### 4.1 第一阶段动作 A_b
 
-论文没有指定具体的网络层数和宽度，只说使用 DDQN。合理的设计：
+离散动作空间：A_b = {h_L, h_{L+1}, ..., h_M}
+
+- h_L = 最小 batch 时长（秒），例如 10
+- h_M = 最大 batch 时长（秒），例如 20
+- π1 输出 |A_b| 维 softmax 概率，采样 a_t^(1)
+
+### 4.2 第二阶段动作 A_m
+
+每个 parcel 的二元动作：a_{t,i} ∈ {0, 1}
+- 0 = defer to next batch
+- 1 = send to cross-platform auction pool
+
+π2 输出每个 parcel 的 sigmoid 概率，独立采样 a_{t,i}
+
+---
+
+## 5. 奖励定义
+
+**平台级总奖励**（两阶段共用同一个奖励）：
+
+```
+R_t = Rev_S^t(Γ_Loc, C_Loc, P)
+```
+
+即论文 Eq.5 的 matching revenue，包括本地匹配收益和跨平台匹配收益。
+
+**不要**为两个阶段设计不同的奖励函数。两个 stage 的策略通过各自的 advantage 来区分梯度信号，但 target return 是同一个 R_t。
+
+---
+
+## 6. 优势函数与策略更新
+
+### 6.1 两个 Advantage
+
+```
+A_t^(1) = V2(s_t^(2), a_t^(1)) - V1(s_t^(1))
+```
+
+含义：选择该 batch time-window 后的条件状态价值，相比决策前的状态价值的增益。
+
+```
+A_t^(2) = R_t - V2(s_t^(2), a_t^(1))
+```
+
+含义：实际回报相比第二阶段条件预期的增益。
+
+两者形成 coarse-to-fine 的价值链：V1 → V2 → R_t
+
+### 6.2 策略梯度更新
+
+```
+∇J1(θ1) = E[∇log π1(a_t^(1) | s_t^(1); θ1) · A_t^(1)]
+∇J2(θ2) = E[∇log π2(a_t^(2) | s_t^(2), a_t^(1); θ2) · A_t^(2)]
+```
+
+对于 π2 的因子化形式：
+```
+log π2(a_t^(2) | ...) = Σ_i log π2(a_{t,i} | s_{t,i}^(2), a_t^(1))
+```
+
+### 6.3 Critic 更新
+
+```
+L_V1(φ1) = E[(V1(s_t^(1); φ1) - R̂_t)²]
+L_V2(φ2) = E[(V2(s_t^(2), a_t^(1); φ2) - R̂_t)²]
+```
+
+其中 R̂_t 是 empirical discounted return（Monte Carlo 回报）。
+
+### 6.4 训练目标
+
+```
+max_{θ1,θ2}  J1(θ1) + J2(θ2)
+min_{φ1,φ2}  L_V1(φ1) + L_V2(φ2)
+```
+
+**关键实现细节**：
+- 4 个网络各有独立的 optimizer
+- A_t^(1) 和 A_t^(2) 在送入 policy gradient 时必须 **detach**（stop-gradient on V1, V2）
+- 不要把 4 个 loss 合成一个 loss 反传
+
+---
+
+## 7. 网络结构
+
+### 7.1 π1（Batch Size Actor）
+```
+Input:  s_t^(1) ∈ R^4
+Hidden: 2 层 MLP, 隐藏维度 128, ReLU
+Output: softmax over |A_b| actions
+```
+
+### 7.2 π2（Cross-or-Not Actor，per-parcel 共享参数）
+```
+Input:  [s_{t,i}^(2), a_t^(1)] ∈ R^10  (9-dim state + 1-dim batch size)
+Hidden: 2 层 MLP, 隐藏维度 128, ReLU
+Output: sigmoid → P(a_{t,i}=1)
+```
+
+注意：a_t^(1) 在 s_{t,i}^(2) 中已包含为 Δb，所以 π2 的输入直接是 s_{t,i}^(2) 的 9 维向量。
+不需要再额外拼接 a_t^(1)。
+
+### 7.3 V1（State Value Critic）
+```
+Input:  s_t^(1) ∈ R^4
+Hidden: 2 层 MLP, 隐藏维度 128, ReLU
+Output: 标量 value
+```
+
+### 7.4 V2（Conditional State Value Critic）
+```
+Input:  [s_t^(2)_aggregated, a_t^(1)] ∈ R^(d_agg + 1)
+Hidden: 2 层 MLP, 隐藏维度 128, ReLU
+Output: 标量 value
+```
+
+**V2 的输入聚合问题**：π2 有多个 per-parcel 状态 s_{t,i}^(2)，但 V2 输出一个标量。
+处理方式：将 batch 内所有 parcel 的 s_{t,i}^(2) 做 mean-pooling 得到 s_t^(2)_aggregated，
+再拼接 a_t^(1)。
 
 ```python
-# BatchQNetwork (M_b)
-# 输入: s_b ∈ R^4
-# 输出: Q(s_b, a) for each a ∈ A_b, 维度 = h_M - h_L + 1
-class BatchQNetwork(nn.Module):
-    Linear(4, 128) → ReLU
-    Linear(128, 128) → ReLU
-    Linear(128, |A_b|)
-
-# CrossQNetwork (M_m)  
-# 输入: s_m ∈ R^4
-# 输出: Q(s_m, 0), Q(s_m, 1), 维度 = 2
-class CrossQNetwork(nn.Module):
-    Linear(4, 128) → ReLU
-    Linear(128, 128) → ReLU
-    Linear(128, 2)
+s2_agg = mean([s_{t,i}^(2) for i in range(|ΔΓ_t|)])  # shape: (9,)
+v2_input = concat([s2_agg, a_t^(1)])                   # shape: (10,)
+# 注意: s2_agg 中已包含 Δb = a_t^(1)，所以也可以直接用 s2_agg 作为输入 (9,)
+# 选择哪种方式取决于实验效果，建议先用 s2_agg (9,) 作为输入
 ```
-
-### 5.2 DDQN 更新规则
-
-DDQN（Double DQN）与普通 DQN 的区别：
-
-```
-普通 DQN:
-    target = r + γ · max_a Q_target(s', a)
-
-Double DQN (论文使用):
-    a* = argmax_a Q_online(s', a)       ← 用 online 网络选动作
-    target = r + γ · Q_target(s', a*)   ← 用 target 网络评估
-```
-
-### 5.3 训练超参数（论文 Section 4.1 明确给出）
-
-| 参数 | 值 | 来源 |
-|------|-----|------|
-| 优化器 | RMSprop | "we use the RMSprop optimizer" |
-| 学习率 | 0.001 | "with a learning rate of 0.001" |
-| 折扣因子 γ | 0.9 | "and a discount factor of 0.9" |
-
-以下参数论文未明确指定，需要合理设置：
-
-| 参数 | 建议值 | 理由 |
-|------|--------|------|
-| Replay buffer 容量 | 50000 | 标准 DDQN 配置 |
-| Mini-batch size | 64 | 标准配置 |
-| Target network 更新频率 | 每 100 steps hard update | 标准配置 |
-| Epsilon 初始值 | 1.0 | 标准 exploration |
-| Epsilon 终止值 | 0.01 | 标准配置 |
-| Epsilon 衰减 | 线性或指数衰减 | 按 episode 数调整 |
-| 训练 episode 数 | 需实验确定 | 观察收敛曲线 |
 
 ---
 
-## 6. 联合训练算法
+## 8. 训练循环（伪代码）
 
-### 6.1 论文关于联合训练的原文
-
-> "we jointly train the DDQN models for M_b and M_m. During joint training, the shared environment is updated based on the combined outcomes of both decision processes, allowing each agent to account for the downstream impact of its actions and improve long-term revenue optimization under dynamic system conditions."
-
-### 6.2 联合训练的精确实现
-
-```python
-# 初始化
-batch_agent = DDQNAgent(BatchQNetwork, ...)      # M_b 的 DDQN
-cross_agent = DDQNAgent(CrossQNetwork, ...)      # M_m 的 DDQN
-batch_buffer = ReplayBuffer(capacity)
-cross_buffer = ReplayBuffer(capacity)
-env = CAPAEnvironment(config)
+```
+initialize π1(θ1), π2(θ2), V1(φ1), V2(φ2)
+initialize 4 optimizers: opt_π1, opt_π2, opt_V1, opt_V2
 
 for episode in range(num_episodes):
-    s_b = env.reset()           # 重置环境，返回初始 batch state
-    episode_return = 0
-    done = False
+    reset environment → get initial state
+    episode_buffer = []
     
     while not done:
-        #--- M_b 决策 ---
-        a_b = batch_agent.select_action(s_b)
+        # === 第一阶段 ===
+        构建 s_t^(1) from environment
+        a_t^(1) ~ π1(· | s_t^(1))          # 采样 batch size
+        log_prob_1 = log π1(a_t^(1) | s_t^(1))
         
-        #--- 按 a_b 累积 parcels + 执行 CAMA ---
-        Γ_batch, C_S = env.accumulate_and_get_cama_inputs(a_b)
-        M_lo, L_cr = CAMA(Γ_batch, C_S)          # 直接调用 CAMA
+        # 环境按 a_t^(1) 推进时间，积累 parcel batch
+        env.advance_time(a_t^(1))
         
-        #--- M_m 决策（对 L_cr 中的每个 parcel） ---
-        L_cross = []
-        parcel_transitions = []
+        # === CAMA 本地匹配 ===
+        M_lo, unassigned_parcels = CAMA(batch_parcels, available_couriers)
         
-        for τ in L_cr:
-            s_m = build_parcel_state(τ, env, a_b)
-            a_m = cross_agent.select_action(s_m)
-            
-            if a_m == 1:
-                L_cross.append(τ)
-            else:
-                env.defer_parcel(τ)               # 推迟到下一批次
+        # === 第二阶段 ===
+        构建每个 parcel 的 s_{t,i}^(2)
+        for each parcel τ_i in unassigned_parcels:
+            a_{t,i} ~ π2(· | s_{t,i}^(2))     # 采样 cross-or-not
+        log_prob_2 = Σ_i log π2(a_{t,i} | s_{t,i}^(2))
         
-        #--- 执行 DAPA ---
-        P_S = env.get_available_platforms()
-        M_cr = DAPA(P_S, L_cross)                 # 直接调用 DAPA
+        # 按 a_{t,i} 分流：a=1 进拍卖池，a=0 defer
+        auction_pool = [τ_i for a_{t,i}=1]
+        deferred = [τ_i for a_{t,i}=0]
         
-        #--- 处理 DAPA 也失败的 parcels ---
-        for τ in L_cross:
-            if τ not in M_cr:
-                env.defer_parcel(τ)
+        # === DAPA 跨平台拍卖 ===
+        M_cr = DAPA(auction_pool, cooperating_platforms)
         
-        #--- 更新环境状态 ---
-        env.apply_assignments(M_lo, M_cr)
+        # === 计算奖励 ===
+        R_t = compute_platform_revenue(M_lo, M_cr)  # 论文 Eq.5
         
-        #--- 计算 rewards ---
-        r_b = compute_total_revenue(M_lo, M_cr)   # Eq.5
+        # === 记录 ===
+        v1 = V1(s_t^(1))
+        s2_agg = mean_pool([s_{t,i}^(2)])
+        v2 = V2(s2_agg)
         
-        for τ in L_cr:
-            a_m = ... # 该 parcel 的动作
-            if a_m == 1:
-                if τ in M_cr:
-                    r_m = p_τ - p'(τ, c)          # Case 2
-                else:
-                    r_m = 0                        # Case 3
-            else:  # a_m == 0
-                r_m = 0  # defer 的即时 reward 为 0（论文简化）
-            
-            s_m_next = ...  # 下一状态或 terminal
-            cross_buffer.push(s_m, a_m, r_m, s_m_next, done_parcel)
-        
-        s_b_next = env.get_batch_state()
-        done = env.is_terminal()
-        
-        #--- 存储 M_b transition ---
-        batch_buffer.push(s_b, a_b, r_b, s_b_next, done)
-        
-        #--- 训练两个 DDQN ---
-        if len(batch_buffer) >= min_buffer_size:
-            loss_b = batch_agent.train_step(batch_buffer)
-        if len(cross_buffer) >= min_buffer_size:
-            loss_m = cross_agent.train_step(cross_buffer)
-        
-        #--- 更新 target networks ---
-        batch_agent.maybe_update_target()
-        cross_agent.maybe_update_target()
-        
-        episode_return += r_b
-        s_b = s_b_next
+        episode_buffer.append({
+            s1, a1, log_prob_1, s2_agg, v1, v2, R_t, log_prob_2
+        })
     
-    #--- Episode 结束 ---
-    log_metrics(episode, episode_return, loss_b, loss_m, epsilon, ...)
+    # === Episode 结束，计算 discounted returns ===
+    compute R̂_t for all t using γ (backward cumulative)
+    
+    # === 计算 advantages ===
+    for each step t:
+        A_t^(1) = v2_t - v1_t               # detach v1, v2
+        A_t^(2) = R̂_t - v2_t               # detach v2
+    
+    # === 更新 4 个网络 ===
+    # Actor 1
+    loss_π1 = -mean(log_prob_1 * A_t^(1).detach())
+    opt_π1.zero_grad(); loss_π1.backward(); opt_π1.step()
+    
+    # Actor 2
+    loss_π2 = -mean(log_prob_2 * A_t^(2).detach())
+    opt_π2.zero_grad(); loss_π2.backward(); opt_π2.step()
+    
+    # Critic 1
+    loss_V1 = mean((V1(s_t^(1)) - R̂_t.detach())²)
+    opt_V1.zero_grad(); loss_V1.backward(); opt_V1.step()
+    
+    # Critic 2
+    loss_V2 = mean((V2(s2_agg) - R̂_t.detach())²)
+    opt_V2.zero_grad(); loss_V2.backward(); opt_V2.step()
+    
+    # === 日志 ===
+    log: episode_reward, loss_V1, loss_V2, loss_π1, loss_π2
 ```
-
-### 6.3 双向耦合的具体体现
-
-论文说两个 MDP "closely coupled and mutually affect"，具体在代码中体现为：
-
-**M_b → M_m 的影响：**
-- `a_b`（批次大小）出现在 M_m 的状态 `s_m = (..., Δb)` 中
-- 较小的 a_b → 批次中 parcels 更少 → |ΔΓ| 可能更小 → M_m 面对的 L_cr 更小
-- 较大的 a_b → 批次中 parcels 更多 → CAMA 有更多匹配机会 → L_cr 可能更小也可能更大
-
-**M_m → M_b 的影响：**
-- M_m 决策 a_m=0（defer）→ parcel 进入 carry 池 → 下一批次的 |Γ_t^Loc| 增加 → 影响下一个 s_b
-- M_m 决策 a_m=1（cross）→ parcel 被 DAPA 处理 → 可能影响 courier 可用性 → 影响下一个 s_b 的 |C_t^Loc|
 
 ---
 
-## 7. 在当前代码架构下的实现对接点
+## 9. 文件结构
 
-### 7.1 env 需要从 CAPA 模块导入的接口
+```
+src/rl/
+├── networks.py         # π1, π2, V1, V2 的网络定义
+├── state_builder.py    # 从环境提取 s_t^(1), s_{t,i}^(2) 的逻辑
+├── env.py              # RL 环境封装（wrap CAPA pipeline）
+├── trainer.py          # 训练循环（Section 8 的实现）
+├── evaluate.py         # 评估（无探索，用 argmax/greedy）
+├── utils.py            # discount return 计算、归一化等工具函数
+└── visualize.py        # 训练曲线绘制
+```
+
+### 9.1 networks.py 要求
 
 ```python
-from src.capa.cama import cama_assign       # Algorithm 2
-from src.capa.dapa import dapa_assign       # Algorithm 3
-from src.core.revenue import compute_total_revenue  # Eq.5
-from src.core.constraints import check_feasibility
+class BatchSizeActor(nn.Module):
+    """π1: 输入 s_t^(1), 输出 |A_b| 维 softmax 概率分布"""
+
+class CrossOrNotActor(nn.Module):
+    """π2: 输入 s_{t,i}^(2) (9-dim), 输出 sigmoid 概率 P(a=1)
+    参数在所有 parcel 间共享"""
+
+class StateValueCritic(nn.Module):
+    """V1: 输入 s_t^(1) (4-dim), 输出标量 value"""
+
+class ConditionalValueCritic(nn.Module):
+    """V2: 输入 s_t^(2)_aggregated (9-dim, mean-pooled), 输出标量 value
+    a_t^(1) 已包含在 s_t^(2) 的 Δb 分量中"""
 ```
 
-env 不应该重新实现 CAMA 或 DAPA 的任何逻辑。
-
-### 7.2 env 需要额外维护的状态
+### 9.2 state_builder.py 要求
 
 ```python
-class CAPAEnvironment:
-    self.parcel_stream        # 完整的 parcel 时间序列
-    self.couriers             # 所有 couriers（状态会动态变化）
-    self.platforms            # 所有 cooperating platforms
-    self.t_cur                # 当前时间指针
-    self.carry_parcels        # 被 M_m defer 的 parcels（跨批次携带）
-    self.total_parcels        # episode 的总 parcel 数（用于计算 CR）
-    self.completed_parcels    # 已完成的 parcels 数
+def build_stage1_state(env) -> np.ndarray:
+    """从环境构建 s_t^(1)，返回 shape (4,) 的数组"""
+
+def build_stage2_states(env, unassigned_parcels, batch_size) -> List[np.ndarray]:
+    """为每个未分配 parcel 构建 s_{t,i}^(2)，返回 List of shape (9,) 数组"""
+
+def aggregate_stage2_states(states: List[np.ndarray]) -> np.ndarray:
+    """对 per-parcel 状态做 mean-pooling，返回 shape (9,) 的聚合状态"""
 ```
 
-### 7.3 env.reset() 的行为
+### 9.3 env.py 要求
+
+RL 环境必须 wrap 现有的 CAPA pipeline：
 
 ```python
-def reset(self):
-    self.t_cur = 0
-    self.carry_parcels = []
-    self.completed_parcels = 0
-    # 重置所有 courier 状态（位置、容量、schedule）
-    # 返回初始 s_b
+class RLCAPAEnv:
+    """
+    RL-CAPA 环境。
+    
+    与 CAPA 共享同一套数据加载、courier/parcel 生成、时间推进、
+    CAMA 匹配、DAPA 拍卖的逻辑，全部通过 import 调用。
+    
+    RL 只替换两个决策点：batch size 和 cross-or-not。
+    """
+    
+    def reset(self) -> dict:
+        """重置环境，返回初始状态"""
+    
+    def get_stage1_state(self) -> np.ndarray:
+        """返回当前 s_t^(1)"""
+    
+    def apply_batch_size(self, batch_size: int):
+        """按选定的 batch size 推进时间，积累 parcel"""
+    
+    def run_local_matching(self) -> Tuple[MatchingResult, List[Parcel]]:
+        """调用 CAMA，返回本地匹配结果和未分配 parcel 列表"""
+    
+    def get_stage2_states(self, unassigned: List[Parcel]) -> List[np.ndarray]:
+        """返回每个未分配 parcel 的 s_{t,i}^(2)"""
+    
+    def apply_cross_decisions(self, decisions: Dict[Parcel, int]) -> float:
+        """
+        按决策分流 parcel：
+        - a=1 的进入拍卖池，调用 DAPA
+        - a=0 的 defer 到下一 batch
+        返回 R_t（平台级总收益）
+        """
+    
+    def is_done(self) -> bool:
+        """是否所有 parcel 处理完毕"""
 ```
 
-### 7.4 关于 episode 的定义
+---
 
-- 一个 episode = 模拟一天的完整时间线
-- 时间线从 t=0 开始，到 t=T_max（如一天 86400 秒）结束
-- 每个 batch step 消耗 a_b 秒的时间
-- done = True when t_cur ≥ T_max
+## 10. 超参数
+
+| 参数 | 建议值 | 说明 |
+|------|--------|------|
+| γ (discount) | 0.9 | 论文已指定 |
+| lr_actor | 0.001 | 两个 actor 相同 |
+| lr_critic | 0.001 | 两个 critic 相同 |
+| optimizer | Adam | 替换原来的 RMSprop（actor-critic 中 Adam 更稳定） |
+| hidden_dim | 128 | 两层 MLP |
+| num_episodes | 根据收敛情况调整 | 先用 500 做 smoke test |
+| h_L (min batch) | 10 | 论文已指定 |
+| h_M (max batch) | 20 | 论文已指定 |
+| entropy_coeff | 0.01 | 可选，防止策略过早收敛 |
+| max_grad_norm | 0.5 | 梯度裁剪 |
 
 ---
 
-## 8. 关键实现约束（禁止兜底）
+## 11. 可视化要求
 
-| 场景 | 正确做法 | 禁止做法 |
-|------|---------|---------|
-| L_cr 为空（CAMA 全部本地分配） | M_m 无需执行，直接 finalize | 不要人为往 L_cr 里加 parcel |
-| DAPA 返回空匹配 | parcel 进入 carry 池，r_m=0 | 不要用 random assignment 补救 |
-| carry_parcels 中的 parcel deadline 已过 | 该 parcel 视为过期，r_m=0，不再参与 | 不要延长 deadline |
-| Replay buffer 不够大 | 等 buffer 积累足够再开始训练 | 不要用随机数据填充 |
-| 某个 batch 没有可用 courier | CAMA 返回 M_lo=∅, L_cr=全部 | 不要 skip 这个 batch |
-| a_b 导致批次超过时间线末尾 | 截断到时间线末尾 | 不要跳过这个最后的 batch |
+训练过程必须记录并绘制以下曲线：
 
----
+| 曲线 | 说明 |
+|------|------|
+| Episode Reward (R_t) | 每 episode 的平台总收益 |
+| L_V1 | Critic 1 的 loss |
+| L_V2 | Critic 2 的 loss |
+| Policy Loss π1 | Actor 1 的 policy gradient loss |
+| Policy Loss π2 | Actor 2 的 policy gradient loss |
+| Batch Size Distribution | 训练过程中 π1 选择的 batch size 分布变化 |
+| Cross Rate | 训练过程中被 π2 送入拍卖池的 parcel 比例 |
 
-## 9. 评估模式
-
-评估时与训练的区别：
-- epsilon = 0（纯 exploitation，不做 exploration）
-- 不更新 replay buffer
-- 不做 gradient 更新
-- 记录 TR, CR, BPT 等指标
+所有曲线使用 sliding window 平滑（window=50）。
 
 ---
 
-## 10. 需要实现的文件清单
+## 12. 评估模式
 
-| 文件 | 核心职责 |
-|------|---------|
-| `src/rl/state_builder.py` | build_batch_state(), build_parcel_state() |
-| `src/rl/env.py` | CAPAEnvironment (reset, accumulate, step, defer, finalize) |
-| `src/rl/replay_buffer.py` | ReplayBuffer (push, sample, len) |
-| `src/rl/models.py` | BatchQNetwork, CrossQNetwork |
-| `src/rl/ddqn_agent.py` | DDQNAgent (select_action, train_step, update_target, save, load) |
-| `src/rl/train_rl_capa.py` | 联合训练主循环 + metric logging |
-| `src/rl/evaluate_rl_capa.py` | 评估循环 |
-| `src/rl/visualize.py` | 训练曲线绘图 |
+评估时：
+- π1 用 argmax（选概率最大的 batch size）
+- π2 用阈值 0.5（P(a=1) > 0.5 则跨平台）
+- 不做梯度更新
+- 记录 TR, CR, BPT 三个指标（与 CAPA 对齐）
 
 ---
 
-## 11. 需要记录的 Metrics
+## 13. 实现检查清单
 
-### 训练阶段（每 episode 记录）
+在每个步骤完成后逐条验证：
 
-| Metric | 含义 | 用途 |
-|--------|------|------|
-| episode_return | 整个 episode 的 R_b 总和 | reward 曲线 |
-| loss_batch | M_b DDQN 的 Q loss | 收敛监控 |
-| loss_cross | M_m DDQN 的 Q loss | 收敛监控 |
-| epsilon | 当前 exploration 率 | epsilon 衰减曲线 |
-| avg_batch_size | episode 中选择的平均 batch size | 策略分析 |
-| cross_ratio | episode 中选择 a_m=1 的比例 | 策略分析 |
-| completion_rate | episode 的 CR | 性能监控 |
-| total_revenue | episode 的 TR | 性能监控 |
-| bpt | 平均 batch processing time | 效率监控 |
+### 13.1 环境层
+- [ ] env.py 通过 import 调用 CAPA 的 CAMA、DAPA 模块
+- [ ] env.reset() 正确初始化所有状态
+- [ ] env.apply_batch_size() 按 a_t^(1) 秒推进时间并积累 parcel
+- [ ] env.run_local_matching() 调用 CAMA 并返回正确的未分配列表
+- [ ] env.apply_cross_decisions() 对 a=1 的 parcel 调用 DAPA
+- [ ] R_t 的计算与论文 Eq.5 一致
+- [ ] deferred parcel 正确保留到下一个 batch
 
-### 评估阶段（每 eval 周期记录）
+### 13.2 状态层
+- [ ] s_t^(1) 是 4 维向量
+- [ ] s_{t,i}^(2) 是 9 维向量
+- [ ] v_τi 计算正确（parcel 价格减估计服务成本）
+- [ ] ū_t^Loc 正确反映 courier 剩余容量
+- [ ] |C_t^Cross| 正确聚合所有合作平台
+- [ ] b̄_t^Cross 维护了滑动平均
+- [ ] Δb 等于 a_t^(1)
+- [ ] 所有特征做了归一化
 
-| Metric | 含义 |
-|--------|------|
-| eval_return | 评估 episode 的总 return |
-| eval_tr | 评估的 TR |
-| eval_cr | 评估的 CR |
-| eval_bpt | 评估的 BPT |
+### 13.3 网络层
+- [ ] π1 输出 softmax 概率，维度 = |A_b|
+- [ ] π2 输出 sigmoid 概率，每个 parcel 独立，共享参数
+- [ ] V1 输入 4 维，输出标量
+- [ ] V2 输入 mean-pooled 的 s_t^(2)（9维），输出标量
+- [ ] 4 个网络各有独立 optimizer
+
+### 13.4 训练层
+- [ ] advantage 计算正确：A1 = V2 - V1, A2 = R̂_t - V2
+- [ ] advantage 在送入 actor 时做了 detach
+- [ ] log_prob 计算正确（π2 是所有 parcel 的 log_prob 之和）
+- [ ] discounted return R̂_t 的计算是从 episode 末尾向前累积
+- [ ] 4 个 loss 分别反传，不合并
+- [ ] 训练曲线在记录
+
+### 13.5 评估层
+- [ ] 评估模式下无梯度更新
+- [ ] π1 用 argmax
+- [ ] π2 用 0.5 阈值
+- [ ] 输出 TR, CR, BPT 与 CAPA 的评估方式一致
+
+---
+
+## 14. 常见错误及排查
+
+| 错误现象 | 可能原因 | 排查方式 |
+|----------|----------|----------|
+| reward 始终为 0 | CAMA/DAPA 未正确调用 | 打印 M_lo, M_cr 检查匹配结果 |
+| V1 loss 不降 | R̂_t 计算错误或未归一化 | 打印 R̂_t 分布 |
+| π1 只选一个动作 | entropy 坍塌 | 加 entropy bonus |
+| π2 全选 0 或全选 1 | advantage 信号太弱 | 检查 V2 是否正确接收 s_t^(2) |
+| V2 loss 远大于 V1 | V2 输入维度或聚合方式有误 | 打印 V2 的输入 shape |
+| 训练不收敛 | 学习率过大或梯度爆炸 | 加 grad clipping，降 lr |
+
+---
+
+## 15. 与 CAPA 环境流程的对齐
+
+```
+CAPA (Algorithm 1):                    RL-CAPA:
+─────────────────────                  ─────────────
+1. 固定 Δb                             1. π1 选择 a_t^(1) = Δb
+2. 按 Δb 积累 parcel batch             2. 按 a_t^(1) 积累 parcel batch  [相同]
+3. 调用 CAMA → M_lo, ΔΓ               3. 调用 CAMA → M_lo, ΔΓ        [相同]
+4. 全部 ΔΓ 进入拍卖池                   4. π2 逐 parcel 决策 cross-or-not
+5. 调用 DAPA → M_cr                    5. 只有 a=1 的进入 DAPA         [部分]
+6. 计算收益                             6. a=0 的 defer 到下一 batch     [新增]
+                                       7. 计算 R_t                     [相同]
+```
+
+这个对齐关系是实现的核心约束。环境的 step 函数必须严格按照此流程执行。
