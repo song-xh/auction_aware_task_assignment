@@ -1,0 +1,16 @@
+{
+  "axis": "num_parcels",
+  "preset": "formal",
+  "algorithms": [
+    "capa",
+    "greedy",
+    "basegta",
+    "impgta",
+    "mra",
+    "ramcom"
+  ],
+  "summary": "outputs/plots/exp1_formal/summary.json",
+  "tmp_root": "/tmp/exp1_formal",
+  "seed_path": "/tmp/exp1_formal/canonical_seed.pkl",
+  "execution_mode": "split"
+}

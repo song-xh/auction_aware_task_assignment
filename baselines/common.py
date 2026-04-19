@@ -6,11 +6,9 @@ from dataclasses import dataclass
 from typing import Any, Sequence
 
 from capa.cama import is_feasible_local_match
-from capa.cache import InsertionCache
-from capa.geo import GeoIndex
+from capa.config import DEFAULT_COURIER_ALPHA, DEFAULT_COURIER_BETA, DEFAULT_COURIER_SERVICE_SCORE
 from capa.models import Courier
-from capa.timing import TimedTravelModel, TimingAccumulator
-from capa.utility import find_best_local_insertion
+from capa.utility import GeoIndex, InsertionCache, TimedTravelModel, TimingAccumulator, find_best_local_insertion
 from env.chengdu import LegacyCourierSnapshotCache, legacy_courier_to_capa, legacy_task_to_parcel
 
 
@@ -130,7 +128,7 @@ def project_courier_to_capa(
             current_load=float(getattr(courier, "re_weight", 0.0)),
             route_locations=[getattr(task, "l_node") for task in getattr(courier, "re_schedule", [])],
             available_from=0,
-            alpha=float(getattr(courier, "w", 0.5)),
-            beta=float(getattr(courier, "c", 0.5)),
-            service_score=float(getattr(courier, "service_score", 0.8)),
+            alpha=float(getattr(courier, "w", DEFAULT_COURIER_ALPHA)),
+            beta=float(getattr(courier, "c", DEFAULT_COURIER_BETA)),
+            service_score=float(getattr(courier, "service_score", DEFAULT_COURIER_SERVICE_SCORE)),
         )

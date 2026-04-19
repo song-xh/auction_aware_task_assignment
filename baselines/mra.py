@@ -6,11 +6,18 @@ from dataclasses import dataclass
 from time import perf_counter
 from typing import Any, Callable, Mapping, Sequence
 
-from capa.cache import InsertionCache
-from capa.geo import GeoIndex
-from capa.timing import TimedTravelModel, TimingAccumulator
+from capa.config import (
+    DEFAULT_COURIER_ALPHA,
+    DEFAULT_COURIER_BETA,
+    DEFAULT_MRA_BASE_PRICE,
+    DEFAULT_MRA_SHARING_RATE,
+)
 from capa.utility import (
     DEFAULT_LOCAL_PAYMENT_RATIO,
+    GeoIndex,
+    InsertionCache,
+    TimedTravelModel,
+    TimingAccumulator,
     compute_local_platform_revenue_for_local_completion,
     find_best_local_insertion,
 )
@@ -25,9 +32,6 @@ from env.chengdu import (
 
 from .common import build_legacy_feasible_insertions, project_courier_to_capa
 
-
-DEFAULT_MRA_BASE_PRICE = 2.0
-DEFAULT_MRA_SHARING_RATE = 0.5
 
 
 @dataclass(frozen=True)
@@ -85,8 +89,8 @@ def compute_mra_bid(
     detour_term = 1.0 - local_ratio
     if feasible_count <= 1:
         return base_price + sharing_rate * parcel.fare
-    alpha = float(getattr(courier, "w", 0.5))
-    beta = float(getattr(courier, "c", 0.5))
+    alpha = float(getattr(courier, "w", DEFAULT_COURIER_ALPHA))
+    beta = float(getattr(courier, "c", DEFAULT_COURIER_BETA))
     return base_price + (alpha * capacity_term + beta * detour_term) * sharing_rate * parcel.fare
 
 
@@ -133,7 +137,6 @@ def run_mra_baseline_environment(
     backlog: list[Any] = []
     accepted_assignments = 0
     total_revenue = 0.0
-    processing_time_seconds = 0.0
     batches = group_legacy_tasks_by_batch(tasks, batch_size)
     first_batch_start = int(float(getattr(min(tasks, key=lambda item: float(getattr(item, "s_time"))), "s_time")))
 
@@ -141,12 +144,12 @@ def run_mra_baseline_environment(
     for batch_index, bucket in enumerate(batches, start=1):
         now = first_batch_start + (batch_index - 1) * batch_size
         unresolved = list(backlog) + list(bucket)
-        started = perf_counter()
         remaining = list(unresolved)
         while remaining:
             round_started = perf_counter()
             routing_before = timing.routing_time_seconds
             insertion_before = timing.insertion_time_seconds
+            movement_before = timing.movement_time_seconds
             graph_edges: list[MRAEdge] = []
             for task in remaining:
                 feasible = build_legacy_feasible_insertions(
@@ -220,9 +223,12 @@ def run_mra_baseline_environment(
 
             remaining = [task for task in remaining if str(getattr(task, "num")) not in used_tasks]
             elapsed = perf_counter() - round_started
-            processing_time_seconds += max(
+            timing.decision_time_seconds += max(
                 0.0,
-                elapsed - (timing.routing_time_seconds - routing_before) - (timing.insertion_time_seconds - insertion_before),
+                elapsed
+                - (timing.routing_time_seconds - routing_before)
+                - (timing.insertion_time_seconds - insertion_before)
+                - (timing.movement_time_seconds - movement_before),
             )
 
         backlog = remaining
@@ -253,7 +259,7 @@ def run_mra_baseline_environment(
     return {
         "TR": total_revenue,
         "CR": accepted_assignments / total_tasks,
-        "BPT": processing_time_seconds,
+        "BPT": timing.decision_time_seconds,
         "delivered_parcels": accepted_assignments,
         "accepted_assignments": accepted_assignments,
     }

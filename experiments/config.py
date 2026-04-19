@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from capa.config import DEFAULT_CAPA_BATCH_SIZE, DEFAULT_IMPGTA_WINDOW_SECONDS
+
 SUPPORTED_SWEEP_AXES = frozenset({"num_parcels", "local_couriers", "service_radius", "platforms", "batch_size", "courier_capacity"})
 
 
@@ -29,8 +31,8 @@ class ExperimentConfig:
     local_couriers: int = 10
     platforms: int = 2
     couriers_per_platform: int = 5
-    batch_size: int = 300
-    prediction_window_seconds: int = 180
+    batch_size: int = DEFAULT_CAPA_BATCH_SIZE
+    prediction_window_seconds: int = DEFAULT_IMPGTA_WINDOW_SECONDS
     service_radius_km: float | None = None
     courier_capacity: float | None = None
     rl_min_batch_size: int = 10

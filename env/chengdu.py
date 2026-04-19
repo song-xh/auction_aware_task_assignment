@@ -9,15 +9,28 @@ from pathlib import Path
 from time import perf_counter
 from typing import Any, Callable, Dict, Iterable, List, Mapping, MutableSequence, Sequence
 
-from capa.batch_distance import BatchDistanceMatrix, PersistentDirectedDistanceCache
-from capa.cache import InsertionCache
-from capa.cama import run_cama
-from capa.dapa import run_dapa
-from capa.geo import GeoIndex
+from capa.cama import build_local_candidate_shortlist, run_cama
+from capa.config import (
+    DEFAULT_COURIER_ALPHA,
+    DEFAULT_COURIER_BETA,
+    DEFAULT_COURIER_PREFERENCE,
+    DEFAULT_COURIER_SERVICE_SCORE,
+    build_default_platform_base_prices,
+    build_default_platform_qualities,
+    build_default_platform_sharing_rates,
+)
+from capa.dapa import build_cross_candidate_shortlist, run_dapa
 from capa.metrics import build_run_metrics
 from capa.models import Assignment, BatchReport, CAPAConfig, CAPAResult, CooperatingPlatform, Courier, Parcel
-from capa.timing import TimingAccumulator, TimedTravelModel
-from capa.utility import find_best_local_insertion
+from capa.utility import (
+    BatchDistanceMatrix,
+    GeoIndex,
+    InsertionCache,
+    PersistentDirectedDistanceCache,
+    TimedTravelModel,
+    TimingAccumulator,
+    find_best_local_insertion,
+)
 
 
 @dataclass(frozen=True)
@@ -378,9 +391,9 @@ def legacy_courier_to_capa(courier: Any, courier_id: str) -> Courier:
         current_load=float(getattr(courier, "re_weight")),
         route_locations=[getattr(task, "l_node") for task in getattr(courier, "re_schedule", [])],
         available_from=0,
-        alpha=float(getattr(courier, "w", 0.4)),
-        beta=float(getattr(courier, "c", 0.6)),
-        service_score=float(getattr(courier, "service_score", 0.8)),
+        alpha=float(getattr(courier, "w", DEFAULT_COURIER_ALPHA)),
+        beta=float(getattr(courier, "c", DEFAULT_COURIER_BETA)),
+        service_score=float(getattr(courier, "service_score", DEFAULT_COURIER_SERVICE_SCORE)),
     )
 
 
@@ -447,9 +460,9 @@ class LegacyCourierSnapshotCache:
             float(getattr(courier, "max_weight")),
             station_node,
             tuple(getattr(task, "l_node") for task in getattr(courier, "re_schedule", [])),
-            float(getattr(courier, "w", 0.4)),
-            float(getattr(courier, "c", 0.6)),
-            float(getattr(courier, "service_score", 0.8)),
+            float(getattr(courier, "w", DEFAULT_COURIER_ALPHA)),
+            float(getattr(courier, "c", DEFAULT_COURIER_BETA)),
+            float(getattr(courier, "service_score", DEFAULT_COURIER_SERVICE_SCORE)),
         )
 
 
@@ -1172,18 +1185,52 @@ def run_time_stepped_chengdu_batches(
 
         processing_time_seconds = 0.0
         started = perf_counter()
+<<<<<<< HEAD
         matching_runtime = build_chengdu_local_matching_runtime(runtime, prepared_batch)
+=======
+        timed_travel_model = TimedTravelModel(persistent_travel_model, timing)
+        local_snapshots = [
+            snapshot_cache.get(courier, courier_id=local_courier_snapshot_id(courier))
+            for courier in active_local_couriers
+        ]
+        insertion_cache.prune_to_active_routes(local_snapshots)
+        batch_parcels = [legacy_task_to_parcel(task) for task in eligible_tasks]
+        bdm = BatchDistanceMatrix(timed_travel_model)
+        local_shortlist = build_local_candidate_shortlist(
+            batch_parcels,
+            local_snapshots,
+            now=current_time,
+            service_radius_meters=service_radius_meters,
+            geo_index=geo_index,
+            speed_m_per_s=speed_m_per_s,
+        )
+        bdm.precompute_for_candidate_pairs(
+            (courier, parcel)
+            for parcel in batch_parcels
+            for courier in local_shortlist.get(parcel.parcel_id, ())
+        )
+>>>>>>> a0d301addb95fa0839fc06deae0a956a5e4f0a22
         cama_result = run_cama(
             matching_runtime.batch_parcels,
             matching_runtime.local_snapshots,
             matching_runtime.distance_matrix,
             config,
+<<<<<<< HEAD
             now=runtime.current_time,
             service_radius_meters=runtime.service_radius_meters,
             timing=matching_runtime.timing,
             insertion_cache=runtime.insertion_cache,
             geo_index=runtime.geo_index,
             speed_m_per_s=runtime.speed_m_per_s,
+=======
+            now=current_time,
+            service_radius_meters=service_radius_meters,
+            timing=timing,
+            insertion_cache=insertion_cache,
+            geo_index=geo_index,
+            speed_m_per_s=speed_m_per_s,
+            candidate_couriers_by_parcel=local_shortlist,
+>>>>>>> a0d301addb95fa0839fc06deae0a956a5e4f0a22
             progress_callback=(
                 None
                 if progress_callback is None
@@ -1197,6 +1244,7 @@ def run_time_stepped_chengdu_batches(
                 )
             ),
         )
+<<<<<<< HEAD
         local_assignments, remaining_tasks = commit_chengdu_local_assignments(
             runtime=runtime,
             matching_runtime=matching_runtime,
@@ -1216,6 +1264,96 @@ def run_time_stepped_chengdu_batches(
                         "batch_index": batch_index,
                         "total_batches": total_batches,
                     }
+=======
+        best_local_pairs = _index_best_local_pairs(cama_result)
+        task_lookup = {parcel.parcel_id: task for parcel, task in zip(batch_parcels, eligible_tasks)}
+        local_lookup = {local_courier_snapshot_id(courier): courier for courier in active_local_couriers}
+        assigned_task_ids: set[int] = set()
+
+        for assignment in cama_result.local_assignments:
+            task = task_lookup[assignment.parcel.parcel_id]
+            legacy_courier = local_lookup[assignment.courier.courier_id]
+            insertion_index = best_local_pairs[(assignment.parcel.parcel_id, assignment.courier.courier_id)]
+            apply_assignment_to_legacy_courier(task, legacy_courier, insertion_index)
+            snapshot_cache.invalidate(assignment.courier.courier_id)
+            insertion_cache.invalidate_courier(assignment.courier.courier_id)
+            local_assignments.append(bind_assignment_to_legacy_objects(assignment, task, legacy_courier))
+            assigned_task_ids.add(id(task))
+            accepted_assignment_ids.add(str(getattr(task, "num")))
+
+        remaining_tasks = [task for task in eligible_tasks if id(task) not in assigned_task_ids]
+        if remaining_tasks:
+            partner_platforms = [
+                legacy_platform_to_capa(
+                    platform_id=platform_id,
+                    couriers=couriers,
+                    base_price=platform_base_prices[platform_id],
+                    sharing_rate_gamma=platform_sharing_rates[platform_id],
+                    historical_quality=platform_qualities[platform_id],
+                    snapshot_cache=snapshot_cache,
+                )
+                for platform_id, couriers in active_partner_by_platform.items()
+            ]
+            remaining_parcels = [legacy_task_to_parcel(task) for task in remaining_tasks]
+            snapshot_lookup = {
+                platform.platform_id: {courier.courier_id: courier for courier in platform.couriers}
+                for platform in partner_platforms
+            }
+            partner_snapshots = [courier for platform in partner_platforms for courier in platform.couriers]
+            insertion_cache.prune_to_active_routes([*local_snapshots, *partner_snapshots])
+            cross_shortlist = build_cross_candidate_shortlist(
+                remaining_parcels,
+                partner_platforms,
+                now=current_time,
+                service_radius_meters=service_radius_meters,
+                geo_index=geo_index,
+                speed_m_per_s=speed_m_per_s,
+            )
+            bdm.precompute_for_candidate_pairs(
+                (courier, parcel)
+                for parcel in remaining_parcels
+                for platform_couriers in cross_shortlist.get(parcel.parcel_id, {}).values()
+                for courier in platform_couriers
+            )
+            dapa_result = run_dapa(
+                remaining_parcels,
+                partner_platforms,
+                bdm,
+                config,
+                now=current_time,
+                service_radius_meters=service_radius_meters,
+                timing=timing,
+                insertion_cache=insertion_cache,
+                geo_index=geo_index,
+                speed_m_per_s=speed_m_per_s,
+                candidate_couriers_by_parcel=cross_shortlist,
+                progress_callback=(
+                    None
+                    if progress_callback is None
+                    else lambda event, batch_index=batch_index, total_batches=total_batches: progress_callback(
+                        {
+                            **dict(event),
+                            "detail": f"{format_batch_progress_label(batch_index, total_batches)} {event.get('detail', '')}".strip(),
+                            "batch_index": batch_index,
+                            "total_batches": total_batches,
+                        }
+                    )
+                ),
+            )
+            cross_task_lookup = {parcel.parcel_id: task for parcel, task in zip(remaining_parcels, remaining_tasks)}
+
+            for assignment in dapa_result.cross_assignments:
+                task = cross_task_lookup[assignment.parcel.parcel_id]
+                legacy_courier = partner_lookup[assignment.platform_id][assignment.courier.courier_id]
+                snapshot_courier = snapshot_lookup[assignment.platform_id][assignment.courier.courier_id]
+                _, insertion_index = find_best_local_insertion(
+                    legacy_task_to_parcel(task),
+                    snapshot_courier,
+                    bdm,
+                    timing=timing,
+                    insertion_cache=insertion_cache,
+                    geo_index=geo_index,
+>>>>>>> a0d301addb95fa0839fc06deae0a956a5e4f0a22
                 )
             ),
         )
@@ -1338,7 +1476,7 @@ def build_framework_chengdu_environment(
             station_set=station_set,
             required_couriers=required_couriers,
             candidate_seed_count=available_seed_count,
-            preference=0.5,
+            preference=DEFAULT_COURIER_PREFERENCE,
         )
         for courier in seeded_couriers:
             ensure_legacy_courier_station(courier, station_by_num)
@@ -1374,9 +1512,9 @@ def build_framework_chengdu_environment(
         partner_couriers_by_platform=partner_couriers_by_platform,
         station_set=station_set,
         travel_model=travel_model,
-        platform_base_prices={f"P{index + 1}": 1.0 for index in range(cooperating_platform_count)},
-        platform_sharing_rates={f"P{index + 1}": 0.4 for index in range(cooperating_platform_count)},
-        platform_qualities={f"P{index + 1}": max(0.5, 1.0 - 0.1 * index) for index in range(cooperating_platform_count)},
+        platform_base_prices=build_default_platform_base_prices(cooperating_platform_count),
+        platform_sharing_rates=build_default_platform_sharing_rates(cooperating_platform_count),
+        platform_qualities=build_default_platform_qualities(cooperating_platform_count),
         movement_callback=framework_movement_callback,
         service_radius_km=service_radius_km,
         courier_capacity=normalized_capacity,

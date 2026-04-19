@@ -1,0 +1,18 @@
+{
+  "algorithm": "capa",
+  "batch_size": 300,
+  "config": {
+    "utility_balance_gamma": 0.5,
+    "threshold_omega": 1.0,
+    "local_payment_ratio_zeta": 0.2,
+    "local_sharing_rate_mu1": 0.5,
+    "cross_platform_sharing_rate_mu2": 0.4
+  },
+  "metrics": {
+    "TR": 19620.23954581166,
+    "CR": 0.997,
+    "BPT": 0.12085383206795086,
+    "delivered_parcels": 2991,
+    "accepted_assignments": 2991
+  }
+}

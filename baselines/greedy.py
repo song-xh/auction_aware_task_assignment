@@ -8,12 +8,20 @@ from contextlib import redirect_stdout
 from time import perf_counter
 from typing import Any, Callable, Mapping, Sequence
 
-from capa.cache import InsertionCache
 from capa.cama import is_feasible_local_match
-from capa.geo import GeoIndex
-from capa.timing import TimedTravelModel, TimingAccumulator
+from capa.config import (
+    DEFAULT_COURIER_ALPHA,
+    DEFAULT_COURIER_BETA,
+    DEFAULT_GREEDY_BASE_BID,
+    DEFAULT_GREEDY_REALTIME,
+    DEFAULT_GREEDY_UTILITY,
+)
 from capa.utility import (
     DEFAULT_LOCAL_PAYMENT_RATIO,
+    GeoIndex,
+    InsertionCache,
+    TimedTravelModel,
+    TimingAccumulator,
     compute_local_platform_revenue_for_local_completion,
     find_best_local_insertion,
 )
@@ -61,8 +69,8 @@ def parse_greedy_metrics(output: str) -> dict[str, float]:
 def run_legacy_greedy_stdout(
     environment: Any,
     batch_size: int,
-    utility: float = 0.5,
-    realtime: int = 1,
+    utility: float = DEFAULT_GREEDY_UTILITY,
+    realtime: int = DEFAULT_GREEDY_REALTIME,
 ) -> dict[str, float]:
     """Run the original legacy Greedy entrypoint and parse its printed aggregates.
 
@@ -95,8 +103,8 @@ def run_legacy_greedy_stdout(
 def run_greedy_baseline_environment(
     environment: Any,
     batch_size: int,
-    utility: float = 0.5,
-    realtime: int = 1,
+    utility: float = DEFAULT_GREEDY_UTILITY,
+    realtime: int = DEFAULT_GREEDY_REALTIME,
     local_payment_ratio: float = DEFAULT_LOCAL_PAYMENT_RATIO,
     progress_callback: Callable[[Mapping[str, Any]], None] | None = None,
 ) -> dict[str, float]:
@@ -309,8 +317,8 @@ def compute_greedy_bid(
 
     remaining_capacity = max(float(getattr(legacy_courier, "max_weight")) - float(getattr(legacy_courier, "re_weight", 0.0)), 1e-9)
     weight_term = float(parcel.weight) / remaining_capacity
-    preference_w = float(getattr(legacy_courier, "w", 0.5))
-    preference_c = float(getattr(legacy_courier, "c", 0.5))
+    preference_w = float(getattr(legacy_courier, "w", DEFAULT_COURIER_ALPHA))
+    preference_c = float(getattr(legacy_courier, "c", DEFAULT_COURIER_BETA))
     local_ratio, insertion_index = find_best_local_insertion(
         parcel,
         courier_snapshot,
@@ -320,8 +328,8 @@ def compute_greedy_bid(
         geo_index=geo_index,
     )
     detour_rate = 0.0 if local_ratio >= 1.0 else 1.0 / max(local_ratio, 1e-9)
-    bid = 2.0 + (preference_w * weight_term + preference_c * detour_rate) * float(utility) * float(parcel.fare)
-    bid = min(bid, 2.0 + float(utility) * float(parcel.fare))
+    bid = DEFAULT_GREEDY_BASE_BID + (preference_w * weight_term + preference_c * detour_rate) * float(utility) * float(parcel.fare)
+    bid = min(bid, DEFAULT_GREEDY_BASE_BID + float(utility) * float(parcel.fare))
     return bid, insertion_index
 
 

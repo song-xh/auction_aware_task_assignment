@@ -1,0 +1,95 @@
+{
+  "algorithms": [
+    "capa",
+    "greedy",
+    "ramcom",
+    "mra",
+    "basegta",
+    "impgta"
+  ],
+  "fixed_config": {
+    "data_dir": "Data",
+    "num_parcels": 3000,
+    "local_couriers": 200,
+    "platforms": 4,
+    "couriers_per_platform": 50,
+    "courier_capacity": 50.0,
+    "service_radius_km": 1.0,
+    "batch_size": 300,
+    "prediction_window_seconds": 180
+  },
+  "results": {
+    "capa": {
+      "algorithm": "capa",
+      "batch_size": 300,
+      "config": {
+        "utility_balance_gamma": 0.5,
+        "threshold_omega": 1.0,
+        "local_payment_ratio_zeta": 0.2,
+        "local_sharing_rate_mu1": 0.5,
+        "cross_platform_sharing_rate_mu2": 0.4
+      },
+      "metrics": {
+        "TR": 19620.23954581166,
+        "CR": 0.997,
+        "BPT": 0.12085383206795086,
+        "delivered_parcels": 2991,
+        "accepted_assignments": 2991
+      }
+    },
+    "greedy": {
+      "algorithm": "greedy",
+      "batch_size": 300,
+      "metrics": {
+        "TR": 8223.967999999853,
+        "CR": 0.409,
+        "BPT": 2.7776074239354784,
+        "delivered_parcels": 1227,
+        "accepted_assignments": 1227
+      }
+    },
+    "ramcom": {
+      "algorithm": "ramcom",
+      "random_seed": 1,
+      "metrics": {
+        "TR": 7865.015999999875,
+        "CR": 0.6593333333333333,
+        "BPT": 4.764711784053361,
+        "delivered_parcels": 1978,
+        "accepted_assignments": 1978
+      }
+    },
+    "mra": {
+      "algorithm": "mra",
+      "batch_size": 300,
+      "metrics": {
+        "TR": 5241.568000000003,
+        "CR": 0.25533333333333336,
+        "BPT": 59.50146567735101,
+        "delivered_parcels": 766,
+        "accepted_assignments": 766
+      }
+    },
+    "basegta": {
+      "algorithm": "basegta",
+      "metrics": {
+        "TR": 21062.395730000197,
+        "CR": 0.9896666666666667,
+        "BPT": 1.0514811090943113,
+        "delivered_parcels": 2969,
+        "accepted_assignments": 2969
+      }
+    },
+    "impgta": {
+      "algorithm": "impgta",
+      "prediction_window_seconds": 180,
+      "metrics": {
+        "TR": 23313.254870000128,
+        "CR": 0.982,
+        "BPT": 2.2375053341893363,
+        "delivered_parcels": 2946,
+        "accepted_assignments": 2946
+      }
+    }
+  }
+}
