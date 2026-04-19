@@ -34,7 +34,41 @@ python3 runner.py run \
 - `mra`
 - `basegta`
 - `impgta`
-- `rl-capa`（当前会显式报未实现）
+- `rl-capa`
+
+RL-CAPA 现在走 actor-critic 主线，可直接通过统一 runner 训练并评估：
+
+```bash
+python3 runner.py run \
+  --algorithm rl-capa \
+  --data-dir Data \
+  --num-parcels 100 \
+  --local-couriers 10 \
+  --platforms 2 \
+  --couriers-per-platform 5 \
+  --min-batch-size 10 \
+  --max-batch-size 20 \
+  --step-seconds 60 \
+  --episodes 500 \
+  --rl-lr-actor 0.001 \
+  --rl-lr-critic 0.001 \
+  --rl-discount-factor 0.9 \
+  --rl-entropy-coeff 0.01 \
+  --rl-max-grad-norm 0.5 \
+  --output-dir outputs/plots/rl_capa_run
+```
+
+RL-CAPA 相关参数含义：
+
+- `--min-batch-size` / `--max-batch-size`：第一阶段 batch-size 动作空间 `A_b` 的上下界。
+- `--step-seconds`：episode 结束后 drain legacy 路线时使用的环境推进步长。
+- `--episodes`：actor-critic 训练轮数。
+- `--rl-lr-actor`：两个 actor 的 Adam 学习率。
+- `--rl-lr-critic`：两个 critic 的 Adam 学习率。
+- `--rl-discount-factor`：Monte-Carlo discounted return 的折扣因子。
+- `--rl-entropy-coeff`：policy entropy 正则系数。
+- `--rl-max-grad-norm`：梯度裁剪阈值。
+- `--rl-device`：可选 torch device 覆盖，例如 `cpu` 或 `cuda`；默认自动选择可用 CUDA，否则 CPU。
 
 兼容旧写法：
 

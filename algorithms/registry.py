@@ -26,7 +26,7 @@ def _build_placeholder_runner(name: str) -> AlgorithmRunner:
     if name == "rl-capa":
         return UnavailableAlgorithmRunner(
             algorithm_name=name,
-            reason="the RL environment and DDQN stack are still pending implementation",
+            reason="the actor-critic RL-CAPA runner could not be imported",
         )
     return UnavailableAlgorithmRunner(
         algorithm_name=name,
