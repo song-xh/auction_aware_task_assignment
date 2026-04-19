@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 from time import perf_counter
@@ -132,6 +132,72 @@ class ChengduEnvironment:
 
 
 LegacyChengduEnvironment = ChengduEnvironment
+
+
+@dataclass
+class ChengduBatchRuntime:
+    """Store mutable Chengdu batch-processing state shared across algorithms.
+
+    This runtime object centralizes the legacy simulator state, shared caches,
+    and task pointers needed by both the fixed-batch CAPA runner and RL-CAPA.
+    """
+
+    sorted_tasks: Sequence[Any]
+    active_local_couriers: list[Any]
+    active_partner_by_platform: Dict[str, list[Any]]
+    station_set: Sequence[Any]
+    travel_model: Any
+    config: CAPAConfig
+    movement: Callable[[MutableSequence[Any], MutableSequence[Any], int, Sequence[Any]], None]
+    platform_base_prices: Mapping[str, float]
+    platform_sharing_rates: Mapping[str, float]
+    platform_qualities: Mapping[str, float]
+    service_radius_meters: float | None
+    geo_index: GeoIndex | None
+    speed_m_per_s: float
+    step_seconds: int
+    current_time: int
+    next_task_index: int = 0
+    backlog: list[Any] = field(default_factory=list)
+    terminal_unassigned: list[Any] = field(default_factory=list)
+    batch_reports: list[BatchReport] = field(default_factory=list)
+    matching_plan: list[Assignment] = field(default_factory=list)
+    accepted_assignment_ids: set[str] = field(default_factory=set)
+    snapshot_cache: "LegacyCourierSnapshotCache" = field(default_factory=lambda: LegacyCourierSnapshotCache())
+    insertion_cache: InsertionCache = field(default_factory=InsertionCache)
+    persistent_travel_model: Any | None = None
+    batch_index: int = 0
+
+    def __post_init__(self) -> None:
+        """Initialize derived runtime members after dataclass construction."""
+
+        if self.persistent_travel_model is None:
+            self.persistent_travel_model = PersistentDirectedDistanceCache(self.travel_model)
+
+
+@dataclass(frozen=True)
+class PreparedChengduBatch:
+    """Store one prepared batch window after movement and task collection."""
+
+    batch_index: int
+    batch_end_time: int
+    input_tasks: Sequence[Any]
+    eligible_tasks: Sequence[Any]
+    expired_tasks: Sequence[Any]
+    timing: TimingAccumulator
+
+
+@dataclass(frozen=True)
+class ChengduMatchingRuntime:
+    """Store the shared local-matching runtime built for one prepared batch."""
+
+    timing: TimingAccumulator
+    timed_travel_model: TimedTravelModel
+    local_snapshots: Sequence[Courier]
+    batch_parcels: Sequence[Parcel]
+    task_lookup: Mapping[str, Any]
+    local_lookup: Mapping[str, Any]
+    distance_matrix: BatchDistanceMatrix
 
 
 def limit_legacy_tasks(
@@ -651,6 +717,353 @@ def get_travel_speed_m_per_s(travel_model: Any) -> float:
     return 0.0
 
 
+def initialize_chengdu_batch_runtime(
+    tasks: Sequence[Any],
+    local_couriers: Sequence[Any],
+    partner_couriers_by_platform: Mapping[str, Sequence[Any]],
+    station_set: Sequence[Any],
+    travel_model: Any,
+    config: CAPAConfig,
+    step_seconds: int,
+    platform_base_prices: Mapping[str, float],
+    platform_sharing_rates: Mapping[str, float],
+    platform_qualities: Mapping[str, float],
+    movement_callback: Callable[[MutableSequence[Any], MutableSequence[Any], int, Sequence[Any]], None] | None = None,
+    service_radius_km: float | None = None,
+    geo_index: GeoIndex | None = None,
+    speed_m_per_s: float = 0.0,
+) -> ChengduBatchRuntime:
+    """Create one reusable mutable runtime for Chengdu batch processing.
+
+    Args:
+        tasks: Legacy task objects sorted or unsorted.
+        local_couriers: Mutable local courier pool.
+        partner_couriers_by_platform: Mutable partner courier pools.
+        station_set: Legacy station objects.
+        travel_model: Shared exact travel model.
+        config: CAPA configuration.
+        step_seconds: Drain step used after all matching rounds.
+        platform_base_prices: Partner platform base prices.
+        platform_sharing_rates: Partner platform sharing rates.
+        platform_qualities: Partner platform historical qualities.
+        movement_callback: Optional simulator advancement callback.
+        service_radius_km: Optional service-radius constraint.
+        geo_index: Optional geometric prefilter index.
+        speed_m_per_s: Speed used by the exact travel model.
+
+    Returns:
+        Initialized mutable batch runtime.
+    """
+
+    sorted_tasks = sort_legacy_tasks(tasks)
+    current_time = int(float(getattr(sorted_tasks[0], "s_time"))) if sorted_tasks else 0
+    return ChengduBatchRuntime(
+        sorted_tasks=sorted_tasks,
+        active_local_couriers=list(local_couriers),
+        active_partner_by_platform={
+            platform_id: list(couriers) for platform_id, couriers in partner_couriers_by_platform.items()
+        },
+        station_set=station_set,
+        travel_model=travel_model,
+        config=config,
+        movement=movement_callback or framework_movement_callback,
+        platform_base_prices=platform_base_prices,
+        platform_sharing_rates=platform_sharing_rates,
+        platform_qualities=platform_qualities,
+        service_radius_meters=None if service_radius_km is None else float(service_radius_km) * 1000.0,
+        geo_index=geo_index,
+        speed_m_per_s=speed_m_per_s,
+        step_seconds=step_seconds,
+        current_time=current_time,
+    )
+
+
+def has_pending_chengdu_batches(runtime: ChengduBatchRuntime) -> bool:
+    """Return whether the runtime still has future arrivals or unresolved backlog."""
+
+    return runtime.next_task_index < len(runtime.sorted_tasks) or bool(runtime.backlog)
+
+
+def prepare_chengdu_batch(
+    runtime: ChengduBatchRuntime,
+    batch_seconds: int,
+) -> PreparedChengduBatch:
+    """Advance the simulator to the next batch boundary and collect active tasks.
+
+    Args:
+        runtime: Mutable Chengdu runtime.
+        batch_seconds: Duration selected for the next batch window.
+
+    Returns:
+        Prepared batch window with input, eligible, and expired tasks.
+    """
+
+    if batch_seconds <= 0:
+        raise ValueError("Batch duration must be positive.")
+    runtime.batch_index += 1
+    batch_end_time = runtime.current_time + batch_seconds
+    timing = TimingAccumulator()
+    movement_started = perf_counter()
+    runtime.movement(
+        runtime.active_local_couriers,
+        flatten_partner_couriers(runtime.active_partner_by_platform),
+        batch_seconds,
+        runtime.station_set,
+    )
+    timing.movement_time_seconds += perf_counter() - movement_started
+    arrived_tasks: list[Any] = []
+    while runtime.next_task_index < len(runtime.sorted_tasks):
+        task = runtime.sorted_tasks[runtime.next_task_index]
+        if int(float(getattr(task, "s_time"))) < batch_end_time:
+            arrived_tasks.append(task)
+            runtime.next_task_index += 1
+            continue
+        break
+    runtime.current_time = batch_end_time
+    input_tasks = [*runtime.backlog, *arrived_tasks]
+    eligible_tasks = [
+        task for task in input_tasks if float(getattr(task, "d_time")) >= runtime.current_time
+    ]
+    expired_tasks = [
+        task for task in input_tasks if float(getattr(task, "d_time")) < runtime.current_time
+    ]
+    runtime.terminal_unassigned.extend(expired_tasks)
+    return PreparedChengduBatch(
+        batch_index=runtime.batch_index,
+        batch_end_time=batch_end_time,
+        input_tasks=input_tasks,
+        eligible_tasks=eligible_tasks,
+        expired_tasks=expired_tasks,
+        timing=timing,
+    )
+
+
+def build_chengdu_local_matching_runtime(
+    runtime: ChengduBatchRuntime,
+    prepared_batch: PreparedChengduBatch,
+) -> ChengduMatchingRuntime:
+    """Build the local-matching runtime shared by CAPA and RL-CAPA for one batch.
+
+    Args:
+        runtime: Mutable Chengdu runtime.
+        prepared_batch: Batch window returned by `prepare_chengdu_batch`.
+
+    Returns:
+        Shared matching runtime with caches, snapshots, and preheated distances.
+    """
+
+    timing = prepared_batch.timing
+    timed_travel_model = TimedTravelModel(runtime.persistent_travel_model, timing)
+    local_snapshots = [
+        runtime.snapshot_cache.get(courier, courier_id=local_courier_snapshot_id(courier))
+        for courier in runtime.active_local_couriers
+    ]
+    runtime.insertion_cache.prune_to_active_routes(local_snapshots)
+    batch_parcels = [legacy_task_to_parcel(task) for task in prepared_batch.eligible_tasks]
+    distance_matrix = BatchDistanceMatrix(timed_travel_model)
+    distance_matrix.precompute_for_insertions(local_snapshots, batch_parcels)
+    return ChengduMatchingRuntime(
+        timing=timing,
+        timed_travel_model=timed_travel_model,
+        local_snapshots=local_snapshots,
+        batch_parcels=batch_parcels,
+        task_lookup={parcel.parcel_id: task for parcel, task in zip(batch_parcels, prepared_batch.eligible_tasks)},
+        local_lookup={
+            local_courier_snapshot_id(courier): courier for courier in runtime.active_local_couriers
+        },
+        distance_matrix=distance_matrix,
+    )
+
+
+def commit_chengdu_local_assignments(
+    runtime: ChengduBatchRuntime,
+    matching_runtime: ChengduMatchingRuntime,
+    cama_result: Any,
+) -> tuple[list[Assignment], list[Any]]:
+    """Commit one CAMA result back into the legacy simulator and return leftovers.
+
+    Args:
+        runtime: Mutable Chengdu runtime.
+        matching_runtime: Shared local-matching runtime for this batch.
+        cama_result: Result returned by `run_cama`.
+
+    Returns:
+        `(local_assignments, remaining_tasks)` for the current batch.
+    """
+
+    best_local_pairs = _index_best_local_pairs(cama_result)
+    local_assignments: list[Assignment] = []
+    assigned_task_ids: set[int] = set()
+    for assignment in cama_result.local_assignments:
+        task = matching_runtime.task_lookup[assignment.parcel.parcel_id]
+        legacy_courier = matching_runtime.local_lookup[assignment.courier.courier_id]
+        insertion_index = best_local_pairs[(assignment.parcel.parcel_id, assignment.courier.courier_id)]
+        apply_assignment_to_legacy_courier(task, legacy_courier, insertion_index)
+        runtime.snapshot_cache.invalidate(assignment.courier.courier_id)
+        runtime.insertion_cache.invalidate_courier(assignment.courier.courier_id)
+        local_assignments.append(bind_assignment_to_legacy_objects(assignment, task, legacy_courier))
+        assigned_task_ids.add(id(task))
+        runtime.accepted_assignment_ids.add(str(getattr(task, "num")))
+    remaining_tasks = [
+        task for task in matching_runtime.task_lookup.values() if id(task) not in assigned_task_ids
+    ]
+    return local_assignments, remaining_tasks
+
+
+def run_chengdu_cross_matching(
+    runtime: ChengduBatchRuntime,
+    auction_tasks: Sequence[Any],
+    timing: TimingAccumulator,
+    progress_callback: Callable[[Mapping[str, Any]], None] | None = None,
+) -> list[Assignment]:
+    """Run DAPA for one selected auction pool and commit accepted assignments.
+
+    Args:
+        runtime: Mutable Chengdu runtime.
+        auction_tasks: Legacy task objects selected for cross-platform auction.
+        timing: Shared batch timing accumulator.
+        progress_callback: Optional DAPA progress callback.
+
+    Returns:
+        Realized cross-platform assignments committed to the legacy simulator.
+    """
+
+    if not auction_tasks:
+        return []
+    partner_lookup = _build_partner_lookup(runtime.active_partner_by_platform)
+    partner_platforms = [
+        legacy_platform_to_capa(
+            platform_id=platform_id,
+            couriers=couriers,
+            base_price=runtime.platform_base_prices[platform_id],
+            sharing_rate_gamma=runtime.platform_sharing_rates[platform_id],
+            historical_quality=runtime.platform_qualities[platform_id],
+            snapshot_cache=runtime.snapshot_cache,
+        )
+        for platform_id, couriers in runtime.active_partner_by_platform.items()
+    ]
+    task_lookup = {str(getattr(task, "num")): task for task in auction_tasks}
+    remaining_parcels = [legacy_task_to_parcel(task) for task in auction_tasks]
+    snapshot_lookup = {
+        platform.platform_id: {courier.courier_id: courier for courier in platform.couriers}
+        for platform in partner_platforms
+    }
+    partner_snapshots = [courier for platform in partner_platforms for courier in platform.couriers]
+    runtime.insertion_cache.prune_to_active_routes(partner_snapshots)
+    timed_travel_model = TimedTravelModel(runtime.persistent_travel_model, timing)
+    distance_matrix = BatchDistanceMatrix(timed_travel_model)
+    distance_matrix.precompute_for_insertions(partner_snapshots, remaining_parcels)
+    dapa_result = run_dapa(
+        remaining_parcels,
+        partner_platforms,
+        distance_matrix,
+        runtime.config,
+        now=runtime.current_time,
+        service_radius_meters=runtime.service_radius_meters,
+        timing=timing,
+        insertion_cache=runtime.insertion_cache,
+        geo_index=runtime.geo_index,
+        speed_m_per_s=runtime.speed_m_per_s,
+        progress_callback=progress_callback,
+    )
+    realized: list[Assignment] = []
+    for assignment in dapa_result.cross_assignments:
+        task = task_lookup[assignment.parcel.parcel_id]
+        legacy_courier = partner_lookup[assignment.platform_id][assignment.courier.courier_id]
+        snapshot_courier = snapshot_lookup[assignment.platform_id][assignment.courier.courier_id]
+        _, insertion_index = find_best_local_insertion(
+            legacy_task_to_parcel(task),
+            snapshot_courier,
+            distance_matrix,
+            timing=timing,
+            insertion_cache=runtime.insertion_cache,
+            geo_index=runtime.geo_index,
+        )
+        apply_assignment_to_legacy_courier(task, legacy_courier, insertion_index)
+        runtime.snapshot_cache.invalidate(assignment.courier.courier_id)
+        runtime.insertion_cache.invalidate_courier(assignment.courier.courier_id)
+        realized.append(bind_assignment_to_legacy_objects(assignment, task, legacy_courier))
+        runtime.accepted_assignment_ids.add(str(getattr(task, "num")))
+    return realized
+
+
+def finalize_chengdu_batch(
+    runtime: ChengduBatchRuntime,
+    prepared_batch: PreparedChengduBatch,
+    local_assignments: Sequence[Assignment],
+    cross_assignments: Sequence[Assignment],
+    unresolved_tasks: Sequence[Any],
+    processing_time_seconds: float,
+) -> BatchReport:
+    """Finalize one batch round, update backlog, and record its report.
+
+    Args:
+        runtime: Mutable Chengdu runtime.
+        prepared_batch: Prepared batch window.
+        local_assignments: Local assignments accepted this batch.
+        cross_assignments: Cross assignments accepted this batch.
+        unresolved_tasks: Legacy tasks still unresolved after matching.
+        processing_time_seconds: Wall-clock batch processing time.
+
+    Returns:
+        Finalized `BatchReport`.
+    """
+
+    backlog = list(unresolved_tasks)
+    if backlog and runtime.next_task_index >= len(runtime.sorted_tasks) and not has_pending_legacy_routes(
+        runtime.active_local_couriers,
+        runtime.active_partner_by_platform,
+    ):
+        terminal_tasks, retriable_tasks = partition_terminal_backlog(
+            unresolved_tasks=backlog,
+            now=runtime.current_time,
+            active_local_couriers=runtime.active_local_couriers,
+            active_partner_by_platform=runtime.active_partner_by_platform,
+            travel_model=TimedTravelModel(runtime.persistent_travel_model, prepared_batch.timing),
+            service_radius_meters=runtime.service_radius_meters,
+            snapshot_cache=runtime.snapshot_cache,
+            geo_index=runtime.geo_index,
+            speed_m_per_s=runtime.speed_m_per_s,
+        )
+        runtime.terminal_unassigned.extend(terminal_tasks)
+        backlog = retriable_tasks
+    runtime.backlog = backlog
+    delivered_parcel_count = len(
+        runtime.accepted_assignment_ids
+        - current_legacy_route_task_ids(runtime.active_local_couriers, runtime.active_partner_by_platform)
+    )
+    report = BatchReport(
+        batch_index=prepared_batch.batch_index,
+        batch_time=prepared_batch.batch_end_time,
+        input_parcels=[legacy_task_to_parcel(task) for task in prepared_batch.input_tasks],
+        local_assignments=list(local_assignments),
+        cross_assignments=list(cross_assignments),
+        unresolved_parcels=[legacy_task_to_parcel(task) for task in backlog],
+        processing_time_seconds=processing_time_seconds,
+        timing=prepared_batch.timing.freeze(),
+        delivered_parcel_count=delivered_parcel_count,
+    )
+    runtime.batch_reports.append(report)
+    runtime.matching_plan.extend(local_assignments)
+    runtime.matching_plan.extend(cross_assignments)
+    return report
+
+
+def finalize_chengdu_runtime(runtime: ChengduBatchRuntime) -> list[Parcel]:
+    """Drain accepted routes after the last batch and return delivered parcels."""
+
+    if not runtime.matching_plan:
+        return []
+    drain_legacy_routes(
+        runtime.active_local_couriers,
+        runtime.active_partner_by_platform,
+        runtime.station_set,
+        runtime.step_seconds,
+        runtime.movement,
+    )
+    return [assignment.parcel for assignment in runtime.matching_plan]
+
+
 def run_time_stepped_chengdu_batches(
     tasks: Sequence[Any],
     local_couriers: Sequence[Any],
@@ -673,16 +1086,23 @@ def run_time_stepped_chengdu_batches(
     if step_seconds <= 0:
         raise ValueError("Step duration must be positive.")
 
-    active_local_couriers = list(local_couriers)
-    active_partner_by_platform = {platform_id: list(couriers) for platform_id, couriers in partner_couriers_by_platform.items()}
-    partner_lookup = _build_partner_lookup(active_partner_by_platform)
-    batch_reports: List[BatchReport] = []
-    matching_plan: List[Assignment] = []
-    accepted_assignment_ids: set[str] = set()
-    backlog: List[Any] = []
-    terminal_unassigned: List[Any] = []
-    first_batch_start, bucket_lookup = bucketize_legacy_tasks_by_batch(tasks, batch_seconds)
-    if not bucket_lookup:
+    runtime = initialize_chengdu_batch_runtime(
+        tasks=tasks,
+        local_couriers=local_couriers,
+        partner_couriers_by_platform=partner_couriers_by_platform,
+        station_set=station_set,
+        travel_model=travel_model,
+        config=config,
+        step_seconds=step_seconds,
+        platform_base_prices=platform_base_prices,
+        platform_sharing_rates=platform_sharing_rates,
+        platform_qualities=platform_qualities,
+        movement_callback=movement_callback,
+        service_radius_km=service_radius_km,
+        geo_index=geo_index,
+        speed_m_per_s=speed_m_per_s,
+    )
+    if not runtime.sorted_tasks:
         return CAPAResult(
             matching_plan=[],
             unassigned_parcels=[],
@@ -691,82 +1111,56 @@ def run_time_stepped_chengdu_batches(
             delivered_parcels=[],
         )
 
-    movement = movement_callback or framework_movement_callback
-    service_radius_meters = None if service_radius_km is None else float(service_radius_km) * 1000.0
-    last_bucket_index = max(bucket_lookup)
-    total_batches = last_bucket_index + 1
-    current_time = first_batch_start
-    batch_cursor = 0
-    batch_index = 0
-    persistent_travel_model = PersistentDirectedDistanceCache(travel_model)
-    snapshot_cache = LegacyCourierSnapshotCache()
-    insertion_cache = InsertionCache()
+    first_batch_start = int(float(getattr(runtime.sorted_tasks[0], "s_time")))
+    last_task_time = int(float(getattr(runtime.sorted_tasks[-1], "s_time")))
+    total_batches = ((last_task_time - first_batch_start) // batch_seconds) + 1
 
-    while batch_cursor <= last_bucket_index or backlog:
-        batch_index += 1
-        batch_end_time = first_batch_start + ((batch_cursor + 1) * batch_seconds)
-        elapsed_seconds = max(0, batch_end_time - current_time)
-        timing = TimingAccumulator()
-        if elapsed_seconds > 0:
-            movement_started = perf_counter()
-            movement(
-                active_local_couriers,
-                flatten_partner_couriers(active_partner_by_platform),
-                elapsed_seconds,
-                station_set,
-            )
-            timing.movement_time_seconds += perf_counter() - movement_started
-        current_time = batch_end_time
-
-        bucket = list(bucket_lookup.get(batch_cursor, []))
-        batch_input_tasks = list(backlog) + bucket
-        if not batch_input_tasks:
-            batch_cursor += 1
+    while has_pending_chengdu_batches(runtime):
+        prepared_batch = prepare_chengdu_batch(runtime, batch_seconds)
+        if not prepared_batch.input_tasks:
             continue
-        eligible_tasks = [task for task in batch_input_tasks if float(getattr(task, "d_time")) >= current_time]
-        expired_tasks = [task for task in batch_input_tasks if float(getattr(task, "d_time")) < current_time]
-        terminal_unassigned.extend(expired_tasks)
         if progress_callback is not None:
             progress_callback(
                 {
                     "phase": "batch_matching",
-                    "detail": format_batch_progress_label(batch_index, total_batches),
-                    "batch_index": batch_index,
+                    "detail": format_batch_progress_label(prepared_batch.batch_index, total_batches),
+                    "batch_index": prepared_batch.batch_index,
                     "total_batches": total_batches,
-                    "batch_time": batch_end_time,
-                    "completed_units": batch_index - 1,
+                    "batch_time": prepared_batch.batch_end_time,
+                    "completed_units": prepared_batch.batch_index - 1,
                     "total_units": total_batches,
                     "unit_label": "batches",
-                    "input_tasks": len(batch_input_tasks),
-                    "eligible_tasks": len(eligible_tasks),
-                    "backlog_tasks": len(backlog),
+                    "input_tasks": len(prepared_batch.input_tasks),
+                    "eligible_tasks": len(prepared_batch.eligible_tasks),
+                    "backlog_tasks": len(runtime.backlog),
                 }
             )
-        if not eligible_tasks:
-            batch_reports.append(
+        if not prepared_batch.eligible_tasks:
+            runtime.backlog = []
+            runtime.batch_reports.append(
                 BatchReport(
-                    batch_index=batch_index,
-                    batch_time=batch_end_time,
-                    input_parcels=[legacy_task_to_parcel(task) for task in batch_input_tasks],
+                    batch_index=prepared_batch.batch_index,
+                    batch_time=prepared_batch.batch_end_time,
+                    input_parcels=[legacy_task_to_parcel(task) for task in prepared_batch.input_tasks],
                     local_assignments=[],
                     cross_assignments=[],
                     unresolved_parcels=[],
                     processing_time_seconds=0.0,
-                    timing=timing.freeze(),
+                    timing=prepared_batch.timing.freeze(),
                     delivered_parcel_count=len(
-                        accepted_assignment_ids - current_legacy_route_task_ids(active_local_couriers, active_partner_by_platform)
+                        runtime.accepted_assignment_ids
+                        - current_legacy_route_task_ids(runtime.active_local_couriers, runtime.active_partner_by_platform)
                     ),
                 )
             )
-            backlog = []
             if progress_callback is not None:
                 progress_callback(
                     {
                         "phase": "batch_completed",
-                        "detail": format_batch_progress_label(batch_index, total_batches),
-                        "batch_index": batch_index,
+                        "detail": format_batch_progress_label(prepared_batch.batch_index, total_batches),
+                        "batch_index": prepared_batch.batch_index,
                         "total_batches": total_batches,
-                        "completed_units": batch_index,
+                        "completed_units": prepared_batch.batch_index,
                         "total_units": total_batches,
                         "unit_label": "batches",
                         "local_assignments": 0,
@@ -774,37 +1168,26 @@ def run_time_stepped_chengdu_batches(
                         "unresolved_tasks": 0,
                     }
                 )
-            batch_cursor += 1
             continue
 
-        local_assignments: List[Assignment] = []
-        cross_assignments: List[Assignment] = []
         processing_time_seconds = 0.0
         started = perf_counter()
-        timed_travel_model = TimedTravelModel(persistent_travel_model, timing)
-        local_snapshots = [
-            snapshot_cache.get(courier, courier_id=local_courier_snapshot_id(courier))
-            for courier in active_local_couriers
-        ]
-        insertion_cache.prune_to_active_routes(local_snapshots)
-        batch_parcels = [legacy_task_to_parcel(task) for task in eligible_tasks]
-        bdm = BatchDistanceMatrix(timed_travel_model)
-        bdm.precompute_for_insertions(local_snapshots, batch_parcels)
+        matching_runtime = build_chengdu_local_matching_runtime(runtime, prepared_batch)
         cama_result = run_cama(
-            batch_parcels,
-            local_snapshots,
-            bdm,
+            matching_runtime.batch_parcels,
+            matching_runtime.local_snapshots,
+            matching_runtime.distance_matrix,
             config,
-            now=current_time,
-            service_radius_meters=service_radius_meters,
-            timing=timing,
-            insertion_cache=insertion_cache,
-            geo_index=geo_index,
-            speed_m_per_s=speed_m_per_s,
+            now=runtime.current_time,
+            service_radius_meters=runtime.service_radius_meters,
+            timing=matching_runtime.timing,
+            insertion_cache=runtime.insertion_cache,
+            geo_index=runtime.geo_index,
+            speed_m_per_s=runtime.speed_m_per_s,
             progress_callback=(
                 None
                 if progress_callback is None
-                else lambda event, batch_index=batch_index, total_batches=total_batches: progress_callback(
+                else lambda event, batch_index=prepared_batch.batch_index, total_batches=total_batches: progress_callback(
                     {
                         **dict(event),
                         "detail": f"{format_batch_progress_label(batch_index, total_batches)} {event.get('detail', '')}".strip(),
@@ -814,166 +1197,86 @@ def run_time_stepped_chengdu_batches(
                 )
             ),
         )
-        best_local_pairs = _index_best_local_pairs(cama_result)
-        task_lookup = {parcel.parcel_id: task for parcel, task in zip(batch_parcels, eligible_tasks)}
-        local_lookup = {local_courier_snapshot_id(courier): courier for courier in active_local_couriers}
-        assigned_task_ids: set[int] = set()
-
-        for assignment in cama_result.local_assignments:
-            task = task_lookup[assignment.parcel.parcel_id]
-            legacy_courier = local_lookup[assignment.courier.courier_id]
-            insertion_index = best_local_pairs[(assignment.parcel.parcel_id, assignment.courier.courier_id)]
-            apply_assignment_to_legacy_courier(task, legacy_courier, insertion_index)
-            snapshot_cache.invalidate(assignment.courier.courier_id)
-            insertion_cache.invalidate_courier(assignment.courier.courier_id)
-            local_assignments.append(bind_assignment_to_legacy_objects(assignment, task, legacy_courier))
-            assigned_task_ids.add(id(task))
-            accepted_assignment_ids.add(str(getattr(task, "num")))
-
-        remaining_tasks = [task for task in eligible_tasks if id(task) not in assigned_task_ids]
-        if remaining_tasks:
-            partner_platforms = [
-                legacy_platform_to_capa(
-                    platform_id=platform_id,
-                    couriers=couriers,
-                    base_price=platform_base_prices[platform_id],
-                    sharing_rate_gamma=platform_sharing_rates[platform_id],
-                    historical_quality=platform_qualities[platform_id],
-                    snapshot_cache=snapshot_cache,
+        local_assignments, remaining_tasks = commit_chengdu_local_assignments(
+            runtime=runtime,
+            matching_runtime=matching_runtime,
+            cama_result=cama_result,
+        )
+        cross_assignments = run_chengdu_cross_matching(
+            runtime=runtime,
+            auction_tasks=remaining_tasks,
+            timing=prepared_batch.timing,
+            progress_callback=(
+                None
+                if progress_callback is None
+                else lambda event, batch_index=prepared_batch.batch_index, total_batches=total_batches: progress_callback(
+                    {
+                        **dict(event),
+                        "detail": f"{format_batch_progress_label(batch_index, total_batches)} {event.get('detail', '')}".strip(),
+                        "batch_index": batch_index,
+                        "total_batches": total_batches,
+                    }
                 )
-                for platform_id, couriers in active_partner_by_platform.items()
-            ]
-            remaining_parcels = [legacy_task_to_parcel(task) for task in remaining_tasks]
-            snapshot_lookup = {
-                platform.platform_id: {courier.courier_id: courier for courier in platform.couriers}
-                for platform in partner_platforms
-            }
-            partner_snapshots = [courier for platform in partner_platforms for courier in platform.couriers]
-            insertion_cache.prune_to_active_routes([*local_snapshots, *partner_snapshots])
-            bdm.precompute_for_insertions(partner_snapshots, remaining_parcels)
-            dapa_result = run_dapa(
-                remaining_parcels,
-                partner_platforms,
-                bdm,
-                config,
-                now=current_time,
-                service_radius_meters=service_radius_meters,
-                timing=timing,
-                insertion_cache=insertion_cache,
-                geo_index=geo_index,
-                speed_m_per_s=speed_m_per_s,
-                progress_callback=(
-                    None
-                    if progress_callback is None
-                    else lambda event, batch_index=batch_index, total_batches=total_batches: progress_callback(
-                        {
-                            **dict(event),
-                            "detail": f"{format_batch_progress_label(batch_index, total_batches)} {event.get('detail', '')}".strip(),
-                            "batch_index": batch_index,
-                            "total_batches": total_batches,
-                        }
-                    )
-                ),
-            )
-            cross_task_lookup = {parcel.parcel_id: task for parcel, task in zip(remaining_parcels, remaining_tasks)}
-
-            for assignment in dapa_result.cross_assignments:
-                task = cross_task_lookup[assignment.parcel.parcel_id]
-                legacy_courier = partner_lookup[assignment.platform_id][assignment.courier.courier_id]
-                snapshot_courier = snapshot_lookup[assignment.platform_id][assignment.courier.courier_id]
-                _, insertion_index = find_best_local_insertion(
-                    legacy_task_to_parcel(task),
-                    snapshot_courier,
-                    bdm,
-                    timing=timing,
-                    insertion_cache=insertion_cache,
-                    geo_index=geo_index,
-                )
-                apply_assignment_to_legacy_courier(task, legacy_courier, insertion_index)
-                snapshot_cache.invalidate(assignment.courier.courier_id)
-                insertion_cache.invalidate_courier(assignment.courier.courier_id)
-                cross_assignments.append(bind_assignment_to_legacy_objects(assignment, task, legacy_courier))
-                assigned_task_ids.add(id(task))
-                accepted_assignment_ids.add(str(getattr(task, "num")))
-
-        backlog = [task for task in eligible_tasks if id(task) not in assigned_task_ids]
-        if backlog and batch_cursor >= last_bucket_index and not has_pending_legacy_routes(active_local_couriers, active_partner_by_platform):
-            terminal_tasks, retriable_tasks = partition_terminal_backlog(
-                unresolved_tasks=backlog,
-                now=current_time,
-                active_local_couriers=active_local_couriers,
-                active_partner_by_platform=active_partner_by_platform,
-                travel_model=timed_travel_model,
-                service_radius_meters=service_radius_meters,
-                snapshot_cache=snapshot_cache,
-                geo_index=geo_index,
-                speed_m_per_s=speed_m_per_s,
-            )
-            terminal_unassigned.extend(terminal_tasks)
-            backlog = retriable_tasks
+            ),
+        )
+        cross_assigned_ids = {
+            str(getattr(assignment.parcel, "parcel_id")) for assignment in cross_assignments
+        }
+        unresolved_tasks = [
+            task for task in remaining_tasks if str(getattr(task, "num")) not in cross_assigned_ids
+        ]
         processing_time_seconds += perf_counter() - started
-        report = BatchReport(
-            batch_index=batch_index,
-            batch_time=batch_end_time,
-                input_parcels=[legacy_task_to_parcel(task) for task in batch_input_tasks],
+        report = finalize_chengdu_batch(
+            runtime=runtime,
+            prepared_batch=prepared_batch,
             local_assignments=local_assignments,
             cross_assignments=cross_assignments,
-            unresolved_parcels=[legacy_task_to_parcel(task) for task in backlog],
+            unresolved_tasks=unresolved_tasks,
             processing_time_seconds=processing_time_seconds,
-            timing=timing.freeze(),
-            delivered_parcel_count=len(accepted_assignment_ids - current_legacy_route_task_ids(active_local_couriers, active_partner_by_platform)),
         )
-        batch_reports.append(report)
         if progress_callback is not None:
             progress_callback(
                 {
                     "phase": "batch_completed",
-                    "detail": format_batch_progress_label(batch_index, total_batches),
-                    "batch_index": batch_index,
+                    "detail": format_batch_progress_label(prepared_batch.batch_index, total_batches),
+                    "batch_index": prepared_batch.batch_index,
                     "total_batches": total_batches,
-                    "completed_units": batch_index,
+                    "completed_units": prepared_batch.batch_index,
                     "total_units": total_batches,
                     "unit_label": "batches",
-                    "local_assignments": len(local_assignments),
-                    "cross_assignments": len(cross_assignments),
-                    "unresolved_tasks": len(backlog),
+                    "local_assignments": len(report.local_assignments),
+                    "cross_assignments": len(report.cross_assignments),
+                    "unresolved_tasks": len(runtime.backlog),
                 }
             )
-        matching_plan.extend(local_assignments)
-        matching_plan.extend(cross_assignments)
-        batch_cursor += 1
 
-    if backlog:
-        terminal_unassigned.extend(backlog)
-        batch_reports.append(
+    if runtime.backlog:
+        runtime.terminal_unassigned.extend(runtime.backlog)
+        runtime.batch_reports.append(
             BatchReport(
-                batch_index=len(batch_reports) + 1,
-                batch_time=batch_reports[-1].batch_time + batch_seconds,
-                input_parcels=[legacy_task_to_parcel(task) for task in backlog],
+                batch_index=len(runtime.batch_reports) + 1,
+                batch_time=runtime.current_time + batch_seconds,
+                input_parcels=[legacy_task_to_parcel(task) for task in runtime.backlog],
                 local_assignments=[],
                 cross_assignments=[],
-                unresolved_parcels=[legacy_task_to_parcel(task) for task in backlog],
+                unresolved_parcels=[legacy_task_to_parcel(task) for task in runtime.backlog],
                 processing_time_seconds=0.0,
                 timing=TimingAccumulator().freeze(),
             )
         )
 
-    delivered_parcels: list[Parcel] = []
-    if matching_plan:
-        drain_legacy_routes(
-            active_local_couriers,
-            active_partner_by_platform,
-            station_set,
-            step_seconds,
-            movement,
-        )
-        delivered_parcels = [assignment.parcel for assignment in matching_plan]
+    delivered_parcels = finalize_chengdu_runtime(runtime)
 
     return CAPAResult(
-        matching_plan=matching_plan,
-        unassigned_parcels=[legacy_task_to_parcel(task) for task in terminal_unassigned],
-        batch_reports=batch_reports,
-        metrics=build_run_metrics(matching_plan, len(tasks), batch_reports, delivered_parcel_count=len(delivered_parcels)),
+        matching_plan=runtime.matching_plan,
+        unassigned_parcels=[legacy_task_to_parcel(task) for task in runtime.terminal_unassigned],
+        batch_reports=runtime.batch_reports,
+        metrics=build_run_metrics(
+            runtime.matching_plan,
+            len(tasks),
+            runtime.batch_reports,
+            delivered_parcel_count=len(delivered_parcels),
+        ),
         delivered_parcels=delivered_parcels,
     )
 
