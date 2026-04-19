@@ -16,7 +16,7 @@ from typing import List
 import numpy as np
 import torch
 
-from src.rl.state_builder import RunningNormalizer, aggregate_stage2_states
+from rl_capa.state_builder import RunningNormalizer, aggregate_stage2_states
 
 
 @dataclass

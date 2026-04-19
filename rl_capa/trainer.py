@@ -12,20 +12,21 @@ Implements the two-stage hierarchical actor-critic training with:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 import torch
 import torch.nn as nn
 
-from src.rl.networks import (
+from rl_capa.networks import (
     BatchSizeActor,
     ConditionalValueCritic,
     CrossOrNotActor,
     StateValueCritic,
 )
-from src.rl.state_builder import RunningNormalizer, aggregate_stage2_states
-from src.rl.utils import compute_discounted_returns, select_torch_device
+from rl_capa.state_builder import RunningNormalizer, aggregate_stage2_states
+from rl_capa.utils import compute_discounted_returns, select_torch_device
 
 
 @dataclass
@@ -399,3 +400,80 @@ class RLCAPATrainer:
             loss_v1.item(),
             loss_v2.item(),
         )
+
+    def save_checkpoint(self, output_dir: Path) -> None:
+        """Persist model weights and normalizer state for later evaluation.
+
+        Args:
+            output_dir: Directory receiving the trainer checkpoint files.
+        """
+
+        output_dir.mkdir(parents=True, exist_ok=True)
+        torch.save(self.pi1.state_dict(), output_dir / "pi1.pt")
+        torch.save(self.pi2.state_dict(), output_dir / "pi2.pt")
+        torch.save(self.v1.state_dict(), output_dir / "v1.pt")
+        torch.save(self.v2.state_dict(), output_dir / "v2.pt")
+        torch.save(
+            {
+                "norm_s1": self._serialize_normalizer(self.norm_s1),
+                "norm_s2": self._serialize_normalizer(self.norm_s2),
+            },
+            output_dir / "normalizers.pt",
+        )
+
+    @classmethod
+    def load_checkpoint(
+        cls,
+        env: object,
+        config: TrainingConfig,
+        num_batch_actions: int,
+        checkpoint_dir: Path,
+    ) -> "RLCAPATrainer":
+        """Restore one trainer from persisted actor-critic checkpoints.
+
+        Args:
+            env: Evaluation environment instance.
+            config: Training configuration used to rebuild the trainer.
+            num_batch_actions: Size of the discrete batch-size action space.
+            checkpoint_dir: Directory containing saved network and normalizer state.
+
+        Returns:
+            Restored actor-critic trainer ready for evaluation.
+        """
+
+        trainer = cls(
+            env=env,
+            config=config,
+            num_batch_actions=num_batch_actions,
+            device=config.device,
+        )
+        trainer.pi1.load_state_dict(torch.load(checkpoint_dir / "pi1.pt", map_location=trainer.device))
+        trainer.pi2.load_state_dict(torch.load(checkpoint_dir / "pi2.pt", map_location=trainer.device))
+        trainer.v1.load_state_dict(torch.load(checkpoint_dir / "v1.pt", map_location=trainer.device))
+        trainer.v2.load_state_dict(torch.load(checkpoint_dir / "v2.pt", map_location=trainer.device))
+        normalizers = torch.load(checkpoint_dir / "normalizers.pt", map_location="cpu")
+        trainer._restore_normalizer(trainer.norm_s1, normalizers["norm_s1"])
+        trainer._restore_normalizer(trainer.norm_s2, normalizers["norm_s2"])
+        return trainer
+
+    @staticmethod
+    def _serialize_normalizer(normalizer: RunningNormalizer) -> dict[str, Any]:
+        """Serialize one running normalizer into checkpoint-friendly tensors."""
+
+        return {
+            "dim": normalizer.dim,
+            "epsilon": normalizer.epsilon,
+            "count": normalizer.count,
+            "mean": torch.as_tensor(normalizer.mean, dtype=torch.float64),
+            "var": torch.as_tensor(normalizer.var, dtype=torch.float64),
+            "m2": torch.as_tensor(normalizer._m2, dtype=torch.float64),
+        }
+
+    @staticmethod
+    def _restore_normalizer(normalizer: RunningNormalizer, payload: Dict[str, Any]) -> None:
+        """Restore one running normalizer from serialized checkpoint data."""
+
+        normalizer.count = int(payload["count"])
+        normalizer.mean = np.asarray(payload["mean"].cpu(), dtype=np.float64)
+        normalizer.var = np.asarray(payload["var"].cpu(), dtype=np.float64)
+        normalizer._m2 = np.asarray(payload["m2"].cpu(), dtype=np.float64)

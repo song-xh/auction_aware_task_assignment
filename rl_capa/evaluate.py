@@ -1,19 +1,18 @@
-"""Evaluation entrypoint for trained RL-CAPA checkpoints."""
+"""Actor-critic RL-CAPA evaluation entrypoint."""
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
-from time import perf_counter
 from typing import Any
 
-from capa.metrics import compute_total_revenue
 from capa.models import CAPAConfig
 from experiments.seeding import ChengduEnvironmentSeed
 
-from .config import RLCAPAConfig
-from .ddqn import DDQNAgent
-from .env import RLCAPAEnvironment
+from .config import RLCAPAConfig, RLTrainingConfig
+from .env import RLCAPAEnv
+from .evaluate_core import EvalResult, evaluate, run_capa_baseline
+from .trainer import RLCAPATrainer, TrainingConfig
 
 
 def evaluate_rl_capa(
@@ -22,60 +21,67 @@ def evaluate_rl_capa(
     rl_config: RLCAPAConfig,
     checkpoint_dir: Path,
     output_dir: Path,
+    training_config: RLTrainingConfig | None = None,
 ) -> dict[str, Any]:
-    """Evaluate one trained RL-CAPA policy without exploration.
+    """Evaluate one trained actor-critic RL-CAPA checkpoint set.
 
     Args:
-        environment_seed: Immutable Chengdu episode seed.
-        capa_config: Shared CAPA configuration reused inside the environment.
-        rl_config: RL-CAPA action-space configuration.
-        checkpoint_dir: Directory containing the saved DDQN checkpoints.
+        environment_seed: Immutable Chengdu environment seed.
+        capa_config: Shared CAPA configuration.
+        rl_config: RL environment configuration.
+        checkpoint_dir: Directory containing actor-critic checkpoints.
         output_dir: Directory for the evaluation summary.
+        training_config: Optional training hyperparameters used to rebuild the trainer.
 
     Returns:
-        Evaluation summary with paper-facing metrics.
+        JSON-serializable evaluation summary.
     """
 
-    batch_agent = DDQNAgent.load(checkpoint_dir / "batch_agent.pt")
-    cross_agent = DDQNAgent.load(checkpoint_dir / "cross_agent.pt")
-    environment = RLCAPAEnvironment(
+    restored_training = training_config or RLTrainingConfig()
+    env = RLCAPAEnv(
         environment_seed=environment_seed,
         capa_config=capa_config,
         rl_config=rl_config,
     )
-    state_b = environment.reset()
-    decision_time_seconds = 0.0
-
-    while not environment.is_terminal():
-        started = perf_counter()
-        batch_action = batch_agent.select_action(state_b, explore=False)
-        decision_time_seconds += perf_counter() - started
-        batch_duration = rl_config.batch_duration_from_action_index(batch_action)
-        context = environment.start_batch(batch_duration=batch_duration)
-
-        parcel_actions: dict[str, int] = {}
-        for parcel_id, parcel_state in context.parcel_states.items():
-            started = perf_counter()
-            parcel_actions[parcel_id] = cross_agent.select_action(parcel_state, explore=False)
-            decision_time_seconds += perf_counter() - started
-        step_result = environment.apply_parcel_actions(context, parcel_actions)
-        state_b = step_result.next_batch_state
-
-    environment.finish_episode()
-    environment.drain_routes()
-    assignments = list(environment.accepted_assignments())
-    metrics = {
-        "TR": compute_total_revenue(assignments),
-        "CR": (len(assignments) / environment.total_parcel_count()) if environment.total_parcel_count() > 0 else 0.0,
-        "BPT": decision_time_seconds,
-        "delivered_parcels": len(assignments),
-        "accepted_assignments": len(assignments),
-    }
+    trainer = RLCAPATrainer.load_checkpoint(
+        env=env,
+        config=TrainingConfig(
+            num_episodes=restored_training.episodes,
+            discount_factor=restored_training.discount_factor,
+            lr_actor=restored_training.lr_actor,
+            lr_critic=restored_training.lr_critic,
+            entropy_coeff=restored_training.entropy_coeff,
+            max_grad_norm=restored_training.max_grad_norm,
+            max_steps_per_episode=restored_training.max_steps_per_episode,
+            device=restored_training.device,
+        ),
+        num_batch_actions=len(rl_config.batch_action_values()),
+        checkpoint_dir=checkpoint_dir,
+    )
+    result = evaluate(
+        env=env,
+        trainer=trainer,
+        batch_action_values=rl_config.batch_action_values(),
+    )
     summary = {
         "algorithm": "rl-capa",
-        "metrics": metrics,
+        "metrics": {
+            "TR": result.total_revenue,
+            "CR": result.completion_rate,
+            "BPT": result.batch_processing_time,
+            "delivered_parcels": len(env.delivered_parcels()),
+            "accepted_assignments": len(env.accepted_assignments()),
+        },
     }
     output_dir.mkdir(parents=True, exist_ok=True)
     with (output_dir / "summary.json").open("w", encoding="utf-8") as handle:
         json.dump(summary, handle, indent=2)
     return summary
+
+
+__all__ = [
+    "EvalResult",
+    "evaluate",
+    "run_capa_baseline",
+    "evaluate_rl_capa",
+]

@@ -83,7 +83,15 @@ class RLCAPAAlgorithmRunner(AlgorithmRunner):
             max_batch_size=self._max_batch_size,
             step_seconds=self._step_seconds,
         )
-        training_config = RLTrainingConfig(episodes=self._episodes)
+        training_config = RLTrainingConfig(
+            episodes=self._episodes,
+            discount_factor=self._discount_factor,
+            lr_actor=self._lr_actor,
+            lr_critic=self._lr_critic,
+            entropy_coeff=self._entropy_coeff,
+            max_grad_norm=self._max_grad_norm,
+            device=self._device,
+        )
         training_summary = train_rl_capa(
             environment_seed=environment_seed,
             capa_config=capa_config,
@@ -97,6 +105,7 @@ class RLCAPAAlgorithmRunner(AlgorithmRunner):
             rl_config=rl_config,
             checkpoint_dir=normalized_output_dir / "checkpoints",
             output_dir=normalized_output_dir / "eval",
+            training_config=training_config,
         )
         summary = {
             "algorithm": "rl-capa",
