@@ -74,20 +74,22 @@ def evaluate(
     with torch.no_grad():
         while not env.is_done() and step < max_steps:
             step += 1
-            t_start = perf_counter()
 
             # Stage 1: argmax batch size
+            t_start = perf_counter()
             s1_raw = env.get_stage1_state()
             s1_norm = norm_s1.normalize(s1_raw)
             s1_tensor = torch.from_numpy(s1_norm).to(device)
             dist1 = pi1(s1_tensor)
             a1_index = dist1.probs.argmax().item()
             batch_duration = batch_action_values[a1_index]
+            total_decision_time += perf_counter() - t_start
 
             env.apply_batch_size(batch_duration)
             local_assignments, unassigned = env.run_local_matching()
 
             # Stage 2: threshold 0.5
+            t_stage2 = perf_counter()
             s2_list = env.get_stage2_states(unassigned)
             if s2_list:
                 s2_normed = [norm_s2.normalize(s) for s in s2_list]
@@ -101,13 +103,16 @@ def evaluate(
                 }
             else:
                 decisions = {}
+            total_decision_time += perf_counter() - t_stage2
 
             env.apply_cross_decisions(decisions)
-            total_decision_time += perf_counter() - t_start
+
+    env.finalize_episode()
 
     accepted = env.accepted_assignments()
+    delivered_parcels = env.delivered_parcels()
     total_revenue = sum(a.local_platform_revenue for a in accepted)
-    completion_rate = len(accepted) / max(total_parcels, 1)
+    completion_rate = len(delivered_parcels) / max(total_parcels, 1)
 
     pi1.train()
     pi2.train()
@@ -163,13 +168,13 @@ def run_capa_baseline(
         movement_callback=environment.movement_callback or framework_movement_callback,
         service_radius_km=environment.service_radius_km,
     )
-    bpt = perf_counter() - t_start
+    _ = perf_counter() - t_start
 
     return EvalResult(
         total_revenue=result.metrics.total_revenue,
         completion_rate=result.metrics.completion_rate,
-        batch_processing_time=bpt,
+        batch_processing_time=result.metrics.batch_processing_time,
         total_parcels=len(environment.tasks),
-        assignments=result.metrics.accepted_parcel_count,
+        assignments=result.metrics.delivered_parcel_count,
         steps=len(result.batch_reports),
     )

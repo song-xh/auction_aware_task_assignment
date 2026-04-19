@@ -33,6 +33,16 @@ class ExperimentConfig:
     prediction_window_seconds: int = 180
     service_radius_km: float | None = None
     courier_capacity: float | None = None
+    rl_min_batch_size: int = 10
+    rl_max_batch_size: int = 20
+    rl_step_seconds: int = 60
+    rl_num_episodes: int = 500
+    rl_lr_actor: float = 0.001
+    rl_lr_critic: float = 0.001
+    rl_discount_factor: float = 0.9
+    rl_entropy_coeff: float = 0.01
+    rl_max_grad_norm: float = 0.5
+    rl_device: str | None = None
     extra: dict[str, Any] = field(default_factory=dict)
 
     def with_update(self, **kwargs: Any) -> "ExperimentConfig":
@@ -47,6 +57,16 @@ class ExperimentConfig:
             "prediction_window_seconds": self.prediction_window_seconds,
             "service_radius_km": self.service_radius_km,
             "courier_capacity": self.courier_capacity,
+            "rl_min_batch_size": self.rl_min_batch_size,
+            "rl_max_batch_size": self.rl_max_batch_size,
+            "rl_step_seconds": self.rl_step_seconds,
+            "rl_num_episodes": self.rl_num_episodes,
+            "rl_lr_actor": self.rl_lr_actor,
+            "rl_lr_critic": self.rl_lr_critic,
+            "rl_discount_factor": self.rl_discount_factor,
+            "rl_entropy_coeff": self.rl_entropy_coeff,
+            "rl_max_grad_norm": self.rl_max_grad_norm,
+            "rl_device": self.rl_device,
             "extra": dict(self.extra),
         }
         for key, value in kwargs.items():
