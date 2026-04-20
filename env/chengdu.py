@@ -1185,52 +1185,18 @@ def run_time_stepped_chengdu_batches(
 
         processing_time_seconds = 0.0
         started = perf_counter()
-<<<<<<< HEAD
         matching_runtime = build_chengdu_local_matching_runtime(runtime, prepared_batch)
-=======
-        timed_travel_model = TimedTravelModel(persistent_travel_model, timing)
-        local_snapshots = [
-            snapshot_cache.get(courier, courier_id=local_courier_snapshot_id(courier))
-            for courier in active_local_couriers
-        ]
-        insertion_cache.prune_to_active_routes(local_snapshots)
-        batch_parcels = [legacy_task_to_parcel(task) for task in eligible_tasks]
-        bdm = BatchDistanceMatrix(timed_travel_model)
-        local_shortlist = build_local_candidate_shortlist(
-            batch_parcels,
-            local_snapshots,
-            now=current_time,
-            service_radius_meters=service_radius_meters,
-            geo_index=geo_index,
-            speed_m_per_s=speed_m_per_s,
-        )
-        bdm.precompute_for_candidate_pairs(
-            (courier, parcel)
-            for parcel in batch_parcels
-            for courier in local_shortlist.get(parcel.parcel_id, ())
-        )
->>>>>>> a0d301addb95fa0839fc06deae0a956a5e4f0a22
         cama_result = run_cama(
             matching_runtime.batch_parcels,
             matching_runtime.local_snapshots,
             matching_runtime.distance_matrix,
             config,
-<<<<<<< HEAD
             now=runtime.current_time,
             service_radius_meters=runtime.service_radius_meters,
             timing=matching_runtime.timing,
             insertion_cache=runtime.insertion_cache,
             geo_index=runtime.geo_index,
             speed_m_per_s=runtime.speed_m_per_s,
-=======
-            now=current_time,
-            service_radius_meters=service_radius_meters,
-            timing=timing,
-            insertion_cache=insertion_cache,
-            geo_index=geo_index,
-            speed_m_per_s=speed_m_per_s,
-            candidate_couriers_by_parcel=local_shortlist,
->>>>>>> a0d301addb95fa0839fc06deae0a956a5e4f0a22
             progress_callback=(
                 None
                 if progress_callback is None
@@ -1244,7 +1210,6 @@ def run_time_stepped_chengdu_batches(
                 )
             ),
         )
-<<<<<<< HEAD
         local_assignments, remaining_tasks = commit_chengdu_local_assignments(
             runtime=runtime,
             matching_runtime=matching_runtime,
@@ -1264,96 +1229,6 @@ def run_time_stepped_chengdu_batches(
                         "batch_index": batch_index,
                         "total_batches": total_batches,
                     }
-=======
-        best_local_pairs = _index_best_local_pairs(cama_result)
-        task_lookup = {parcel.parcel_id: task for parcel, task in zip(batch_parcels, eligible_tasks)}
-        local_lookup = {local_courier_snapshot_id(courier): courier for courier in active_local_couriers}
-        assigned_task_ids: set[int] = set()
-
-        for assignment in cama_result.local_assignments:
-            task = task_lookup[assignment.parcel.parcel_id]
-            legacy_courier = local_lookup[assignment.courier.courier_id]
-            insertion_index = best_local_pairs[(assignment.parcel.parcel_id, assignment.courier.courier_id)]
-            apply_assignment_to_legacy_courier(task, legacy_courier, insertion_index)
-            snapshot_cache.invalidate(assignment.courier.courier_id)
-            insertion_cache.invalidate_courier(assignment.courier.courier_id)
-            local_assignments.append(bind_assignment_to_legacy_objects(assignment, task, legacy_courier))
-            assigned_task_ids.add(id(task))
-            accepted_assignment_ids.add(str(getattr(task, "num")))
-
-        remaining_tasks = [task for task in eligible_tasks if id(task) not in assigned_task_ids]
-        if remaining_tasks:
-            partner_platforms = [
-                legacy_platform_to_capa(
-                    platform_id=platform_id,
-                    couriers=couriers,
-                    base_price=platform_base_prices[platform_id],
-                    sharing_rate_gamma=platform_sharing_rates[platform_id],
-                    historical_quality=platform_qualities[platform_id],
-                    snapshot_cache=snapshot_cache,
-                )
-                for platform_id, couriers in active_partner_by_platform.items()
-            ]
-            remaining_parcels = [legacy_task_to_parcel(task) for task in remaining_tasks]
-            snapshot_lookup = {
-                platform.platform_id: {courier.courier_id: courier for courier in platform.couriers}
-                for platform in partner_platforms
-            }
-            partner_snapshots = [courier for platform in partner_platforms for courier in platform.couriers]
-            insertion_cache.prune_to_active_routes([*local_snapshots, *partner_snapshots])
-            cross_shortlist = build_cross_candidate_shortlist(
-                remaining_parcels,
-                partner_platforms,
-                now=current_time,
-                service_radius_meters=service_radius_meters,
-                geo_index=geo_index,
-                speed_m_per_s=speed_m_per_s,
-            )
-            bdm.precompute_for_candidate_pairs(
-                (courier, parcel)
-                for parcel in remaining_parcels
-                for platform_couriers in cross_shortlist.get(parcel.parcel_id, {}).values()
-                for courier in platform_couriers
-            )
-            dapa_result = run_dapa(
-                remaining_parcels,
-                partner_platforms,
-                bdm,
-                config,
-                now=current_time,
-                service_radius_meters=service_radius_meters,
-                timing=timing,
-                insertion_cache=insertion_cache,
-                geo_index=geo_index,
-                speed_m_per_s=speed_m_per_s,
-                candidate_couriers_by_parcel=cross_shortlist,
-                progress_callback=(
-                    None
-                    if progress_callback is None
-                    else lambda event, batch_index=batch_index, total_batches=total_batches: progress_callback(
-                        {
-                            **dict(event),
-                            "detail": f"{format_batch_progress_label(batch_index, total_batches)} {event.get('detail', '')}".strip(),
-                            "batch_index": batch_index,
-                            "total_batches": total_batches,
-                        }
-                    )
-                ),
-            )
-            cross_task_lookup = {parcel.parcel_id: task for parcel, task in zip(remaining_parcels, remaining_tasks)}
-
-            for assignment in dapa_result.cross_assignments:
-                task = cross_task_lookup[assignment.parcel.parcel_id]
-                legacy_courier = partner_lookup[assignment.platform_id][assignment.courier.courier_id]
-                snapshot_courier = snapshot_lookup[assignment.platform_id][assignment.courier.courier_id]
-                _, insertion_index = find_best_local_insertion(
-                    legacy_task_to_parcel(task),
-                    snapshot_courier,
-                    bdm,
-                    timing=timing,
-                    insertion_cache=insertion_cache,
-                    geo_index=geo_index,
->>>>>>> a0d301addb95fa0839fc06deae0a956a5e4f0a22
                 )
             ),
         )
