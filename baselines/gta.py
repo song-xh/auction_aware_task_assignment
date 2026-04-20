@@ -19,6 +19,7 @@ from capa.utility import (
 )
 from env.chengdu import (
     apply_assignment_to_legacy_courier,
+    compute_delivered_legacy_task_count,
     drain_legacy_routes,
     flatten_partner_couriers,
     framework_movement_callback,
@@ -350,6 +351,7 @@ def _run_gta_environment(
     progress_stride = max(1, total_task_count // 100)
     total_profit = 0.0
     accepted_assignments = 0
+    accepted_task_ids: set[str] = set()
     processing_time_seconds = 0.0
 
     while task_index < total_task_count:
@@ -400,6 +402,7 @@ def _run_gta_environment(
                 ):
                     apply_assignment_to_legacy_courier(task, local_bid.courier, len(getattr(local_bid.courier, "re_schedule")))
                     accepted_assignments += 1
+                    accepted_task_ids.add(str(getattr(task, "num")))
                     total_profit += compute_local_platform_revenue_for_local_completion(
                         parcel_fare=float(getattr(task, "fare")),
                         local_payment_ratio=local_payment_ratio,
@@ -458,6 +461,7 @@ def _run_gta_environment(
             if outcome is not None:
                 apply_assignment_to_legacy_courier(task, outcome.courier, len(getattr(outcome.courier, "re_schedule")))
                 accepted_assignments += 1
+                accepted_task_ids.add(str(getattr(task, "num")))
                 total_profit += compute_local_platform_revenue_for_cross_completion(
                     parcel_fare=float(getattr(task, "fare")),
                     platform_payment=outcome.payment,
@@ -486,12 +490,17 @@ def _run_gta_environment(
             step_seconds=60,
             movement_callback=movement,
         )
+    delivered_parcels = compute_delivered_legacy_task_count(
+        accepted_task_ids,
+        local_couriers,
+        partner_couriers_by_platform,
+    )
 
     return {
         "TR": total_profit,
-        "CR": accepted_assignments / total_task_count,
+        "CR": delivered_parcels / total_task_count,
         "BPT": processing_time_seconds,
-        "delivered_parcels": accepted_assignments,
+        "delivered_parcels": delivered_parcels,
         "accepted_assignments": accepted_assignments,
     }
 

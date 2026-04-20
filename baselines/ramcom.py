@@ -19,6 +19,7 @@ from capa.utility import (
 from env.chengdu import (
     LegacyCourierSnapshotCache,
     apply_assignment_to_legacy_courier,
+    compute_delivered_legacy_task_count,
     drain_legacy_routes,
     flatten_partner_couriers,
     framework_movement_callback,
@@ -134,6 +135,7 @@ def run_ramcom_baseline_environment(
     threshold = math.exp(rng.randint(1, theta))
     current_time = int(float(getattr(tasks[0], "s_time")))
     accepted_assignments = 0
+    accepted_task_ids: set[str] = set()
     total_revenue = 0.0
     processing_time_seconds = 0.0
     progress_stride = max(1, total_tasks // 100)
@@ -175,6 +177,7 @@ def run_ramcom_baseline_environment(
                     local_payment_ratio=local_payment_ratio,
                 )
                 accepted_assignments += 1
+                accepted_task_ids.add(str(getattr(task, "num")))
                 assigned = True
 
         if not assigned:
@@ -219,6 +222,7 @@ def run_ramcom_baseline_environment(
                         platform_payment=outer_payment,
                     )
                     accepted_assignments += 1
+                    accepted_task_ids.add(str(getattr(task, "num")))
 
         processing_time_seconds += max(
             0.0,
@@ -243,11 +247,16 @@ def run_ramcom_baseline_environment(
             step_seconds=60,
             movement_callback=movement,
         )
+    delivered_parcels = compute_delivered_legacy_task_count(
+        accepted_task_ids,
+        local_couriers,
+        partner_couriers_by_platform,
+    )
 
     return {
         "TR": total_revenue,
-        "CR": accepted_assignments / total_tasks,
+        "CR": delivered_parcels / total_tasks,
         "BPT": processing_time_seconds,
-        "delivered_parcels": accepted_assignments,
+        "delivered_parcels": delivered_parcels,
         "accepted_assignments": accepted_assignments,
     }
