@@ -186,8 +186,8 @@ class MetricAlignmentTest(unittest.TestCase):
                 ("A", "B"): 10.0,
                 ("S", "X"): 6.0,
                 ("X", "A"): 6.0,
-                ("A", "X"): 5.0,
-                ("X", "B"): 5.0,
+                ("A", "X"): 7.0,
+                ("X", "B"): 7.0,
                 ("B", "X"): 50.0,
             },
             speed=1.0,
@@ -203,6 +203,7 @@ class MetricAlignmentTest(unittest.TestCase):
 
         self.assertIsNotNone(bid)
         self.assertAlmostEqual(bid.dispatch_cost, (2.0 / 1000.0) * 3.0)
+        self.assertEqual(getattr(bid, "insertion_index", None), 0)
 
     def test_greedy_uses_delivered_count_for_cr(self) -> None:
         """Greedy should derive delivered count from post-drain route state, not accepts."""
