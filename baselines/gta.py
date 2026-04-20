@@ -40,6 +40,7 @@ class GTABid:
     platform_id: str
     courier: Any
     dispatch_cost: float
+    insertion_index: int = 0
 
 
 @dataclass(frozen=True)
@@ -50,6 +51,7 @@ class AIMOutcome:
     courier: Any
     dispatch_cost: float
     payment: float
+    insertion_index: int = 0
 
 
 def is_idle_legacy_courier(courier: Any) -> bool:
@@ -89,6 +91,122 @@ def compute_dispatch_cost_from_location(
     return (distance_meters / 1000.0) * unit_price_per_km
 
 
+@dataclass(frozen=True)
+class LegacyInsertionOption:
+    """Store one feasible CPUL insertion option for a GTA courier."""
+
+    insertion_index: int
+    incremental_distance_meters: float
+    arrival_time: float
+
+
+def find_best_legacy_insertion_option(
+    task: Any,
+    courier: Any,
+    travel_model: Any,
+    now: int,
+    service_radius_meters: float | None = None,
+    geo_index: GeoIndex | None = None,
+    speed_m_per_s: float = 0.0,
+) -> LegacyInsertionOption | None:
+    """Return the cheapest feasible insertion position for one legacy courier.
+
+    Args:
+        task: Legacy parcel/task to evaluate.
+        courier: Legacy courier carrying the current route.
+        travel_model: Distance/time model bound to the Chengdu graph.
+        now: Current simulation time in seconds.
+        service_radius_meters: Optional service radius limit.
+        geo_index: Optional geographic index for lower-bound pruning.
+        speed_m_per_s: Optional travel speed used by geo deadline screening.
+
+    Returns:
+        The best feasible insertion option, or `None` when the task cannot be
+        inserted under the current capacity/deadline/radius constraints.
+    """
+
+    if float(getattr(courier, "re_weight", 0.0)) + float(getattr(task, "weight")) > float(getattr(courier, "max_weight")):
+        return None
+    schedule = list(getattr(courier, "re_schedule", []))
+    pickup_location = getattr(task, "l_node")
+    deadline = float(getattr(task, "d_time"))
+
+    def build_candidate(
+        insertion_index: int,
+        start_location: Any,
+        start_time: float,
+        next_location: Any | None,
+    ) -> LegacyInsertionOption | None:
+        if not is_deadline_feasible_by_geo(
+            start_location,
+            pickup_location,
+            int(start_time),
+            deadline,
+            speed_m_per_s,
+            geo_index,
+        ):
+            return None
+        if not is_within_service_radius(
+            start_location,
+            pickup_location,
+            travel_model,
+            service_radius_meters,
+            geo_index=geo_index,
+        ):
+            return None
+        arrival_time = start_time + float(travel_model.travel_time(start_location, pickup_location))
+        if arrival_time > deadline:
+            return None
+        incremental_distance = float(travel_model.distance(start_location, pickup_location))
+        if next_location is not None:
+            incremental_distance += float(travel_model.distance(pickup_location, next_location))
+            incremental_distance -= float(travel_model.distance(start_location, next_location))
+        return LegacyInsertionOption(
+            insertion_index=insertion_index,
+            incremental_distance_meters=incremental_distance,
+            arrival_time=arrival_time,
+        )
+
+    candidates: list[LegacyInsertionOption] = []
+    if not schedule:
+        option = build_candidate(0, getattr(courier, "location"), float(now), None)
+        return option
+
+    first_option = build_candidate(
+        0,
+        getattr(courier, "location"),
+        float(now),
+        getattr(schedule[0], "l_node"),
+    )
+    if first_option is not None:
+        candidates.append(first_option)
+
+    for index in range(1, len(schedule)):
+        previous_task = schedule[index - 1]
+        next_task = schedule[index]
+        option = build_candidate(
+            index,
+            getattr(previous_task, "l_node"),
+            max(float(now), float(getattr(previous_task, "reach_time"))),
+            getattr(next_task, "l_node"),
+        )
+        if option is not None:
+            candidates.append(option)
+
+    append_option = build_candidate(
+        len(schedule),
+        getattr(schedule[-1], "l_node"),
+        max(float(now), float(getattr(schedule[-1], "reach_time"))),
+        None,
+    )
+    if append_option is not None:
+        candidates.append(append_option)
+
+    if not candidates:
+        return None
+    return min(candidates, key=lambda item: (item.incremental_distance_meters, item.insertion_index))
+
+
 def is_idle_courier_feasible(
     task: Any,
     courier: Any,
@@ -101,27 +219,18 @@ def is_idle_courier_feasible(
     """Check whether an idle legacy courier can still reach the task before its deadline."""
     if not is_idle_legacy_courier(courier):
         return False
-    if float(getattr(courier, "re_weight", 0.0)) + float(getattr(task, "weight")) > float(getattr(courier, "max_weight")):
-        return False
-    if not is_deadline_feasible_by_geo(
-        getattr(courier, "location"),
-        getattr(task, "l_node"),
-        now,
-        float(getattr(task, "d_time")),
-        speed_m_per_s,
-        geo_index,
-    ):
-        return False
-    if not is_within_service_radius(
-        getattr(courier, "location"),
-        getattr(task, "l_node"),
-        travel_model,
-        service_radius_meters,
-        geo_index=geo_index,
-    ):
-        return False
-    arrival_time = now + float(travel_model.travel_time(getattr(courier, "location"), getattr(task, "l_node")))
-    return arrival_time <= float(getattr(task, "d_time"))
+    return (
+        find_best_legacy_insertion_option(
+            task=task,
+            courier=courier,
+            travel_model=travel_model,
+            now=now,
+            service_radius_meters=service_radius_meters,
+            geo_index=geo_index,
+            speed_m_per_s=speed_m_per_s,
+        )
+        is not None
+    )
 
 
 def is_available_courier_feasible(
@@ -134,34 +243,18 @@ def is_available_courier_feasible(
     speed_m_per_s: float = 0.0,
 ) -> bool:
     """Check whether a legacy courier can serve the task after finishing its current route."""
-    ready_time, ready_location = legacy_courier_ready_state(courier, now)
-    if not is_idle_legacy_courier(courier) and float(getattr(courier, "max_weight")) < float(getattr(task, "weight")):
-        return False
-    if is_idle_legacy_courier(courier):
-        remaining_capacity = float(getattr(courier, "max_weight")) - float(getattr(courier, "re_weight", 0.0))
-    else:
-        remaining_capacity = float(getattr(courier, "max_weight"))
-    if remaining_capacity < float(getattr(task, "weight")):
-        return False
-    if not is_deadline_feasible_by_geo(
-        ready_location,
-        getattr(task, "l_node"),
-        int(ready_time),
-        float(getattr(task, "d_time")),
-        speed_m_per_s,
-        geo_index,
-    ):
-        return False
-    if not is_within_service_radius(
-        ready_location,
-        getattr(task, "l_node"),
-        travel_model,
-        service_radius_meters,
-        geo_index=geo_index,
-    ):
-        return False
-    arrival_time = ready_time + float(travel_model.travel_time(ready_location, getattr(task, "l_node")))
-    return arrival_time <= float(getattr(task, "d_time"))
+    return (
+        find_best_legacy_insertion_option(
+            task=task,
+            courier=courier,
+            travel_model=travel_model,
+            now=now,
+            service_radius_meters=service_radius_meters,
+            geo_index=geo_index,
+            speed_m_per_s=speed_m_per_s,
+        )
+        is not None
+    )
 
 
 def select_idle_courier_for_task(
@@ -177,21 +270,23 @@ def select_idle_courier_for_task(
     """Select the idle feasible courier with the minimum dispatch cost for one task."""
     feasible_bids: list[GTABid] = []
     for courier in couriers:
-        if not is_idle_courier_feasible(
-            task,
-            courier,
-            travel_model,
-            now,
+        option = find_best_legacy_insertion_option(
+            task=task,
+            courier=courier,
+            travel_model=travel_model,
+            now=now,
             service_radius_meters=service_radius_meters,
             geo_index=geo_index,
             speed_m_per_s=speed_m_per_s,
-        ):
+        )
+        if option is None or not is_idle_legacy_courier(courier):
             continue
         feasible_bids.append(
             GTABid(
                 platform_id="",
                 courier=courier,
-                dispatch_cost=compute_dispatch_cost(task, courier, travel_model, unit_price_per_km),
+                dispatch_cost=(option.incremental_distance_meters / 1000.0) * unit_price_per_km,
+                insertion_index=option.insertion_index,
             )
         )
     if not feasible_bids:
@@ -212,7 +307,7 @@ def select_available_courier_for_task(
     """Select the cheapest feasible courier under the Chengdu route-backed availability model."""
     feasible_bids: list[GTABid] = []
     for courier in couriers:
-        if not is_available_courier_feasible(
+        option = find_best_legacy_insertion_option(
             task=task,
             courier=courier,
             travel_model=travel_model,
@@ -220,19 +315,15 @@ def select_available_courier_for_task(
             service_radius_meters=service_radius_meters,
             geo_index=geo_index,
             speed_m_per_s=speed_m_per_s,
-        ):
+        )
+        if option is None:
             continue
-        _, ready_location = legacy_courier_ready_state(courier, now)
         feasible_bids.append(
             GTABid(
                 platform_id="",
                 courier=courier,
-                dispatch_cost=compute_dispatch_cost_from_location(
-                    task=task,
-                    start_location=ready_location,
-                    travel_model=travel_model,
-                    unit_price_per_km=unit_price_per_km,
-                ),
+                dispatch_cost=(option.incremental_distance_meters / 1000.0) * unit_price_per_km,
+                insertion_index=option.insertion_index,
             )
         )
     if not feasible_bids:
@@ -299,6 +390,7 @@ def settle_aim_auction(
         courier=winner.courier,
         dispatch_cost=winner.dispatch_cost,
         payment=payment,
+        insertion_index=winner.insertion_index,
     )
 
 
@@ -412,7 +504,7 @@ def _run_gta_environment(
                     ),
                     future_tasks=local_future_tasks,
                 ):
-                    apply_assignment_to_legacy_courier(task, local_bid.courier, len(getattr(local_bid.courier, "re_schedule")))
+                    apply_assignment_to_legacy_courier(task, local_bid.courier, local_bid.insertion_index)
                     accepted_assignments += 1
                     accepted_task_ids.add(str(getattr(task, "num")))
                     total_profit += compute_local_platform_revenue_for_local_completion(
@@ -475,7 +567,7 @@ def _run_gta_environment(
                 cross_platform_sharing_rate_mu2=cross_platform_sharing_rate_mu2,
             )
             if outcome is not None:
-                apply_assignment_to_legacy_courier(task, outcome.courier, len(getattr(outcome.courier, "re_schedule")))
+                apply_assignment_to_legacy_courier(task, outcome.courier, outcome.insertion_index)
                 accepted_assignments += 1
                 accepted_task_ids.add(str(getattr(task, "num")))
                 total_profit += compute_local_platform_revenue_for_cross_completion(
