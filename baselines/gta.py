@@ -7,7 +7,11 @@ from statistics import fmean
 from time import perf_counter
 from typing import Any, Callable, Mapping, MutableSequence, Sequence
 
-from capa.config import DEFAULT_GTA_UNIT_PRICE_PER_KM, DEFAULT_IMPGTA_WINDOW_SECONDS
+from capa.config import (
+    DEFAULT_CROSS_PLATFORM_SHARING_RATE_MU2,
+    DEFAULT_GTA_UNIT_PRICE_PER_KM,
+    DEFAULT_IMPGTA_WINDOW_SECONDS,
+)
 from capa.constraints import is_deadline_feasible_by_geo, is_within_service_radius
 from capa.utility import (
     DEFAULT_LOCAL_PAYMENT_RATIO,
@@ -273,14 +277,21 @@ def should_bid_outer_platform_impgta(dispatch_cost: float, idle_worker_count: in
     return dispatch_cost >= expected_future_reward(future_tasks)
 
 
-def settle_aim_auction(task: Any, bids: Sequence[GTABid]) -> AIMOutcome | None:
-    """Select the AIM winner by minimum bid and pay the second-lowest critical price."""
+def settle_aim_auction(
+    task: Any,
+    bids: Sequence[GTABid],
+    cross_platform_sharing_rate_mu2: float = DEFAULT_CROSS_PLATFORM_SHARING_RATE_MU2,
+) -> AIMOutcome | None:
+    """Select the AIM winner and convert the critical courier price into platform payment."""
     if not bids:
         return None
     ordered_bids = sorted(bids, key=lambda item: (item.dispatch_cost, item.platform_id))
     winner = ordered_bids[0]
     critical_payment = ordered_bids[1].dispatch_cost if len(ordered_bids) > 1 else winner.dispatch_cost
-    payment = min(float(getattr(task, "fare")), critical_payment)
+    payment = min(
+        float(getattr(task, "fare")),
+        critical_payment + (float(cross_platform_sharing_rate_mu2) * float(getattr(task, "fare"))),
+    )
     if payment < winner.dispatch_cost:
         return None
     return AIMOutcome(
@@ -320,6 +331,7 @@ def _run_gta_environment(
     prediction_window_seconds: int | None = None,
     unit_price_per_km: float = DEFAULT_UNIT_PRICE_PER_KM,
     local_payment_ratio: float = DEFAULT_LOCAL_PAYMENT_RATIO,
+    cross_platform_sharing_rate_mu2: float = DEFAULT_CROSS_PLATFORM_SHARING_RATE_MU2,
     progress_callback: Callable[[Mapping[str, Any]], None] | None = None,
 ) -> dict[str, float]:
     """Run one GTA-style baseline over the shared Chengdu environment."""
@@ -457,7 +469,11 @@ def _run_gta_environment(
                     )
                 )
 
-            outcome = settle_aim_auction(task, outer_bids)
+            outcome = settle_aim_auction(
+                task,
+                outer_bids,
+                cross_platform_sharing_rate_mu2=cross_platform_sharing_rate_mu2,
+            )
             if outcome is not None:
                 apply_assignment_to_legacy_courier(task, outcome.courier, len(getattr(outcome.courier, "re_schedule")))
                 accepted_assignments += 1
@@ -509,6 +525,7 @@ def run_basegta_baseline_environment(
     environment: Any,
     unit_price_per_km: float = DEFAULT_UNIT_PRICE_PER_KM,
     local_payment_ratio: float = DEFAULT_LOCAL_PAYMENT_RATIO,
+    cross_platform_sharing_rate_mu2: float = DEFAULT_CROSS_PLATFORM_SHARING_RATE_MU2,
     progress_callback: Callable[[Mapping[str, Any]], None] | None = None,
 ) -> dict[str, float]:
     """Run BaseGTA on the shared Chengdu environment."""
@@ -518,6 +535,7 @@ def run_basegta_baseline_environment(
         prediction_window_seconds=None,
         unit_price_per_km=unit_price_per_km,
         local_payment_ratio=local_payment_ratio,
+        cross_platform_sharing_rate_mu2=cross_platform_sharing_rate_mu2,
         progress_callback=progress_callback,
     )
 
@@ -527,6 +545,7 @@ def run_impgta_baseline_environment(
     prediction_window_seconds: int = DEFAULT_IMPGTA_WINDOW_SECONDS,
     unit_price_per_km: float = DEFAULT_UNIT_PRICE_PER_KM,
     local_payment_ratio: float = DEFAULT_LOCAL_PAYMENT_RATIO,
+    cross_platform_sharing_rate_mu2: float = DEFAULT_CROSS_PLATFORM_SHARING_RATE_MU2,
     progress_callback: Callable[[Mapping[str, Any]], None] | None = None,
 ) -> dict[str, float]:
     """Run ImpGTA on the shared Chengdu environment with a fixed future window."""
@@ -536,5 +555,6 @@ def run_impgta_baseline_environment(
         prediction_window_seconds=prediction_window_seconds,
         unit_price_per_km=unit_price_per_km,
         local_payment_ratio=local_payment_ratio,
+        cross_platform_sharing_rate_mu2=cross_platform_sharing_rate_mu2,
         progress_callback=progress_callback,
     )
