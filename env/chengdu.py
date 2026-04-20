@@ -595,6 +595,25 @@ def current_legacy_route_task_ids(local_couriers: Sequence[Any], partner_courier
     return route_task_ids
 
 
+def compute_delivered_legacy_task_count(
+    accepted_task_ids: Sequence[str] | set[str],
+    local_couriers: Sequence[Any],
+    partner_couriers_by_platform: Mapping[str, Sequence[Any]],
+) -> int:
+    """Return how many accepted tasks are fully delivered after route progression.
+
+    Args:
+        accepted_task_ids: Stable identifiers for tasks accepted by the policy.
+        local_couriers: Active local legacy couriers.
+        partner_couriers_by_platform: Active partner legacy couriers grouped by platform.
+
+    Returns:
+        Number of accepted tasks no longer present in any active courier route.
+    """
+
+    return len(set(accepted_task_ids) - current_legacy_route_task_ids(local_couriers, partner_couriers_by_platform))
+
+
 def partition_terminal_backlog(
     unresolved_tasks: Sequence[Any],
     now: int,
@@ -1041,9 +1060,10 @@ def finalize_chengdu_batch(
         runtime.terminal_unassigned.extend(terminal_tasks)
         backlog = retriable_tasks
     runtime.backlog = backlog
-    delivered_parcel_count = len(
-        runtime.accepted_assignment_ids
-        - current_legacy_route_task_ids(runtime.active_local_couriers, runtime.active_partner_by_platform)
+    delivered_parcel_count = compute_delivered_legacy_task_count(
+        runtime.accepted_assignment_ids,
+        runtime.active_local_couriers,
+        runtime.active_partner_by_platform,
     )
     report = BatchReport(
         batch_index=prepared_batch.batch_index,
@@ -1160,9 +1180,10 @@ def run_time_stepped_chengdu_batches(
                     unresolved_parcels=[],
                     processing_time_seconds=0.0,
                     timing=prepared_batch.timing.freeze(),
-                    delivered_parcel_count=len(
-                        runtime.accepted_assignment_ids
-                        - current_legacy_route_task_ids(runtime.active_local_couriers, runtime.active_partner_by_platform)
+                    delivered_parcel_count=compute_delivered_legacy_task_count(
+                        runtime.accepted_assignment_ids,
+                        runtime.active_local_couriers,
+                        runtime.active_partner_by_platform,
                     ),
                 )
             )

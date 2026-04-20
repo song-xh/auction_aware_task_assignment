@@ -24,6 +24,7 @@ from capa.utility import (
 from env.chengdu import (
     LegacyCourierSnapshotCache,
     apply_assignment_to_legacy_courier,
+    compute_delivered_legacy_task_count,
     drain_legacy_routes,
     framework_movement_callback,
     group_legacy_tasks_by_batch,
@@ -136,6 +137,7 @@ def run_mra_baseline_environment(
     service_radius_meters = None if getattr(environment, "service_radius_km", None) is None else float(environment.service_radius_km) * 1000.0
     backlog: list[Any] = []
     accepted_assignments = 0
+    accepted_task_ids: set[str] = set()
     total_revenue = 0.0
     batches = group_legacy_tasks_by_batch(tasks, batch_size)
     first_batch_start = int(float(getattr(min(tasks, key=lambda item: float(getattr(item, "s_time"))), "s_time")))
@@ -220,6 +222,7 @@ def run_mra_baseline_environment(
                     local_payment_ratio=local_payment_ratio,
                 )
                 accepted_assignments += 1
+                accepted_task_ids.add(str(getattr(edge.task, "num")))
 
             remaining = [task for task in remaining if str(getattr(task, "num")) not in used_tasks]
             elapsed = perf_counter() - round_started
@@ -255,11 +258,16 @@ def run_mra_baseline_environment(
             step_seconds=60,
             movement_callback=movement,
         )
+    delivered_parcels = compute_delivered_legacy_task_count(
+        accepted_task_ids,
+        local_couriers,
+        {},
+    )
 
     return {
         "TR": total_revenue,
-        "CR": accepted_assignments / total_tasks,
+        "CR": delivered_parcels / total_tasks,
         "BPT": timing.decision_time_seconds,
-        "delivered_parcels": accepted_assignments,
+        "delivered_parcels": delivered_parcels,
         "accepted_assignments": accepted_assignments,
     }

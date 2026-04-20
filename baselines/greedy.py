@@ -28,6 +28,7 @@ from capa.utility import (
 from env.chengdu import (
     LegacyCourierSnapshotCache,
     apply_assignment_to_legacy_courier,
+    compute_delivered_legacy_task_count,
     drain_legacy_routes,
     framework_movement_callback,
     legacy_task_to_parcel,
@@ -151,6 +152,7 @@ def run_greedy_baseline_environment(
     processed_tasks = 0
     progress_stride = max(1, total_tasks // 100)
     accepted_assignments = 0
+    accepted_task_ids: set[str] = set()
     total_revenue = 0.0
     processing_time_seconds = 0.0
 
@@ -191,6 +193,7 @@ def run_greedy_baseline_environment(
                 snapshot_cache.invalidate(courier_cache_id)
                 insertion_cache.invalidate_courier(courier_cache_id)
                 accepted_assignments += 1
+                accepted_task_ids.add(str(getattr(task, "num")))
                 total_revenue += compute_local_platform_revenue_for_local_completion(
                     parcel_fare=float(getattr(task, "fare")),
                     local_payment_ratio=local_payment_ratio,
@@ -219,12 +222,17 @@ def run_greedy_baseline_environment(
             step_seconds=max(1, realtime),
             movement_callback=movement,
         )
+    delivered_parcels = compute_delivered_legacy_task_count(
+        accepted_task_ids,
+        local_couriers,
+        {},
+    )
 
     return {
         "TR": total_revenue,
-        "CR": accepted_assignments / total_tasks,
+        "CR": delivered_parcels / total_tasks,
         "BPT": processing_time_seconds,
-        "delivered_parcels": accepted_assignments,
+        "delivered_parcels": delivered_parcels,
         "accepted_assignments": accepted_assignments,
     }
 
