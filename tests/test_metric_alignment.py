@@ -50,6 +50,32 @@ class MetricAlignmentTest(unittest.TestCase):
         self.assertEqual(result["delivered_parcels"], 0)
         self.assertEqual(result["CR"], 0.0)
 
+    def test_basegta_local_tr_uses_capa_local_revenue(self) -> None:
+        """BaseGTA local revenue should equal fare minus the local courier payment."""
+
+        task = SimpleNamespace(num="t1", fare=10.0, s_time=0.0, d_time=10.0, weight=1.0, l_node="p1")
+        courier = SimpleNamespace(num=1, location="start", re_schedule=[], re_weight=0.0, max_weight=5.0)
+        environment = SimpleNamespace(
+            tasks=[task],
+            local_couriers=[courier],
+            partner_couriers_by_platform={},
+            movement_callback=lambda *args, **kwargs: None,
+            station_set=[],
+            travel_model=SimpleNamespace(distance=lambda start, end: 0.0, travel_time=lambda start, end: 0.0),
+            service_radius_km=None,
+        )
+
+        with (
+            patch(
+                "baselines.gta.select_available_courier_for_task",
+                return_value=GTABid(platform_id="", courier=courier, dispatch_cost=1.0),
+            ),
+            patch("baselines.gta.drain_legacy_routes", return_value=0),
+        ):
+            result = run_basegta_baseline_environment(environment=environment, local_payment_ratio=0.3)
+
+        self.assertAlmostEqual(result["TR"], 7.0)
+
     def test_impgta_uses_delivered_count_for_cr(self) -> None:
         """ImpGTA should derive delivered count from post-drain route state, not accepts."""
 
@@ -76,6 +102,32 @@ class MetricAlignmentTest(unittest.TestCase):
 
         self.assertEqual(result["delivered_parcels"], 0)
         self.assertEqual(result["CR"], 0.0)
+
+    def test_impgta_local_tr_uses_capa_local_revenue(self) -> None:
+        """ImpGTA local revenue should equal fare minus the local courier payment."""
+
+        task = SimpleNamespace(num="t1", fare=10.0, s_time=0.0, d_time=10.0, weight=1.0, l_node="p1")
+        courier = SimpleNamespace(num=1, location="start", re_schedule=[], re_weight=0.0, max_weight=5.0)
+        environment = SimpleNamespace(
+            tasks=[task],
+            local_couriers=[courier],
+            partner_couriers_by_platform={},
+            movement_callback=lambda *args, **kwargs: None,
+            station_set=[],
+            travel_model=SimpleNamespace(distance=lambda start, end: 0.0, travel_time=lambda start, end: 0.0),
+            service_radius_km=None,
+        )
+
+        with (
+            patch(
+                "baselines.gta.select_available_courier_for_task",
+                return_value=GTABid(platform_id="", courier=courier, dispatch_cost=1.0),
+            ),
+            patch("baselines.gta.drain_legacy_routes", return_value=0),
+        ):
+            result = run_impgta_baseline_environment(environment=environment, local_payment_ratio=0.3)
+
+        self.assertAlmostEqual(result["TR"], 7.0)
 
     def test_basegta_cross_tr_uses_second_lowest_aim_payment(self) -> None:
         """BaseGTA should report cross revenue from AIM's critical payment."""
