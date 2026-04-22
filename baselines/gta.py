@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import random
 from statistics import fmean
 from time import perf_counter
 from typing import Any, Callable, Mapping, MutableSequence, Sequence
@@ -10,6 +11,8 @@ from typing import Any, Callable, Mapping, MutableSequence, Sequence
 from capa.config import (
     DEFAULT_CROSS_PLATFORM_SHARING_RATE_MU2,
     DEFAULT_GTA_UNIT_PRICE_PER_KM,
+    DEFAULT_IMPGTA_PREDICTION_SAMPLING_SEED,
+    DEFAULT_IMPGTA_PREDICTION_SUCCESS_RATE,
     DEFAULT_IMPGTA_WINDOW_SECONDS,
 )
 from capa.constraints import is_deadline_feasible_by_geo, is_within_service_radius
@@ -394,14 +397,26 @@ def settle_aim_auction(
     )
 
 
-def future_tasks_within_window(tasks: Sequence[Any], now: int, window_seconds: int) -> list[Any]:
-    """Collect tasks whose arrival times fall inside the ImpGTA future observation window."""
+def future_tasks_within_window(
+    tasks: Sequence[Any],
+    now: int,
+    window_seconds: int,
+    prediction_success_rate: float = DEFAULT_IMPGTA_PREDICTION_SUCCESS_RATE,
+    prediction_sampling_seed: int = DEFAULT_IMPGTA_PREDICTION_SAMPLING_SEED,
+) -> list[Any]:
+    """Collect a deterministically down-sampled future task window for ImpGTA prediction."""
     window_end = now + window_seconds
-    return [
+    future_tasks = [
         task
         for task in tasks
         if now < int(float(getattr(task, "s_time"))) <= window_end
     ]
+    if prediction_success_rate <= 0.0:
+        return []
+    if prediction_success_rate >= 1.0:
+        return future_tasks
+    rng = random.Random((int(prediction_sampling_seed) * 1_000_003) + int(now))
+    return [task for task in future_tasks if rng.random() < float(prediction_success_rate)]
 
 
 def advance_simulation(
@@ -421,6 +436,8 @@ def _run_gta_environment(
     environment: Any,
     algorithm: str,
     prediction_window_seconds: int | None = None,
+    prediction_success_rate: float = DEFAULT_IMPGTA_PREDICTION_SUCCESS_RATE,
+    prediction_sampling_seed: int = DEFAULT_IMPGTA_PREDICTION_SAMPLING_SEED,
     unit_price_per_km: float = DEFAULT_UNIT_PRICE_PER_KM,
     local_payment_ratio: float = DEFAULT_LOCAL_PAYMENT_RATIO,
     cross_platform_sharing_rate_mu2: float = DEFAULT_CROSS_PLATFORM_SHARING_RATE_MU2,
@@ -474,11 +491,16 @@ def _run_gta_environment(
             task_index += 1
 
         remaining_tasks = tasks[task_index:]
-        local_future_tasks = (
-            future_tasks_within_window(remaining_tasks, current_time, prediction_window_seconds)
-            if algorithm == "impgta" and prediction_window_seconds is not None
-            else []
-        )
+        if algorithm == "impgta" and prediction_window_seconds is not None:
+            local_future_tasks = future_tasks_within_window(
+                remaining_tasks,
+                current_time,
+                prediction_window_seconds,
+                prediction_success_rate=prediction_success_rate,
+                prediction_sampling_seed=prediction_sampling_seed,
+            )
+        else:
+            local_future_tasks = []
 
         for task in arrivals:
             started = perf_counter()
@@ -635,6 +657,8 @@ def run_basegta_baseline_environment(
 def run_impgta_baseline_environment(
     environment: Any,
     prediction_window_seconds: int = DEFAULT_IMPGTA_WINDOW_SECONDS,
+    prediction_success_rate: float = DEFAULT_IMPGTA_PREDICTION_SUCCESS_RATE,
+    prediction_sampling_seed: int = DEFAULT_IMPGTA_PREDICTION_SAMPLING_SEED,
     unit_price_per_km: float = DEFAULT_UNIT_PRICE_PER_KM,
     local_payment_ratio: float = DEFAULT_LOCAL_PAYMENT_RATIO,
     cross_platform_sharing_rate_mu2: float = DEFAULT_CROSS_PLATFORM_SHARING_RATE_MU2,
@@ -645,6 +669,8 @@ def run_impgta_baseline_environment(
         environment=environment,
         algorithm="impgta",
         prediction_window_seconds=prediction_window_seconds,
+        prediction_success_rate=prediction_success_rate,
+        prediction_sampling_seed=prediction_sampling_seed,
         unit_price_per_km=unit_price_per_km,
         local_payment_ratio=local_payment_ratio,
         cross_platform_sharing_rate_mu2=cross_platform_sharing_rate_mu2,

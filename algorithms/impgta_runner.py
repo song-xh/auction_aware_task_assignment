@@ -7,7 +7,11 @@ from pathlib import Path
 from typing import Any, Callable, Mapping
 
 from baselines.gta import run_impgta_baseline_environment
-from capa.config import DEFAULT_IMPGTA_WINDOW_SECONDS
+from capa.config import (
+    DEFAULT_IMPGTA_PREDICTION_SAMPLING_SEED,
+    DEFAULT_IMPGTA_PREDICTION_SUCCESS_RATE,
+    DEFAULT_IMPGTA_WINDOW_SECONDS,
+)
 
 from .base import AlgorithmRunner
 
@@ -18,10 +22,14 @@ class ImpGTARunner(AlgorithmRunner):
     def __init__(
         self,
         prediction_window_seconds: int = DEFAULT_IMPGTA_WINDOW_SECONDS,
+        prediction_success_rate: float = DEFAULT_IMPGTA_PREDICTION_SUCCESS_RATE,
+        prediction_sampling_seed: int = DEFAULT_IMPGTA_PREDICTION_SAMPLING_SEED,
         baseline_runner: Callable[..., dict[str, float]] | None = None,
     ) -> None:
         """Store the ImpGTA future window and optional injected baseline runner."""
         self._prediction_window_seconds = prediction_window_seconds
+        self._prediction_success_rate = prediction_success_rate
+        self._prediction_sampling_seed = prediction_sampling_seed
         self._baseline_runner = baseline_runner or run_impgta_baseline_environment
 
     def run(
@@ -34,11 +42,15 @@ class ImpGTARunner(AlgorithmRunner):
         metrics = self._baseline_runner(
             environment=environment,
             prediction_window_seconds=self._prediction_window_seconds,
+            prediction_success_rate=self._prediction_success_rate,
+            prediction_sampling_seed=self._prediction_sampling_seed,
             progress_callback=progress_callback,
         )
         summary = {
             "algorithm": "impgta",
             "prediction_window_seconds": self._prediction_window_seconds,
+            "prediction_success_rate": self._prediction_success_rate,
+            "prediction_sampling_seed": self._prediction_sampling_seed,
             "metrics": metrics,
         }
         if output_dir is not None:
@@ -50,10 +62,14 @@ class ImpGTARunner(AlgorithmRunner):
 
 def build_impgta_runner(
     prediction_window_seconds: int = DEFAULT_IMPGTA_WINDOW_SECONDS,
+    prediction_success_rate: float = DEFAULT_IMPGTA_PREDICTION_SUCCESS_RATE,
+    prediction_sampling_seed: int = DEFAULT_IMPGTA_PREDICTION_SAMPLING_SEED,
     baseline_runner: Callable[..., dict[str, float]] | None = None,
 ) -> ImpGTARunner:
     """Build the unified ImpGTA runner."""
     return ImpGTARunner(
         prediction_window_seconds=prediction_window_seconds,
+        prediction_success_rate=prediction_success_rate,
+        prediction_sampling_seed=prediction_sampling_seed,
         baseline_runner=baseline_runner,
     )

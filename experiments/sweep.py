@@ -54,6 +54,8 @@ def run_parameter_sweep(
         couriers_per_platform=fixed_config.get("couriers_per_platform", 5),
         batch_size=fixed_config.get("batch_size", DEFAULT_CAPA_BATCH_SIZE),
         prediction_window_seconds=fixed_config.get("prediction_window_seconds", DEFAULT_IMPGTA_WINDOW_SECONDS),
+        prediction_success_rate=fixed_config.get("prediction_success_rate", 0.8),
+        prediction_sampling_seed=fixed_config.get("prediction_sampling_seed", 1),
         service_radius_km=fixed_config.get("service_radius_km"),
         courier_capacity=fixed_config.get("courier_capacity"),
         task_window_start_seconds=fixed_config.get("task_window_start_seconds"),
@@ -127,7 +129,11 @@ def _build_runner_kwargs(algorithm_name: str, config: ExperimentConfig) -> dict[
     if algorithm_name in {"capa", "greedy", "mra"}:
         return {"batch_size": config.batch_size}
     if algorithm_name == "impgta":
-        return {"prediction_window_seconds": config.prediction_window_seconds}
+        return {
+            "prediction_window_seconds": config.prediction_window_seconds,
+            "prediction_success_rate": config.prediction_success_rate,
+            "prediction_sampling_seed": config.prediction_sampling_seed,
+        }
     if algorithm_name == "rl-capa":
         return {
             "min_batch_size": config.rl_min_batch_size,
@@ -164,6 +170,8 @@ def _run_sweep_point(
         couriers_per_platform=fixed_config.get("couriers_per_platform", 5),
         batch_size=fixed_config.get("batch_size", DEFAULT_CAPA_BATCH_SIZE),
         prediction_window_seconds=fixed_config.get("prediction_window_seconds", DEFAULT_IMPGTA_WINDOW_SECONDS),
+        prediction_success_rate=fixed_config.get("prediction_success_rate", 0.8),
+        prediction_sampling_seed=fixed_config.get("prediction_sampling_seed", 1),
         service_radius_km=fixed_config.get("service_radius_km"),
         courier_capacity=fixed_config.get("courier_capacity"),
         task_window_start_seconds=fixed_config.get("task_window_start_seconds"),

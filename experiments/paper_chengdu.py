@@ -16,6 +16,8 @@ from algorithms.registry import build_algorithm_runner
 from capa.config import (
     DEFAULT_CAPA_BATCH_SIZE,
     DEFAULT_DETOUR_FAVORING_CAPA_RUNNER_KWARGS,
+    DEFAULT_IMPGTA_PREDICTION_SAMPLING_SEED,
+    DEFAULT_IMPGTA_PREDICTION_SUCCESS_RATE,
     DEFAULT_IMPGTA_WINDOW_SECONDS,
     DEFAULT_LOWER_THRESHOLD_CAPA_RUNNER_KWARGS,
     DEFAULT_PAPER_CAPA_RUNNER_KWARGS,
@@ -42,6 +44,8 @@ DEFAULT_CHENGDU_PAPER_FIXED_CONFIG: dict[str, Any] = {
     "service_radius_km": 1.0,
     "batch_size": DEFAULT_CAPA_BATCH_SIZE,
     "prediction_window_seconds": DEFAULT_IMPGTA_WINDOW_SECONDS,
+    "prediction_success_rate": DEFAULT_IMPGTA_PREDICTION_SUCCESS_RATE,
+    "prediction_sampling_seed": DEFAULT_IMPGTA_PREDICTION_SAMPLING_SEED,
     "task_window_start_seconds": None,
     "task_window_end_seconds": None,
     "task_sampling_seed": 1,
@@ -143,6 +147,10 @@ def run_chengdu_paper_point(
     fixed_config = dict(DEFAULT_CHENGDU_PAPER_FIXED_CONFIG)
     if fixed_config_overrides:
         fixed_config.update(fixed_config_overrides)
+    merged_runner_overrides = build_paper_runner_overrides_from_fixed_config(
+        fixed_config=fixed_config,
+        explicit_overrides=runner_overrides_by_algorithm,
+    )
     output_dir.mkdir(parents=True, exist_ok=True)
     _write_point_bootstrap_progress(
         output_dir=output_dir,
@@ -158,13 +166,13 @@ def run_chengdu_paper_point(
             output_dir=output_dir,
             algorithms=algorithms,
             batch_size=int(fixed_config["batch_size"]),
-            runner_overrides_by_algorithm=runner_overrides_by_algorithm or {},
+            runner_overrides_by_algorithm=merged_runner_overrides,
         )
         return run_seeded_comparison_point(
             seed_path=seed_path,
             point_spec=point_spec,
             environment_deriver=lambda seed, value: derive_environment_for_axis(seed, axis, value),
-            runner_builder=partial(_build_paper_runner, runner_overrides_by_algorithm=runner_overrides_by_algorithm or {}),
+            runner_builder=partial(_build_paper_runner, runner_overrides_by_algorithm=merged_runner_overrides),
         )
     point_config = apply_sweep_axis(
         ExperimentConfig(
@@ -175,6 +183,8 @@ def run_chengdu_paper_point(
             couriers_per_platform=int(fixed_config["couriers_per_platform"]),
             batch_size=int(fixed_config["batch_size"]),
             prediction_window_seconds=int(fixed_config["prediction_window_seconds"]),
+            prediction_success_rate=float(fixed_config["prediction_success_rate"]),
+            prediction_sampling_seed=int(fixed_config["prediction_sampling_seed"]),
             service_radius_km=float(fixed_config["service_radius_km"]) if fixed_config["service_radius_km"] is not None else None,
             courier_capacity=float(fixed_config["courier_capacity"]) if fixed_config["courier_capacity"] is not None else None,
             task_window_start_seconds=float(fixed_config["task_window_start_seconds"]) if fixed_config["task_window_start_seconds"] is not None else None,
@@ -191,12 +201,12 @@ def run_chengdu_paper_point(
         output_dir=output_dir,
         algorithms=algorithms,
         batch_size=int(fixed_config["batch_size"]),
-        runner_overrides_by_algorithm=runner_overrides_by_algorithm or {},
+        runner_overrides_by_algorithm=merged_runner_overrides,
     )
     return run_environment_comparison_point(
         environment=environment,
         point_spec=point_spec,
-        runner_builder=partial(_build_paper_runner, runner_overrides_by_algorithm=runner_overrides_by_algorithm or {}),
+        runner_builder=partial(_build_paper_runner, runner_overrides_by_algorithm=merged_runner_overrides),
     )
 
 
@@ -235,6 +245,10 @@ def run_chengdu_paper_split_experiment(
     fixed_config = dict(DEFAULT_CHENGDU_PAPER_FIXED_CONFIG)
     if fixed_config_overrides:
         fixed_config.update(fixed_config_overrides)
+    merged_runner_overrides = build_paper_runner_overrides_from_fixed_config(
+        fixed_config=fixed_config,
+        explicit_overrides=runner_overrides_by_algorithm,
+    )
     axis_values = PAPER_SUITE_PRESETS["chengdu-paper"][preset_name][axis]
     if seed_path is None:
         canonical_environment = ChengduEnvironment.build(
@@ -256,7 +270,7 @@ def run_chengdu_paper_split_experiment(
         batch_size=int(fixed_config["batch_size"]),
         poll_seconds=poll_seconds,
         progress_mode=progress_mode,
-        runner_overrides_by_algorithm=runner_overrides_by_algorithm or {},
+        runner_overrides_by_algorithm=merged_runner_overrides,
     )
 
     def point_command_builder(value: int | float, point_output_dir: Path) -> Sequence[str]:
@@ -288,6 +302,12 @@ def run_chengdu_paper_split_experiment(
             str(fixed_config["service_radius_km"]),
             "--batch-size",
             str(fixed_config["batch_size"]),
+            "--prediction-window-seconds",
+            str(fixed_config["prediction_window_seconds"]),
+            "--prediction-success-rate",
+            str(fixed_config["prediction_success_rate"]),
+            "--prediction-sampling-seed",
+            str(fixed_config["prediction_sampling_seed"]),
             "--task-sampling-seed",
             str(fixed_config["task_sampling_seed"]),
         ]
@@ -297,7 +317,7 @@ def run_chengdu_paper_split_experiment(
             command.extend(["--task-window-end-seconds", str(fixed_config["task_window_end_seconds"])])
         if seed_path is not None:
             command.extend(["--seed-path", str(seed_path)])
-        for algorithm, overrides in (runner_overrides_by_algorithm or {}).items():
+        for algorithm, overrides in merged_runner_overrides.items():
             if algorithm != "capa":
                 continue
             command.extend(_build_capa_override_cli_args(overrides))
@@ -536,6 +556,9 @@ def run_chengdu_default_comparison(
         couriers_per_platform=int(fixed_config["couriers_per_platform"]),
         service_radius_km=fixed_config["service_radius_km"],
         courier_capacity=fixed_config["courier_capacity"],
+        task_window_start_seconds=fixed_config["task_window_start_seconds"],
+        task_window_end_seconds=fixed_config["task_window_end_seconds"],
+        task_sampling_seed=int(fixed_config["task_sampling_seed"]),
     )
     from .seeding import build_environment_seed, clone_environment_from_seed
 
@@ -545,7 +568,11 @@ def run_chengdu_default_comparison(
     for algorithm in algorithms:
         runner_kwargs = {"batch_size": int(fixed_config["batch_size"])} if algorithm in {"capa", "greedy", "mra"} else {}
         if algorithm == "impgta":
-            runner_kwargs = {"prediction_window_seconds": int(fixed_config["prediction_window_seconds"])}
+            runner_kwargs = {
+                "prediction_window_seconds": int(fixed_config["prediction_window_seconds"]),
+                "prediction_success_rate": float(fixed_config["prediction_success_rate"]),
+                "prediction_sampling_seed": int(fixed_config["prediction_sampling_seed"]),
+            }
         runner = build_algorithm_runner(algorithm, **runner_kwargs)
         summaries[algorithm] = runner.run(
             environment=clone_environment_from_seed(seed),
@@ -592,9 +619,12 @@ def build_script_parser(description: str) -> argparse.ArgumentParser:
     parser.add_argument("--courier-capacity", type=float, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["courier_capacity"])
     parser.add_argument("--service-radius-km", type=float, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["service_radius_km"])
     parser.add_argument("--batch-size", type=int, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["batch_size"])
+    parser.add_argument("--prediction-window-seconds", type=int, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["prediction_window_seconds"])
     parser.add_argument("--task-window-start-seconds", type=float, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["task_window_start_seconds"])
     parser.add_argument("--task-window-end-seconds", type=float, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["task_window_end_seconds"])
     parser.add_argument("--task-sampling-seed", type=int, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["task_sampling_seed"])
+    parser.add_argument("--prediction-success-rate", type=float, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["prediction_success_rate"])
+    parser.add_argument("--prediction-sampling-seed", type=int, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["prediction_sampling_seed"])
     parser.add_argument("--success-tr-ratio", type=float, default=0.9)
     parser.add_argument("--success-cr-gap", type=float, default=0.02)
     parser.add_argument("--utility-balance-gamma", type=float, default=None)
@@ -616,7 +646,9 @@ def build_fixed_config_from_args(args: argparse.Namespace) -> dict[str, Any]:
         "courier_capacity": args.courier_capacity,
         "service_radius_km": args.service_radius_km,
         "batch_size": args.batch_size,
-        "prediction_window_seconds": DEFAULT_IMPGTA_WINDOW_SECONDS,
+        "prediction_window_seconds": args.prediction_window_seconds,
+        "prediction_success_rate": args.prediction_success_rate,
+        "prediction_sampling_seed": args.prediction_sampling_seed,
         "task_window_start_seconds": args.task_window_start_seconds,
         "task_window_end_seconds": args.task_window_end_seconds,
         "task_sampling_seed": args.task_sampling_seed,
@@ -638,6 +670,33 @@ def build_capa_runner_overrides_from_args(args: argparse.Namespace) -> dict[str,
         if value is not None
     }
     return {} if not overrides else {"capa": overrides}
+
+
+def build_paper_runner_overrides_from_fixed_config(
+    fixed_config: dict[str, Any],
+    explicit_overrides: dict[str, dict[str, Any]] | None = None,
+) -> dict[str, dict[str, Any]]:
+    """Build per-algorithm runner overrides implied by paper fixed config.
+
+    Args:
+        fixed_config: Shared paper fixed configuration.
+        explicit_overrides: Optional caller-provided overrides to merge on top.
+
+    Returns:
+        Per-algorithm runner kwargs that should be honored by point/split runners.
+    """
+
+    merged: dict[str, dict[str, Any]] = {
+        "impgta": {
+            "prediction_window_seconds": int(fixed_config["prediction_window_seconds"]),
+            "prediction_success_rate": float(fixed_config["prediction_success_rate"]),
+            "prediction_sampling_seed": int(fixed_config["prediction_sampling_seed"]),
+        }
+    }
+    for algorithm, overrides in (explicit_overrides or {}).items():
+        merged.setdefault(algorithm, {})
+        merged[algorithm].update(dict(overrides))
+    return merged
 
 
 def _build_paper_runner(
