@@ -10,13 +10,14 @@ from unittest.mock import patch
 
 from capa.utility import DistanceMatrixTravelModel
 from baselines.greedy import run_greedy_baseline_environment
-from baselines.gta import GTABid, run_basegta_baseline_environment, run_impgta_baseline_environment
+from baselines.gta import GTABid, future_tasks_within_window, run_basegta_baseline_environment, run_impgta_baseline_environment
 from baselines.mra import run_mra_baseline_environment
 from baselines.ramcom import run_ramcom_baseline_environment
 from env.chengdu import ChengduEnvironment, select_station_pick_tasks
 from experiments.config import ExperimentConfig
-from experiments.paper_chengdu import build_fixed_config_from_args
+from experiments.paper_chengdu import build_fixed_config_from_args, build_paper_runner_overrides_from_fixed_config
 from experiments.seeding import build_environment_seed, clone_environment_from_seed
+from runner import build_algorithm_kwargs
 
 
 class MetricAlignmentTest(unittest.TestCase):
@@ -96,6 +97,9 @@ class MetricAlignmentTest(unittest.TestCase):
             courier_capacity=50.0,
             service_radius_km=1.0,
             batch_size=30,
+            prediction_window_seconds=180,
+            prediction_success_rate=0.6,
+            prediction_sampling_seed=17,
             task_window_start_seconds=120,
             task_window_end_seconds=600,
             task_sampling_seed=13,
@@ -106,6 +110,9 @@ class MetricAlignmentTest(unittest.TestCase):
         self.assertEqual(fixed_config["task_window_start_seconds"], 120)
         self.assertEqual(fixed_config["task_window_end_seconds"], 600)
         self.assertEqual(fixed_config["task_sampling_seed"], 13)
+        self.assertEqual(fixed_config["prediction_window_seconds"], 180)
+        self.assertEqual(fixed_config["prediction_success_rate"], 0.6)
+        self.assertEqual(fixed_config["prediction_sampling_seed"], 17)
 
     def test_environment_seed_preserves_task_window_sampling(self) -> None:
         """Canonical Chengdu seeds should preserve task-window sampling metadata across clones."""
@@ -133,6 +140,91 @@ class MetricAlignmentTest(unittest.TestCase):
         self.assertEqual(cloned.task_window_start_seconds, 50)
         self.assertEqual(cloned.task_window_end_seconds, 500)
         self.assertEqual(cloned.task_sampling_seed, 21)
+
+    def test_impgta_prediction_success_rate_controls_future_window(self) -> None:
+        """ImpGTA should preserve the full simplified future window when prediction success is 100%."""
+
+        tasks = [
+            SimpleNamespace(num=f"t{i}", s_time=float(i * 10), fare=float(i + 1))
+            for i in range(1, 6)
+        ]
+
+        predicted = future_tasks_within_window(
+            tasks,
+            now=0,
+            window_seconds=60,
+            prediction_success_rate=1.0,
+            prediction_sampling_seed=11,
+        )
+
+        self.assertEqual([task.num for task in predicted], ["t1", "t2", "t3", "t4", "t5"])
+
+    def test_impgta_zero_success_rate_removes_future_signal(self) -> None:
+        """ImpGTA should see no predicted future tasks when prediction success is zero."""
+
+        tasks = [
+            SimpleNamespace(num=f"t{i}", s_time=float(i * 10), fare=float(i + 1))
+            for i in range(1, 6)
+        ]
+
+        predicted = future_tasks_within_window(
+            tasks,
+            now=0,
+            window_seconds=60,
+            prediction_success_rate=0.0,
+            prediction_sampling_seed=11,
+        )
+
+        self.assertEqual(predicted, [])
+
+    def test_impgta_prediction_success_rate_uses_deterministic_subset(self) -> None:
+        """ImpGTA should down-sample the simplified future window deterministically under a fixed seed."""
+
+        tasks = [
+            SimpleNamespace(num=f"t{i}", s_time=float(i * 10), fare=float(i + 1))
+            for i in range(1, 6)
+        ]
+
+        predicted = future_tasks_within_window(
+            tasks,
+            now=0,
+            window_seconds=60,
+            prediction_success_rate=0.5,
+            prediction_sampling_seed=11,
+        )
+
+        self.assertEqual([task.num for task in predicted], ["t3", "t4", "t5"])
+
+    def test_runner_builds_impgta_prediction_success_kwargs(self) -> None:
+        """Unified runner kwargs should expose ImpGTA prediction-success controls."""
+
+        args = SimpleNamespace(
+            algorithm="impgta",
+            prediction_window_seconds=180,
+            prediction_success_rate=0.6,
+            prediction_sampling_seed=17,
+        )
+
+        kwargs = build_algorithm_kwargs(args)
+
+        self.assertEqual(kwargs["prediction_window_seconds"], 180)
+        self.assertEqual(kwargs["prediction_success_rate"], 0.6)
+        self.assertEqual(kwargs["prediction_sampling_seed"], 17)
+
+    def test_paper_runner_overrides_include_impgta_prediction_controls(self) -> None:
+        """Paper point/split execution should forward ImpGTA prediction controls into the point runner."""
+
+        overrides = build_paper_runner_overrides_from_fixed_config(
+            {
+                "prediction_window_seconds": 240,
+                "prediction_success_rate": 0.55,
+                "prediction_sampling_seed": 19,
+            }
+        )
+
+        self.assertEqual(overrides["impgta"]["prediction_window_seconds"], 240)
+        self.assertEqual(overrides["impgta"]["prediction_success_rate"], 0.55)
+        self.assertEqual(overrides["impgta"]["prediction_sampling_seed"], 19)
 
     def test_basegta_uses_delivered_count_for_cr(self) -> None:
         """BaseGTA should derive delivered count from post-drain route state, not accepts."""

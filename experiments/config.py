@@ -33,6 +33,8 @@ class ExperimentConfig:
     couriers_per_platform: int = 5
     batch_size: int = DEFAULT_CAPA_BATCH_SIZE
     prediction_window_seconds: int = DEFAULT_IMPGTA_WINDOW_SECONDS
+    prediction_success_rate: float = 0.8
+    prediction_sampling_seed: int = 1
     service_radius_km: float | None = None
     courier_capacity: float | None = None
     task_window_start_seconds: float | None = None
@@ -60,6 +62,8 @@ class ExperimentConfig:
             "couriers_per_platform": self.couriers_per_platform,
             "batch_size": self.batch_size,
             "prediction_window_seconds": self.prediction_window_seconds,
+            "prediction_success_rate": self.prediction_success_rate,
+            "prediction_sampling_seed": self.prediction_sampling_seed,
             "service_radius_km": self.service_radius_km,
             "courier_capacity": self.courier_capacity,
             "task_window_start_seconds": self.task_window_start_seconds,

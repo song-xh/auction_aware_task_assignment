@@ -94,6 +94,12 @@ DEFAULT_GTA_UNIT_PRICE_PER_KM = 3.0
 DEFAULT_IMPGTA_WINDOW_SECONDS = 180
 # ImpGTA 的预测窗口大小（秒）；属于 baseline 私有配置，不属于 CAPA 主参数。
 
+DEFAULT_IMPGTA_PREDICTION_SUCCESS_RATE = 0.8
+# ImpGTA 简化预测逻辑中的预测成功率；1.0 表示完全看到未来窗口，0.0 表示完全看不到。
+
+DEFAULT_IMPGTA_PREDICTION_SAMPLING_SEED = 1
+# ImpGTA 简化预测逻辑里对未来窗口做成功率抽样时使用的确定性随机种子。
+
 DEFAULT_MRA_BASE_PRICE = 2.0
 # MRA 基线的基础报价偏移项；非 CAPA 论文主参数。
 

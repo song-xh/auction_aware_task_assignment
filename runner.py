@@ -80,6 +80,18 @@ def _add_common_environment_arguments(parser: argparse.ArgumentParser) -> None:
         default=180,
         help="Future observation window in seconds for ImpGTA.",
     )
+    parser.add_argument(
+        "--prediction-success-rate",
+        type=float,
+        default=0.8,
+        help="Prediction success rate used to down-sample ImpGTA's simplified future window.",
+    )
+    parser.add_argument(
+        "--prediction-sampling-seed",
+        type=int,
+        default=1,
+        help="Deterministic sampling seed used by ImpGTA's simplified future-window prediction.",
+    )
     parser.add_argument("--output-dir", default="outputs/plots/chengdu_run", help="Directory for summary files and plots.")
 
 
@@ -88,7 +100,11 @@ def build_algorithm_kwargs(args: argparse.Namespace) -> dict[str, Any]:
     if args.algorithm in {"capa", "greedy", "mra"}:
         return {"batch_size": args.batch_size}
     if args.algorithm == "impgta":
-        return {"prediction_window_seconds": args.prediction_window_seconds}
+        return {
+            "prediction_window_seconds": args.prediction_window_seconds,
+            "prediction_success_rate": args.prediction_success_rate,
+            "prediction_sampling_seed": args.prediction_sampling_seed,
+        }
     if args.algorithm == "rl-capa":
         return {
             "min_batch_size": args.min_batch_size,
@@ -213,6 +229,8 @@ def _build_fixed_config(args: argparse.Namespace) -> dict[str, Any]:
         "task_window_end_seconds": args.task_window_end_seconds,
         "task_sampling_seed": args.task_sampling_seed,
         "prediction_window_seconds": args.prediction_window_seconds,
+        "prediction_success_rate": args.prediction_success_rate,
+        "prediction_sampling_seed": args.prediction_sampling_seed,
         "rl_min_batch_size": args.min_batch_size,
         "rl_max_batch_size": args.max_batch_size,
         "rl_step_seconds": args.step_seconds,
