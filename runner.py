@@ -61,6 +61,9 @@ def _add_common_environment_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--courier-capacity", type=float, default=None, help="Optional courier capacity override for all seeded couriers.")
     parser.add_argument("--service-radius-km", type=float, default=None, help="Optional courier service radius in kilometers.")
     parser.add_argument("--batch-size", type=int, default=300, help="Batch size in seconds for algorithms that use batching.")
+    parser.add_argument("--task-window-start-seconds", type=float, default=None, help="Optional lower bound of the parcel sampling time window.")
+    parser.add_argument("--task-window-end-seconds", type=float, default=None, help="Optional upper bound of the parcel sampling time window.")
+    parser.add_argument("--task-sampling-seed", type=int, default=1, help="Deterministic random seed used when sampling parcels inside the time window.")
     parser.add_argument("--min-batch-size", type=int, default=10, help="Lower bound of the RL-CAPA batch-size action space.")
     parser.add_argument("--max-batch-size", type=int, default=20, help="Upper bound of the RL-CAPA batch-size action space.")
     parser.add_argument("--step-seconds", type=int, default=60, help="Simulation step size in seconds for RL-CAPA.")
@@ -126,6 +129,9 @@ def _run_single_experiment(args: argparse.Namespace) -> int:
         couriers_per_platform=args.couriers_per_platform,
         service_radius_km=args.service_radius_km,
         courier_capacity=args.courier_capacity,
+        task_window_start_seconds=args.task_window_start_seconds,
+        task_window_end_seconds=args.task_window_end_seconds,
+        task_sampling_seed=args.task_sampling_seed,
     )
     runner = build_algorithm_runner(args.algorithm, **build_algorithm_kwargs(args))
     try:
@@ -203,6 +209,9 @@ def _build_fixed_config(args: argparse.Namespace) -> dict[str, Any]:
         "courier_capacity": args.courier_capacity,
         "service_radius_km": args.service_radius_km,
         "batch_size": args.batch_size,
+        "task_window_start_seconds": args.task_window_start_seconds,
+        "task_window_end_seconds": args.task_window_end_seconds,
+        "task_sampling_seed": args.task_sampling_seed,
         "prediction_window_seconds": args.prediction_window_seconds,
         "rl_min_batch_size": args.min_batch_size,
         "rl_max_batch_size": args.max_batch_size,

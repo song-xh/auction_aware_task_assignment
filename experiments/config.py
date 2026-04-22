@@ -35,6 +35,9 @@ class ExperimentConfig:
     prediction_window_seconds: int = DEFAULT_IMPGTA_WINDOW_SECONDS
     service_radius_km: float | None = None
     courier_capacity: float | None = None
+    task_window_start_seconds: float | None = None
+    task_window_end_seconds: float | None = None
+    task_sampling_seed: int = 1
     rl_min_batch_size: int = 10
     rl_max_batch_size: int = 20
     rl_step_seconds: int = 60
@@ -59,6 +62,9 @@ class ExperimentConfig:
             "prediction_window_seconds": self.prediction_window_seconds,
             "service_radius_km": self.service_radius_km,
             "courier_capacity": self.courier_capacity,
+            "task_window_start_seconds": self.task_window_start_seconds,
+            "task_window_end_seconds": self.task_window_end_seconds,
+            "task_sampling_seed": self.task_sampling_seed,
             "rl_min_batch_size": self.rl_min_batch_size,
             "rl_max_batch_size": self.rl_max_batch_size,
             "rl_step_seconds": self.rl_step_seconds,
@@ -91,6 +97,11 @@ class ExperimentConfig:
             kwargs["service_radius_km"] = self.service_radius_km
         if self.courier_capacity is not None:
             kwargs["courier_capacity"] = self.courier_capacity
+        if self.task_window_start_seconds is not None:
+            kwargs["task_window_start_seconds"] = self.task_window_start_seconds
+        if self.task_window_end_seconds is not None:
+            kwargs["task_window_end_seconds"] = self.task_window_end_seconds
+        kwargs["task_sampling_seed"] = self.task_sampling_seed
         kwargs.update(self.extra)
         return kwargs
 

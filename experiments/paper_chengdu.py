@@ -42,6 +42,9 @@ DEFAULT_CHENGDU_PAPER_FIXED_CONFIG: dict[str, Any] = {
     "service_radius_km": 1.0,
     "batch_size": DEFAULT_CAPA_BATCH_SIZE,
     "prediction_window_seconds": DEFAULT_IMPGTA_WINDOW_SECONDS,
+    "task_window_start_seconds": None,
+    "task_window_end_seconds": None,
+    "task_sampling_seed": 1,
 }
 
 
@@ -174,6 +177,9 @@ def run_chengdu_paper_point(
             prediction_window_seconds=int(fixed_config["prediction_window_seconds"]),
             service_radius_km=float(fixed_config["service_radius_km"]) if fixed_config["service_radius_km"] is not None else None,
             courier_capacity=float(fixed_config["courier_capacity"]) if fixed_config["courier_capacity"] is not None else None,
+            task_window_start_seconds=float(fixed_config["task_window_start_seconds"]) if fixed_config["task_window_start_seconds"] is not None else None,
+            task_window_end_seconds=float(fixed_config["task_window_end_seconds"]) if fixed_config["task_window_end_seconds"] is not None else None,
+            task_sampling_seed=int(fixed_config["task_sampling_seed"]),
         ),
         axis,
         axis_value,
@@ -282,7 +288,13 @@ def run_chengdu_paper_split_experiment(
             str(fixed_config["service_radius_km"]),
             "--batch-size",
             str(fixed_config["batch_size"]),
+            "--task-sampling-seed",
+            str(fixed_config["task_sampling_seed"]),
         ]
+        if fixed_config["task_window_start_seconds"] is not None:
+            command.extend(["--task-window-start-seconds", str(fixed_config["task_window_start_seconds"])])
+        if fixed_config["task_window_end_seconds"] is not None:
+            command.extend(["--task-window-end-seconds", str(fixed_config["task_window_end_seconds"])])
         if seed_path is not None:
             command.extend(["--seed-path", str(seed_path)])
         for algorithm, overrides in (runner_overrides_by_algorithm or {}).items():
@@ -580,6 +592,9 @@ def build_script_parser(description: str) -> argparse.ArgumentParser:
     parser.add_argument("--courier-capacity", type=float, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["courier_capacity"])
     parser.add_argument("--service-radius-km", type=float, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["service_radius_km"])
     parser.add_argument("--batch-size", type=int, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["batch_size"])
+    parser.add_argument("--task-window-start-seconds", type=float, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["task_window_start_seconds"])
+    parser.add_argument("--task-window-end-seconds", type=float, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["task_window_end_seconds"])
+    parser.add_argument("--task-sampling-seed", type=int, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["task_sampling_seed"])
     parser.add_argument("--success-tr-ratio", type=float, default=0.9)
     parser.add_argument("--success-cr-gap", type=float, default=0.02)
     parser.add_argument("--utility-balance-gamma", type=float, default=None)
@@ -602,6 +617,9 @@ def build_fixed_config_from_args(args: argparse.Namespace) -> dict[str, Any]:
         "service_radius_km": args.service_radius_km,
         "batch_size": args.batch_size,
         "prediction_window_seconds": DEFAULT_IMPGTA_WINDOW_SECONDS,
+        "task_window_start_seconds": args.task_window_start_seconds,
+        "task_window_end_seconds": args.task_window_end_seconds,
+        "task_sampling_seed": args.task_sampling_seed,
     }
 
 
@@ -689,6 +707,9 @@ def _canonical_environment_kwargs_for_axis(
         "couriers_per_platform": int(fixed_config["couriers_per_platform"]),
         "service_radius_km": fixed_config["service_radius_km"],
         "courier_capacity": fixed_config["courier_capacity"],
+        "task_window_start_seconds": fixed_config["task_window_start_seconds"],
+        "task_window_end_seconds": fixed_config["task_window_end_seconds"],
+        "task_sampling_seed": int(fixed_config["task_sampling_seed"]),
     }
     if axis == "num_parcels":
         kwargs["num_parcels"] = max(int(value) for value in axis_values)

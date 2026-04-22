@@ -6,6 +6,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
+import random
 from time import perf_counter
 from typing import Any, Callable, Dict, Iterable, List, Mapping, MutableSequence, Sequence
 
@@ -59,6 +60,9 @@ class ChengduEnvironment:
     movement_callback: Callable[[MutableSequence[Any], MutableSequence[Any], int, Sequence[Any]], None] | None = None
     service_radius_km: float | None = None
     courier_capacity: float | None = None
+    task_window_start_seconds: float | None = None
+    task_window_end_seconds: float | None = None
+    task_sampling_seed: int = 1
     geo_index: GeoIndex | None = None
     travel_speed_m_per_s: float = 0.0
 
@@ -72,6 +76,9 @@ class ChengduEnvironment:
         couriers_per_platform: int,
         service_radius_km: float | None = None,
         courier_capacity: float | None = None,
+        task_window_start_seconds: float | None = None,
+        task_window_end_seconds: float | None = None,
+        task_sampling_seed: int = 1,
     ) -> "ChengduEnvironment":
         """Build a Chengdu environment from the legacy framework inputs."""
         return build_framework_chengdu_environment(
@@ -82,6 +89,9 @@ class ChengduEnvironment:
             couriers_per_platform=couriers_per_platform,
             service_radius_km=service_radius_km,
             courier_capacity=courier_capacity,
+            task_window_start_seconds=task_window_start_seconds,
+            task_window_end_seconds=task_window_end_seconds,
+            task_sampling_seed=task_sampling_seed,
         )
 
     def all_partner_couriers(self) -> list[Any]:
@@ -108,6 +118,9 @@ class ChengduEnvironment:
             "platform_qualities": dict(self.platform_qualities),
             "service_radius_km": self.service_radius_km,
             "courier_capacity": self.courier_capacity,
+            "task_window_start_seconds": self.task_window_start_seconds,
+            "task_window_end_seconds": self.task_window_end_seconds,
+            "task_sampling_seed": self.task_sampling_seed,
             "geo_index": self.geo_index,
             "travel_speed_m_per_s": self.travel_speed_m_per_s,
         }
@@ -259,24 +272,77 @@ def sort_legacy_tasks(tasks: Sequence[Any]) -> list[Any]:
     )
 
 
-def select_station_pick_tasks(station_set: Sequence[Any], ordered_pick_tasks: Sequence[Any], num_parcels: int) -> list[Any]:
-    """Assign pick-up tasks to legacy stations using the original rectangular station ranges."""
+def legacy_pick_task_time_bounds(ordered_pick_tasks: Sequence[Any]) -> tuple[float, float]:
+    """Return the min/max arrival-time bounds present in the ordered pick-task stream."""
+
+    if not ordered_pick_tasks:
+        raise ValueError("At least one pick-up task is required to derive time bounds.")
+    first_time = float(getattr(ordered_pick_tasks[0], "s_time"))
+    last_time = float(getattr(ordered_pick_tasks[-1], "s_time"))
+    return first_time, last_time
+
+
+def select_station_pick_tasks(
+    station_set: Sequence[Any],
+    ordered_pick_tasks: Sequence[Any],
+    num_parcels: int,
+    window_start_seconds: float | None = None,
+    window_end_seconds: float | None = None,
+    sampling_seed: int = 1,
+) -> list[Any]:
+    """Assign pick-up tasks to stations after deterministic random sampling inside one time window."""
     if num_parcels <= 0:
         raise ValueError("The requested parcel count must be positive.")
+    if not ordered_pick_tasks:
+        raise ValueError("At least one ordered pick-up task is required.")
+    min_time, max_time = legacy_pick_task_time_bounds(ordered_pick_tasks)
+    normalized_window_start = min_time if window_start_seconds is None else float(window_start_seconds)
+    normalized_window_end = max_time if window_end_seconds is None else float(window_end_seconds)
+    if normalized_window_start < min_time or normalized_window_start > max_time:
+        raise ValueError(
+            f"Task window start {normalized_window_start} is outside the dataset range [{min_time}, {max_time}]."
+        )
+    if normalized_window_end < min_time or normalized_window_end > max_time:
+        raise ValueError(
+            f"Task window end {normalized_window_end} is outside the dataset range [{min_time}, {max_time}]."
+        )
+    if normalized_window_start > normalized_window_end:
+        raise ValueError("Task window start must be less than or equal to task window end.")
     for station in station_set:
         station.f_pick_task_set = []
-    selected: list[Any] = []
+    candidates: list[Any] = []
     for task in ordered_pick_tasks:
+        task_time = float(getattr(task, "s_time"))
+        if task_time < normalized_window_start or task_time > normalized_window_end:
+            continue
         for station in station_set:
             station_range = getattr(station, "station_range", None)
             if not station_range or len(station_range) != 4:
                 continue
             if station_range[0] <= float(getattr(task, "l_lng")) < station_range[1] and station_range[2] <= float(getattr(task, "l_lat")) < station_range[3]:
-                station.f_pick_task_set.append(task)
-                selected.append(task)
+                candidates.append(task)
                 break
-        if len(selected) >= num_parcels:
-            break
+    if len(candidates) < num_parcels:
+        raise ValueError(
+            f"Only {len(candidates)} pick-up tasks fall inside the requested time window and station bounds, fewer than the requested {num_parcels}."
+        )
+    sampled_tasks = (
+        list(candidates)
+        if len(candidates) == num_parcels
+        else random.Random(sampling_seed).sample(candidates, num_parcels)
+    )
+    selected = sort_legacy_tasks(sampled_tasks)
+    for task in selected:
+        for station in station_set:
+            station_range = getattr(station, "station_range", None)
+            if not station_range or len(station_range) != 4:
+                continue
+            if (
+                station_range[0] <= float(getattr(task, "l_lng")) < station_range[1]
+                and station_range[2] <= float(getattr(task, "l_lat")) < station_range[3]
+            ):
+                station.f_pick_task_set.append(task)
+                break
     return selected
 
 
@@ -1339,6 +1405,9 @@ def build_framework_chengdu_environment(
     couriers_per_platform: int,
     service_radius_km: float | None = None,
     courier_capacity: float | None = None,
+    task_window_start_seconds: float | None = None,
+    task_window_end_seconds: float | None = None,
+    task_sampling_seed: int = 1,
 ) -> LegacyChengduEnvironment:
     """Build the official Chengdu experiment state from the repository's legacy framework."""
     import Framework_ChengDu as framework
@@ -1377,7 +1446,14 @@ def build_framework_chengdu_environment(
         for courier in seeded_couriers:
             ensure_legacy_courier_station(courier, station_by_num)
             courier.batch_take = 0
-        tasks = select_station_pick_tasks(station_set, ordered_pick, num_parcels)
+        tasks = select_station_pick_tasks(
+            station_set,
+            ordered_pick,
+            num_parcels,
+            window_start_seconds=task_window_start_seconds,
+            window_end_seconds=task_window_end_seconds,
+            sampling_seed=task_sampling_seed,
+        )
         if len(seeded_couriers) >= required_couriers and len(tasks) >= num_parcels:
             break
 
@@ -1414,6 +1490,9 @@ def build_framework_chengdu_environment(
         movement_callback=framework_movement_callback,
         service_radius_km=service_radius_km,
         courier_capacity=normalized_capacity,
+        task_window_start_seconds=task_window_start_seconds,
+        task_window_end_seconds=task_window_end_seconds,
+        task_sampling_seed=task_sampling_seed,
         geo_index=build_geo_index_from_travel_model(travel_model),
         travel_speed_m_per_s=get_travel_speed_m_per_s(travel_model),
     )
