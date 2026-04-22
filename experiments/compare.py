@@ -57,6 +57,9 @@ def run_comparison_sweep(
         prediction_window_seconds=fixed_config.get("prediction_window_seconds", DEFAULT_IMPGTA_WINDOW_SECONDS),
         service_radius_km=fixed_config.get("service_radius_km"),
         courier_capacity=fixed_config.get("courier_capacity"),
+        task_window_start_seconds=fixed_config.get("task_window_start_seconds"),
+        task_window_end_seconds=fixed_config.get("task_window_end_seconds"),
+        task_sampling_seed=fixed_config.get("task_sampling_seed", 1),
         extra=dict(fixed_config.get("extra", {})),
     )
 
@@ -164,6 +167,9 @@ def _run_comparison_point(
         prediction_window_seconds=fixed_config.get("prediction_window_seconds", DEFAULT_IMPGTA_WINDOW_SECONDS),
         service_radius_km=fixed_config.get("service_radius_km"),
         courier_capacity=fixed_config.get("courier_capacity"),
+        task_window_start_seconds=fixed_config.get("task_window_start_seconds"),
+        task_window_end_seconds=fixed_config.get("task_window_end_seconds"),
+        task_sampling_seed=fixed_config.get("task_sampling_seed", 1),
         rl_min_batch_size=fixed_config.get("rl_min_batch_size", 10),
         rl_max_batch_size=fixed_config.get("rl_max_batch_size", 20),
         rl_step_seconds=fixed_config.get("rl_step_seconds", 60),

@@ -43,6 +43,9 @@ class ChengduEnvironmentSeed:
     movement_callback: Any | None = None
     service_radius_km: float | None = None
     courier_capacity: float | None = None
+    task_window_start_seconds: float | None = None
+    task_window_end_seconds: float | None = None
+    task_sampling_seed: int = 1
     geo_index: Any | None = None
     travel_speed_m_per_s: float = 0.0
 
@@ -66,6 +69,9 @@ def build_environment_seed(environment: ChengduEnvironment) -> ChengduEnvironmen
         movement_callback=environment.movement_callback,
         service_radius_km=environment.service_radius_km,
         courier_capacity=environment.courier_capacity,
+        task_window_start_seconds=environment.task_window_start_seconds,
+        task_window_end_seconds=environment.task_window_end_seconds,
+        task_sampling_seed=environment.task_sampling_seed,
         geo_index=environment.geo_index,
         travel_speed_m_per_s=environment.travel_speed_m_per_s,
     )
@@ -90,6 +96,9 @@ def clone_environment_from_seed(seed: ChengduEnvironmentSeed) -> ChengduEnvironm
         movement_callback=seed.movement_callback,
         service_radius_km=seed.service_radius_km,
         courier_capacity=seed.courier_capacity,
+        task_window_start_seconds=seed.task_window_start_seconds,
+        task_window_end_seconds=seed.task_window_end_seconds,
+        task_sampling_seed=seed.task_sampling_seed,
         geo_index=seed.geo_index,
         travel_speed_m_per_s=seed.travel_speed_m_per_s,
     )
@@ -121,6 +130,9 @@ def save_environment_seed(seed: ChengduEnvironmentSeed, output_path: Path) -> No
         "platform_qualities": dict(seed.platform_qualities),
         "service_radius_km": seed.service_radius_km,
         "courier_capacity": seed.courier_capacity,
+        "task_window_start_seconds": seed.task_window_start_seconds,
+        "task_window_end_seconds": seed.task_window_end_seconds,
+        "task_sampling_seed": seed.task_sampling_seed,
         "travel_speed_m_per_s": seed.travel_speed_m_per_s,
     }
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -164,6 +176,9 @@ def load_environment_seed(
         movement_callback=framework_movement_callback if movement_callback is None else movement_callback,
         service_radius_km=payload["service_radius_km"],
         courier_capacity=payload["courier_capacity"],
+        task_window_start_seconds=payload.get("task_window_start_seconds"),
+        task_window_end_seconds=payload.get("task_window_end_seconds"),
+        task_sampling_seed=int(payload.get("task_sampling_seed", 1)),
         geo_index=build_geo_index_from_travel_model(travel_model),
         travel_speed_m_per_s=float(payload.get("travel_speed_m_per_s", get_travel_speed_m_per_s(travel_model))),
     )

@@ -13,6 +13,10 @@ from baselines.greedy import run_greedy_baseline_environment
 from baselines.gta import GTABid, run_basegta_baseline_environment, run_impgta_baseline_environment
 from baselines.mra import run_mra_baseline_environment
 from baselines.ramcom import run_ramcom_baseline_environment
+from env.chengdu import ChengduEnvironment, select_station_pick_tasks
+from experiments.config import ExperimentConfig
+from experiments.paper_chengdu import build_fixed_config_from_args
+from experiments.seeding import build_environment_seed, clone_environment_from_seed
 
 
 class MetricAlignmentTest(unittest.TestCase):
@@ -23,6 +27,112 @@ class MetricAlignmentTest(unittest.TestCase):
 
         source = Path(__file__).resolve().parents[1] / "env" / "chengdu.py"
         py_compile.compile(str(source), doraise=True)
+
+    def test_select_station_pick_tasks_samples_within_window(self) -> None:
+        """Parcel selection should sample within the requested window rather than taking a time prefix."""
+
+        station = SimpleNamespace(station_range=(0.0, 1.0, 0.0, 1.0), f_pick_task_set=[])
+        tasks = [
+            SimpleNamespace(num=f"t{i}", s_time=float(i), d_time=float(i + 100), l_lng=0.5, l_lat=0.5)
+            for i in range(10)
+        ]
+
+        selected = select_station_pick_tasks(
+            [station],
+            tasks,
+            num_parcels=3,
+            window_start_seconds=2,
+            window_end_seconds=7,
+            sampling_seed=7,
+        )
+
+        self.assertEqual([task.num for task in selected], ["t3", "t4", "t5"])
+        self.assertEqual([task.num for task in station.f_pick_task_set], ["t3", "t4", "t5"])
+
+    def test_select_station_pick_tasks_rejects_window_underflow(self) -> None:
+        """Parcel selection should fail clearly when the requested window has too few tasks."""
+
+        station = SimpleNamespace(station_range=(0.0, 1.0, 0.0, 1.0), f_pick_task_set=[])
+        tasks = [
+            SimpleNamespace(num=f"t{i}", s_time=float(i), d_time=float(i + 100), l_lng=0.5, l_lat=0.5)
+            for i in range(5)
+        ]
+
+        with self.assertRaisesRegex(ValueError, "fewer than the requested 4"):
+            select_station_pick_tasks(
+                [station],
+                tasks,
+                num_parcels=4,
+                window_start_seconds=3,
+                window_end_seconds=4,
+                sampling_seed=1,
+            )
+
+    def test_experiment_config_carries_task_window_sampling(self) -> None:
+        """Experiment configs should propagate task-window sampling into environment kwargs."""
+
+        config = ExperimentConfig(
+            data_dir=Path("Data"),
+            task_window_start_seconds=100,
+            task_window_end_seconds=200,
+            task_sampling_seed=9,
+        )
+
+        environment_kwargs = config.as_environment_kwargs()
+
+        self.assertEqual(environment_kwargs["task_window_start_seconds"], 100)
+        self.assertEqual(environment_kwargs["task_window_end_seconds"], 200)
+        self.assertEqual(environment_kwargs["task_sampling_seed"], 9)
+
+    def test_build_fixed_config_from_args_carries_task_window_sampling(self) -> None:
+        """Paper CLI translation should preserve task-window sampling fields."""
+
+        args = SimpleNamespace(
+            data_dir="Data",
+            num_parcels=100,
+            local_couriers=10,
+            platforms=2,
+            couriers_per_platform=5,
+            courier_capacity=50.0,
+            service_radius_km=1.0,
+            batch_size=30,
+            task_window_start_seconds=120,
+            task_window_end_seconds=600,
+            task_sampling_seed=13,
+        )
+
+        fixed_config = build_fixed_config_from_args(args)
+
+        self.assertEqual(fixed_config["task_window_start_seconds"], 120)
+        self.assertEqual(fixed_config["task_window_end_seconds"], 600)
+        self.assertEqual(fixed_config["task_sampling_seed"], 13)
+
+    def test_environment_seed_preserves_task_window_sampling(self) -> None:
+        """Canonical Chengdu seeds should preserve task-window sampling metadata across clones."""
+
+        environment = ChengduEnvironment(
+            tasks=[],
+            local_couriers=[],
+            partner_couriers_by_platform={},
+            station_set=[],
+            travel_model=SimpleNamespace(),
+            platform_base_prices={},
+            platform_sharing_rates={},
+            platform_qualities={},
+            task_window_start_seconds=50,
+            task_window_end_seconds=500,
+            task_sampling_seed=21,
+        )
+
+        seed = build_environment_seed(environment)
+        cloned = clone_environment_from_seed(seed)
+
+        self.assertEqual(seed.task_window_start_seconds, 50)
+        self.assertEqual(seed.task_window_end_seconds, 500)
+        self.assertEqual(seed.task_sampling_seed, 21)
+        self.assertEqual(cloned.task_window_start_seconds, 50)
+        self.assertEqual(cloned.task_window_end_seconds, 500)
+        self.assertEqual(cloned.task_sampling_seed, 21)
 
     def test_basegta_uses_delivered_count_for_cr(self) -> None:
         """BaseGTA should derive delivered count from post-drain route state, not accepts."""
