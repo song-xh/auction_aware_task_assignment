@@ -72,13 +72,13 @@ def readTask():
         count = 0
         for line in f:
             temp_task = parse_task_line(line)
-        count += 1
-        if temp_task.fare != 0:
-            pick_task_set.append(temp_task)
-            # print("picpup+1, 总数为%s" % count)
-        else:
-            delivery_task_set.append(temp_task)
-            # print(f"delivery+1, 总数为{count}")
+            count += 1
+            if temp_task.fare != 0:
+                pick_task_set.append(temp_task)
+                # print("picpup+1, 总数为%s" % count)
+            else:
+                delivery_task_set.append(temp_task)
+                # print(f"delivery+1, 总数为{count}")
     with open("Data/order_20161101_deal4") as f:
         count = 0
         for line in f:
