@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import inspect
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 
 from algorithms.impgta_runner import build_impgta_runner
@@ -29,6 +30,8 @@ from capa.config import (
     DEFAULT_MRA_SHARING_RATE,
     DEFAULT_PAPER_CAPA_RUNNER_KWARGS,
     DEFAULT_PLATFORM_BASE_PRICE,
+    DEFAULT_PLATFORM_QUALITY_START,
+    DEFAULT_PLATFORM_QUALITY_STEP,
     DEFAULT_PLATFORM_SHARING_RATE,
     DEFAULT_RAMCOM_RANDOM_SEED,
     DEFAULT_THRESHOLD_OMEGA,
@@ -38,11 +41,14 @@ from capa.config import (
     build_default_platform_base_prices,
     build_default_platform_qualities,
     build_default_platform_sharing_rates,
+    validate_courier_preference,
 )
 from capa.experiments import build_default_chengdu_config
 from capa.models import CAPAConfig
-from env.chengdu import legacy_courier_to_capa
+from env.chengdu import ChengduEnvironment, legacy_courier_to_capa
+from experiments.config import ExperimentConfig, apply_sweep_axis
 from experiments.paper_chengdu import DEFAULT_EXP1_ROUNDS
+from experiments.seeding import build_environment_seed, clone_environment_from_seed
 
 
 class CAPAConfigCentralizationTests(unittest.TestCase):
@@ -120,6 +126,88 @@ class CAPAConfigCentralizationTests(unittest.TestCase):
             {"P1": 1.0, "P2": 0.9, "P3": 0.8, "P4": max(MIN_PLATFORM_QUALITY, 0.7)},
         )
 
+    def test_platform_quality_builder_accepts_explicit_parameters(self) -> None:
+        """Platform quality construction should be reproducible from explicit config values."""
+
+        qualities = build_default_platform_qualities(
+            4,
+            quality_start=0.95,
+            quality_step=0.2,
+        )
+
+        self.assertAlmostEqual(qualities["P1"], 0.95)
+        self.assertAlmostEqual(qualities["P2"], 0.75)
+        self.assertAlmostEqual(qualities["P3"], 0.55)
+        self.assertAlmostEqual(qualities["P4"], MIN_PLATFORM_QUALITY)
+
+    def test_validate_courier_preference_resolves_and_rejects_invalid_weights(self) -> None:
+        """Courier alpha/beta should be explicit and validated before environment construction."""
+
+        self.assertEqual(validate_courier_preference(DEFAULT_COURIER_ALPHA, None), (DEFAULT_COURIER_ALPHA, DEFAULT_COURIER_BETA))
+        self.assertEqual(validate_courier_preference(0.7, None), (0.7, 0.3))
+        self.assertEqual(validate_courier_preference(0.7, 0.3), (0.7, 0.3))
+        with self.assertRaises(ValueError):
+            validate_courier_preference(1.2, None)
+        with self.assertRaises(ValueError):
+            validate_courier_preference(0.7, 0.4)
+
+    def test_experiment_config_exposes_courier_and_platform_parameters(self) -> None:
+        """Experiment configs should pass explicit courier/platform attributes to Chengdu builds."""
+
+        config = ExperimentConfig(
+            data_dir=Path("Data"),
+            courier_alpha=0.7,
+            courier_beta=0.3,
+            courier_service_score=0.6,
+            platform_quality_start=0.95,
+            platform_quality_step=0.2,
+        )
+
+        kwargs = config.as_environment_kwargs()
+        self.assertEqual(kwargs["courier_alpha"], 0.7)
+        self.assertEqual(kwargs["courier_beta"], 0.3)
+        self.assertEqual(kwargs["courier_service_score"], 0.6)
+        self.assertEqual(kwargs["platform_quality_start"], 0.95)
+        self.assertEqual(kwargs["platform_quality_step"], 0.2)
+
+    def test_courier_alpha_sweep_changes_only_preference_parameters(self) -> None:
+        """A courier-alpha sweep should be represented without changing base environment dimensions."""
+
+        base = ExperimentConfig(data_dir=Path("Data"), num_parcels=10, local_couriers=4, courier_alpha=0.5)
+        updated = apply_sweep_axis(base, "courier_alpha", 0.8)
+
+        self.assertEqual(updated.num_parcels, base.num_parcels)
+        self.assertEqual(updated.local_couriers, base.local_couriers)
+        self.assertEqual(updated.courier_alpha, 0.8)
+        self.assertEqual(updated.courier_beta, 0.2)
+
+    def test_environment_seed_preserves_explicit_courier_and_platform_parameters(self) -> None:
+        """Canonical seeds should replay explicit courier preferences and platform-quality settings."""
+
+        environment = ChengduEnvironment(
+            tasks=[],
+            local_couriers=[],
+            partner_couriers_by_platform={},
+            station_set=[],
+            travel_model=None,
+            platform_base_prices={},
+            platform_sharing_rates={},
+            platform_qualities={},
+            courier_alpha=0.7,
+            courier_beta=0.3,
+            courier_service_score=0.6,
+            platform_quality_start=0.95,
+            platform_quality_step=0.2,
+        )
+
+        clone = clone_environment_from_seed(build_environment_seed(environment))
+
+        self.assertEqual(clone.courier_alpha, 0.7)
+        self.assertEqual(clone.courier_beta, 0.3)
+        self.assertEqual(clone.courier_service_score, 0.6)
+        self.assertEqual(clone.platform_quality_start, 0.95)
+        self.assertEqual(clone.platform_quality_step, 0.2)
+
     def test_baseline_default_sources_are_centralized(self) -> None:
         """Baseline defaults and unified runners should resolve to the centralized constants."""
 
@@ -148,6 +236,8 @@ class CAPAConfigCentralizationTests(unittest.TestCase):
 
         self.assertEqual(DEFAULT_COURIER_PREFERENCE, DEFAULT_COURIER_ALPHA)
         self.assertEqual(DEFAULT_COURIER_BETA, 1.0 - DEFAULT_COURIER_PREFERENCE)
+        self.assertEqual(DEFAULT_PLATFORM_QUALITY_START, 1.0)
+        self.assertEqual(DEFAULT_PLATFORM_QUALITY_STEP, 0.1)
 
 
 if __name__ == "__main__":

@@ -132,43 +132,86 @@ def build_default_capa_config(batch_size: int = DEFAULT_CAPA_BATCH_SIZE) -> "CAP
     )
 
 
-def build_default_platform_base_prices(platform_count: int) -> dict[str, float]:
+def validate_courier_preference(courier_alpha: float, courier_beta: float | None = None) -> tuple[float, float]:
+    """Validate and resolve courier preference weights.
+
+    Args:
+        courier_alpha: Courier detour-preference weight.
+        courier_beta: Optional courier service-score weight. When omitted,
+            beta is derived as `1 - alpha`.
+
+    Returns:
+        Validated `(alpha, beta)` weights.
+
+    Raises:
+        ValueError: Either weight is outside `[0, 1]` or the weights do not
+            sum to one.
+    """
+
+    alpha = round(float(courier_alpha), 12)
+    beta = round(1.0 - alpha, 12) if courier_beta is None else round(float(courier_beta), 12)
+    if alpha < 0.0 or alpha > 1.0:
+        raise ValueError(f"courier_alpha must be in [0, 1], got {courier_alpha}.")
+    if beta < 0.0 or beta > 1.0:
+        raise ValueError(f"courier_beta must be in [0, 1], got {beta}.")
+    if abs((alpha + beta) - 1.0) > 1e-9:
+        raise ValueError(f"courier_alpha + courier_beta must equal 1, got {alpha + beta}.")
+    return alpha, beta
+
+
+def build_default_platform_base_prices(
+    platform_count: int,
+    base_price: float = DEFAULT_PLATFORM_BASE_PRICE,
+) -> dict[str, float]:
     """Build the default cooperating-platform base-price mapping.
 
     Args:
         platform_count: Number of cooperating platforms.
+        base_price: Platform-level base price assigned to each platform.
 
     Returns:
         Mapping from platform identifier to the default base price.
     """
 
     return {
-        f"P{index + 1}": DEFAULT_PLATFORM_BASE_PRICE
+        f"P{index + 1}": float(base_price)
         for index in range(platform_count)
     }
 
 
-def build_default_platform_sharing_rates(platform_count: int) -> dict[str, float]:
+def build_default_platform_sharing_rates(
+    platform_count: int,
+    sharing_rate: float = DEFAULT_PLATFORM_SHARING_RATE,
+) -> dict[str, float]:
     """Build the default cooperating-platform sharing-rate mapping.
 
     Args:
         platform_count: Number of cooperating platforms.
+        sharing_rate: Platform sharing rate assigned to each platform.
 
     Returns:
         Mapping from platform identifier to the default sharing rate.
     """
 
     return {
-        f"P{index + 1}": DEFAULT_PLATFORM_SHARING_RATE
+        f"P{index + 1}": float(sharing_rate)
         for index in range(platform_count)
     }
 
 
-def build_default_platform_qualities(platform_count: int) -> dict[str, float]:
+def build_default_platform_qualities(
+    platform_count: int,
+    quality_start: float = DEFAULT_PLATFORM_QUALITY_START,
+    quality_step: float = DEFAULT_PLATFORM_QUALITY_STEP,
+    min_quality: float = MIN_PLATFORM_QUALITY,
+) -> dict[str, float]:
     """Build the default cooperating-platform quality mapping.
 
     Args:
         platform_count: Number of cooperating platforms.
+        quality_start: Initial quality assigned to `P1`.
+        quality_step: Per-platform quality decrement.
+        min_quality: Lower bound applied to generated qualities.
 
     Returns:
         Mapping from platform identifier to the default descending quality series.
@@ -176,8 +219,8 @@ def build_default_platform_qualities(platform_count: int) -> dict[str, float]:
 
     return {
         f"P{index + 1}": max(
-            MIN_PLATFORM_QUALITY,
-            DEFAULT_PLATFORM_QUALITY_START - (DEFAULT_PLATFORM_QUALITY_STEP * index),
+            float(min_quality),
+            float(quality_start) - (float(quality_step) * index),
         )
         for index in range(platform_count)
     }

@@ -6,9 +6,25 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from capa.config import DEFAULT_CAPA_BATCH_SIZE, DEFAULT_IMPGTA_WINDOW_SECONDS
+from capa.config import (
+    DEFAULT_CAPA_BATCH_SIZE,
+    DEFAULT_COURIER_ALPHA,
+    DEFAULT_COURIER_SERVICE_SCORE,
+    DEFAULT_IMPGTA_WINDOW_SECONDS,
+    DEFAULT_PLATFORM_QUALITY_START,
+    DEFAULT_PLATFORM_QUALITY_STEP,
+    validate_courier_preference,
+)
 
-SUPPORTED_SWEEP_AXES = frozenset({"num_parcels", "local_couriers", "service_radius", "platforms", "batch_size", "courier_capacity"})
+SUPPORTED_SWEEP_AXES = frozenset({
+    "num_parcels",
+    "local_couriers",
+    "service_radius",
+    "platforms",
+    "batch_size",
+    "courier_capacity",
+    "courier_alpha",
+})
 
 
 @dataclass(frozen=True)
@@ -23,6 +39,12 @@ class ExperimentConfig:
         couriers_per_platform: Number of couriers per cooperating platform.
         batch_size: Batch window size in seconds.
         prediction_window_seconds: Future observation window for ImpGTA-style baselines.
+        courier_alpha: Courier detour-preference weight.
+        courier_beta: Optional courier service-score weight. When omitted,
+            it is derived as `1 - courier_alpha`.
+        courier_service_score: Courier service-score proxy used by CAPA/DAPA.
+        platform_quality_start: Initial cooperating-platform quality proxy.
+        platform_quality_step: Per-platform quality decrement.
         extra: Additional explicitly named parameters such as service radius.
     """
 
@@ -40,6 +62,11 @@ class ExperimentConfig:
     task_window_start_seconds: float | None = None
     task_window_end_seconds: float | None = None
     task_sampling_seed: int = 1
+    courier_alpha: float = DEFAULT_COURIER_ALPHA
+    courier_beta: float | None = None
+    courier_service_score: float = DEFAULT_COURIER_SERVICE_SCORE
+    platform_quality_start: float = DEFAULT_PLATFORM_QUALITY_START
+    platform_quality_step: float = DEFAULT_PLATFORM_QUALITY_STEP
     rl_min_batch_size: int = 10
     rl_max_batch_size: int = 20
     rl_step_seconds: int = 60
@@ -51,6 +78,13 @@ class ExperimentConfig:
     rl_max_grad_norm: float = 0.5
     rl_device: str | None = None
     extra: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        """Validate and materialize derived courier preference weights."""
+
+        alpha, beta = validate_courier_preference(self.courier_alpha, self.courier_beta)
+        object.__setattr__(self, "courier_alpha", alpha)
+        object.__setattr__(self, "courier_beta", beta)
 
     def with_update(self, **kwargs: Any) -> "ExperimentConfig":
         """Return a new config with explicit field updates applied."""
@@ -69,6 +103,11 @@ class ExperimentConfig:
             "task_window_start_seconds": self.task_window_start_seconds,
             "task_window_end_seconds": self.task_window_end_seconds,
             "task_sampling_seed": self.task_sampling_seed,
+            "courier_alpha": self.courier_alpha,
+            "courier_beta": self.courier_beta,
+            "courier_service_score": self.courier_service_score,
+            "platform_quality_start": self.platform_quality_start,
+            "platform_quality_step": self.platform_quality_step,
             "rl_min_batch_size": self.rl_min_batch_size,
             "rl_max_batch_size": self.rl_max_batch_size,
             "rl_step_seconds": self.rl_step_seconds,
@@ -86,6 +125,8 @@ class ExperimentConfig:
                 values["extra"] = dict(value)
             else:
                 values[key] = value
+        if "courier_alpha" in kwargs and "courier_beta" not in kwargs:
+            values["courier_beta"] = None
         return ExperimentConfig(**values)
 
     def as_environment_kwargs(self) -> dict[str, Any]:
@@ -106,6 +147,11 @@ class ExperimentConfig:
         if self.task_window_end_seconds is not None:
             kwargs["task_window_end_seconds"] = self.task_window_end_seconds
         kwargs["task_sampling_seed"] = self.task_sampling_seed
+        kwargs["courier_alpha"] = self.courier_alpha
+        kwargs["courier_beta"] = self.courier_beta
+        kwargs["courier_service_score"] = self.courier_service_score
+        kwargs["platform_quality_start"] = self.platform_quality_start
+        kwargs["platform_quality_step"] = self.platform_quality_step
         kwargs.update(self.extra)
         return kwargs
 
@@ -121,11 +167,11 @@ class SweepConfig:
     """
 
     axis: str
-    values: tuple[int, ...]
+    values: tuple[int | float, ...]
     base: ExperimentConfig
 
 
-def apply_sweep_axis(config: ExperimentConfig, axis: str, value: int) -> ExperimentConfig:
+def apply_sweep_axis(config: ExperimentConfig, axis: str, value: int | float) -> ExperimentConfig:
     """Apply one supported sweep axis update to an experiment configuration.
 
     Args:
@@ -145,6 +191,8 @@ def apply_sweep_axis(config: ExperimentConfig, axis: str, value: int) -> Experim
         return config.with_update(service_radius_km=float(value))
     if axis == "courier_capacity":
         return config.with_update(courier_capacity=float(value))
+    if axis == "courier_alpha":
+        return config.with_update(courier_alpha=float(value), courier_beta=None)
     if axis in {"num_parcels", "local_couriers", "platforms", "batch_size"}:
         return config.with_update(**{axis: int(value)})
     raise ValueError(f"Unsupported sweep axis `{axis}`.")

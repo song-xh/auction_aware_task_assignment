@@ -15,12 +15,16 @@ from typing import Any, Sequence
 from algorithms.registry import build_algorithm_runner
 from capa.config import (
     DEFAULT_CAPA_BATCH_SIZE,
+    DEFAULT_COURIER_ALPHA,
+    DEFAULT_COURIER_SERVICE_SCORE,
     DEFAULT_DETOUR_FAVORING_CAPA_RUNNER_KWARGS,
     DEFAULT_IMPGTA_PREDICTION_SAMPLING_SEED,
     DEFAULT_IMPGTA_PREDICTION_SUCCESS_RATE,
     DEFAULT_IMPGTA_WINDOW_SECONDS,
     DEFAULT_LOWER_THRESHOLD_CAPA_RUNNER_KWARGS,
     DEFAULT_PAPER_CAPA_RUNNER_KWARGS,
+    DEFAULT_PLATFORM_QUALITY_START,
+    DEFAULT_PLATFORM_QUALITY_STEP,
 )
 from env.chengdu import ChengduEnvironment
 from experiments.config import ExperimentConfig, apply_sweep_axis
@@ -49,6 +53,11 @@ DEFAULT_CHENGDU_PAPER_FIXED_CONFIG: dict[str, Any] = {
     "task_window_start_seconds": None,
     "task_window_end_seconds": None,
     "task_sampling_seed": 1,
+    "courier_alpha": DEFAULT_COURIER_ALPHA,
+    "courier_beta": None,
+    "courier_service_score": DEFAULT_COURIER_SERVICE_SCORE,
+    "platform_quality_start": DEFAULT_PLATFORM_QUALITY_START,
+    "platform_quality_step": DEFAULT_PLATFORM_QUALITY_STEP,
 }
 
 
@@ -190,6 +199,11 @@ def run_chengdu_paper_point(
             task_window_start_seconds=float(fixed_config["task_window_start_seconds"]) if fixed_config["task_window_start_seconds"] is not None else None,
             task_window_end_seconds=float(fixed_config["task_window_end_seconds"]) if fixed_config["task_window_end_seconds"] is not None else None,
             task_sampling_seed=int(fixed_config["task_sampling_seed"]),
+            courier_alpha=float(fixed_config["courier_alpha"]),
+            courier_beta=float(fixed_config["courier_beta"]) if fixed_config["courier_beta"] is not None else None,
+            courier_service_score=float(fixed_config["courier_service_score"]),
+            platform_quality_start=float(fixed_config["platform_quality_start"]),
+            platform_quality_step=float(fixed_config["platform_quality_step"]),
         ),
         axis,
         axis_value,
@@ -310,7 +324,17 @@ def run_chengdu_paper_split_experiment(
             str(fixed_config["prediction_sampling_seed"]),
             "--task-sampling-seed",
             str(fixed_config["task_sampling_seed"]),
+            "--courier-alpha",
+            str(fixed_config["courier_alpha"]),
+            "--courier-service-score",
+            str(fixed_config["courier_service_score"]),
+            "--platform-quality-start",
+            str(fixed_config["platform_quality_start"]),
+            "--platform-quality-step",
+            str(fixed_config["platform_quality_step"]),
         ]
+        if fixed_config["courier_beta"] is not None:
+            command.extend(["--courier-beta", str(fixed_config["courier_beta"])])
         if fixed_config["task_window_start_seconds"] is not None:
             command.extend(["--task-window-start-seconds", str(fixed_config["task_window_start_seconds"])])
         if fixed_config["task_window_end_seconds"] is not None:
@@ -559,6 +583,11 @@ def run_chengdu_default_comparison(
         task_window_start_seconds=fixed_config["task_window_start_seconds"],
         task_window_end_seconds=fixed_config["task_window_end_seconds"],
         task_sampling_seed=int(fixed_config["task_sampling_seed"]),
+        courier_alpha=float(fixed_config["courier_alpha"]),
+        courier_beta=float(fixed_config["courier_beta"]) if fixed_config["courier_beta"] is not None else None,
+        courier_service_score=float(fixed_config["courier_service_score"]),
+        platform_quality_start=float(fixed_config["platform_quality_start"]),
+        platform_quality_step=float(fixed_config["platform_quality_step"]),
     )
     from .seeding import build_environment_seed, clone_environment_from_seed
 
@@ -625,6 +654,11 @@ def build_script_parser(description: str) -> argparse.ArgumentParser:
     parser.add_argument("--task-sampling-seed", type=int, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["task_sampling_seed"])
     parser.add_argument("--prediction-success-rate", type=float, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["prediction_success_rate"])
     parser.add_argument("--prediction-sampling-seed", type=int, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["prediction_sampling_seed"])
+    parser.add_argument("--courier-alpha", type=float, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["courier_alpha"])
+    parser.add_argument("--courier-beta", type=float, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["courier_beta"])
+    parser.add_argument("--courier-service-score", type=float, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["courier_service_score"])
+    parser.add_argument("--platform-quality-start", type=float, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["platform_quality_start"])
+    parser.add_argument("--platform-quality-step", type=float, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["platform_quality_step"])
     parser.add_argument("--success-tr-ratio", type=float, default=0.9)
     parser.add_argument("--success-cr-gap", type=float, default=0.02)
     parser.add_argument("--utility-balance-gamma", type=float, default=None)
@@ -652,6 +686,11 @@ def build_fixed_config_from_args(args: argparse.Namespace) -> dict[str, Any]:
         "task_window_start_seconds": args.task_window_start_seconds,
         "task_window_end_seconds": args.task_window_end_seconds,
         "task_sampling_seed": args.task_sampling_seed,
+        "courier_alpha": getattr(args, "courier_alpha", DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["courier_alpha"]),
+        "courier_beta": getattr(args, "courier_beta", DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["courier_beta"]),
+        "courier_service_score": getattr(args, "courier_service_score", DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["courier_service_score"]),
+        "platform_quality_start": getattr(args, "platform_quality_start", DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["platform_quality_start"]),
+        "platform_quality_step": getattr(args, "platform_quality_step", DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["platform_quality_step"]),
     }
 
 
@@ -720,7 +759,9 @@ def _experiment_label_for_axis(axis: str) -> str:
         "local_couriers": "Exp-2",
         "service_radius": "Exp-3",
         "platforms": "Exp-4",
+        "batch_size": "Exp-5",
         "courier_capacity": "Exp-6",
+        "courier_alpha": "Exp-Alpha",
     }
     return labels.get(axis, "Experiment")
 
@@ -769,6 +810,11 @@ def _canonical_environment_kwargs_for_axis(
         "task_window_start_seconds": fixed_config["task_window_start_seconds"],
         "task_window_end_seconds": fixed_config["task_window_end_seconds"],
         "task_sampling_seed": int(fixed_config["task_sampling_seed"]),
+        "courier_alpha": float(fixed_config["courier_alpha"]),
+        "courier_beta": float(fixed_config["courier_beta"]) if fixed_config["courier_beta"] is not None else None,
+        "courier_service_score": float(fixed_config["courier_service_score"]),
+        "platform_quality_start": float(fixed_config["platform_quality_start"]),
+        "platform_quality_step": float(fixed_config["platform_quality_step"]),
     }
     if axis == "num_parcels":
         kwargs["num_parcels"] = max(int(value) for value in axis_values)
@@ -780,6 +826,11 @@ def _canonical_environment_kwargs_for_axis(
         kwargs["courier_capacity"] = min(float(value) for value in axis_values)
     elif axis == "service_radius":
         pass
+    elif axis == "batch_size":
+        pass
+    elif axis == "courier_alpha":
+        kwargs["courier_alpha"] = float(fixed_config["courier_alpha"])
+        kwargs["courier_beta"] = float(fixed_config["courier_beta"]) if fixed_config["courier_beta"] is not None else None
     else:
         raise ValueError(f"Unsupported canonical seed axis: {axis}")
     return kwargs

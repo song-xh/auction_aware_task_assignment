@@ -14,11 +14,13 @@ from capa.cama import build_local_candidate_shortlist, run_cama
 from capa.config import (
     DEFAULT_COURIER_ALPHA,
     DEFAULT_COURIER_BETA,
-    DEFAULT_COURIER_PREFERENCE,
     DEFAULT_COURIER_SERVICE_SCORE,
+    DEFAULT_PLATFORM_QUALITY_START,
+    DEFAULT_PLATFORM_QUALITY_STEP,
     build_default_platform_base_prices,
     build_default_platform_qualities,
     build_default_platform_sharing_rates,
+    validate_courier_preference,
 )
 from capa.dapa import build_cross_candidate_shortlist, run_dapa
 from capa.metrics import build_run_metrics
@@ -63,6 +65,11 @@ class ChengduEnvironment:
     task_window_start_seconds: float | None = None
     task_window_end_seconds: float | None = None
     task_sampling_seed: int = 1
+    courier_alpha: float = DEFAULT_COURIER_ALPHA
+    courier_beta: float = DEFAULT_COURIER_BETA
+    courier_service_score: float = DEFAULT_COURIER_SERVICE_SCORE
+    platform_quality_start: float = DEFAULT_PLATFORM_QUALITY_START
+    platform_quality_step: float = DEFAULT_PLATFORM_QUALITY_STEP
     geo_index: GeoIndex | None = None
     travel_speed_m_per_s: float = 0.0
 
@@ -79,6 +86,11 @@ class ChengduEnvironment:
         task_window_start_seconds: float | None = None,
         task_window_end_seconds: float | None = None,
         task_sampling_seed: int = 1,
+        courier_alpha: float = DEFAULT_COURIER_ALPHA,
+        courier_beta: float | None = None,
+        courier_service_score: float = DEFAULT_COURIER_SERVICE_SCORE,
+        platform_quality_start: float = DEFAULT_PLATFORM_QUALITY_START,
+        platform_quality_step: float = DEFAULT_PLATFORM_QUALITY_STEP,
     ) -> "ChengduEnvironment":
         """Build a Chengdu environment from the legacy framework inputs."""
         return build_framework_chengdu_environment(
@@ -92,6 +104,11 @@ class ChengduEnvironment:
             task_window_start_seconds=task_window_start_seconds,
             task_window_end_seconds=task_window_end_seconds,
             task_sampling_seed=task_sampling_seed,
+            courier_alpha=courier_alpha,
+            courier_beta=courier_beta,
+            courier_service_score=courier_service_score,
+            platform_quality_start=platform_quality_start,
+            platform_quality_step=platform_quality_step,
         )
 
     def all_partner_couriers(self) -> list[Any]:
@@ -121,6 +138,11 @@ class ChengduEnvironment:
             "task_window_start_seconds": self.task_window_start_seconds,
             "task_window_end_seconds": self.task_window_end_seconds,
             "task_sampling_seed": self.task_sampling_seed,
+            "courier_alpha": self.courier_alpha,
+            "courier_beta": self.courier_beta,
+            "courier_service_score": self.courier_service_score,
+            "platform_quality_start": self.platform_quality_start,
+            "platform_quality_step": self.platform_quality_step,
             "geo_index": self.geo_index,
             "travel_speed_m_per_s": self.travel_speed_m_per_s,
         }
@@ -1408,11 +1430,17 @@ def build_framework_chengdu_environment(
     task_window_start_seconds: float | None = None,
     task_window_end_seconds: float | None = None,
     task_sampling_seed: int = 1,
+    courier_alpha: float = DEFAULT_COURIER_ALPHA,
+    courier_beta: float | None = None,
+    courier_service_score: float = DEFAULT_COURIER_SERVICE_SCORE,
+    platform_quality_start: float = DEFAULT_PLATFORM_QUALITY_START,
+    platform_quality_step: float = DEFAULT_PLATFORM_QUALITY_STEP,
 ) -> LegacyChengduEnvironment:
     """Build the official Chengdu experiment state from the repository's legacy framework."""
     import Framework_ChengDu as framework
     from Tasks_ChengDu import readTask
 
+    resolved_alpha, resolved_beta = validate_courier_preference(courier_alpha, courier_beta)
     pick_task_set, delivery_task_set = readTask()
     required_couriers = local_courier_count + (cooperating_platform_count * couriers_per_platform)
     ordered_pick = sort_legacy_tasks(pick_task_set)
@@ -1441,11 +1469,14 @@ def build_framework_chengdu_environment(
             station_set=station_set,
             required_couriers=required_couriers,
             candidate_seed_count=available_seed_count,
-            preference=DEFAULT_COURIER_PREFERENCE,
+            preference=resolved_alpha,
         )
         for courier in seeded_couriers:
             ensure_legacy_courier_station(courier, station_by_num)
             courier.batch_take = 0
+            courier.w = resolved_alpha
+            courier.c = resolved_beta
+            courier.service_score = float(courier_service_score)
         tasks = select_station_pick_tasks(
             station_set,
             ordered_pick,
@@ -1486,13 +1517,22 @@ def build_framework_chengdu_environment(
         travel_model=travel_model,
         platform_base_prices=build_default_platform_base_prices(cooperating_platform_count),
         platform_sharing_rates=build_default_platform_sharing_rates(cooperating_platform_count),
-        platform_qualities=build_default_platform_qualities(cooperating_platform_count),
+        platform_qualities=build_default_platform_qualities(
+            cooperating_platform_count,
+            quality_start=platform_quality_start,
+            quality_step=platform_quality_step,
+        ),
         movement_callback=framework_movement_callback,
         service_radius_km=service_radius_km,
         courier_capacity=normalized_capacity,
         task_window_start_seconds=task_window_start_seconds,
         task_window_end_seconds=task_window_end_seconds,
         task_sampling_seed=task_sampling_seed,
+        courier_alpha=resolved_alpha,
+        courier_beta=resolved_beta,
+        courier_service_score=float(courier_service_score),
+        platform_quality_start=float(platform_quality_start),
+        platform_quality_step=float(platform_quality_step),
         geo_index=build_geo_index_from_travel_model(travel_model),
         travel_speed_m_per_s=get_travel_speed_m_per_s(travel_model),
     )

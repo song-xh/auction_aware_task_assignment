@@ -21,6 +21,7 @@ PAPER_SUITE_PRESETS: dict[str, dict[str, dict[str, list[float]]]] = {
             "service_radius": [0.5, 1.5],
             "platforms": [1, 2],
             "courier_capacity": [25, 50],
+            "courier_alpha": [0.3, 0.7],
         },
         "formal": {
             "num_parcels": [1000, 2000, 3000, 5000],
@@ -28,6 +29,7 @@ PAPER_SUITE_PRESETS: dict[str, dict[str, dict[str, list[float]]]] = {
             "service_radius": [0.5, 1.0, 1.5, 2.0, 2.5],
             "platforms": [2, 4, 8, 12, 16],
             "courier_capacity": [25, 50, 75, 100, 125],
+            "courier_alpha": [0.1, 0.3, 0.5, 0.7, 0.9],
         },
     }
 }
