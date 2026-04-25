@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Hashable, List, Literal, Optional, Sequence
+from typing import Hashable, Iterable, List, Literal, Optional, Sequence
 
 from .config import (
     DEFAULT_CAPA_BATCH_SIZE,
@@ -12,6 +12,7 @@ from .config import (
     DEFAULT_LOCAL_SHARING_RATE_MU1,
     DEFAULT_THRESHOLD_OMEGA,
     DEFAULT_UTILITY_BALANCE_GAMMA,
+    validate_sharing_rates,
 )
 
 
@@ -38,6 +39,52 @@ class CAPAConfig:
     local_payment_ratio_zeta: float = DEFAULT_LOCAL_PAYMENT_RATIO_ZETA
     local_sharing_rate_mu1: float = DEFAULT_LOCAL_SHARING_RATE_MU1
     cross_platform_sharing_rate_mu2: float = DEFAULT_CROSS_PLATFORM_SHARING_RATE_MU2
+
+    def __post_init__(self) -> None:
+        """Validate CAPA payment and sharing-rate constraints."""
+
+        if int(self.batch_size) <= 0:
+            raise ValueError("batch_size must be positive.")
+        validate_sharing_rates(
+            local_payment_ratio_zeta=self.local_payment_ratio_zeta,
+            local_sharing_rate_mu1=self.local_sharing_rate_mu1,
+            cross_platform_sharing_rate_mu2=self.cross_platform_sharing_rate_mu2,
+        )
+
+
+@dataclass
+class ThresholdHistory:
+    """Maintain cumulative feasible-pair utility history for Eq.7 thresholding."""
+
+    utility_sum: float = 0.0
+    pair_count: int = 0
+
+    def add_values(self, utility_values: Iterable[float]) -> None:
+        """Accumulate feasible-pair utility values from one batch.
+
+        Args:
+            utility_values: Utility values from the current batch's feasible
+                local candidate pairs.
+        """
+
+        values = [float(value) for value in utility_values]
+        self.utility_sum += sum(values)
+        self.pair_count += len(values)
+
+    def calculate_threshold(self, omega: float) -> float:
+        """Return the cumulative Eq.7 threshold.
+
+        Args:
+            omega: Threshold sensitivity multiplier.
+
+        Returns:
+            `omega * average_utility` over all accumulated feasible pairs, or
+            infinity when no feasible pair has ever existed.
+        """
+
+        if self.pair_count <= 0:
+            return float("inf")
+        return float(omega) * (self.utility_sum / self.pair_count)
 
 
 @dataclass(frozen=True)

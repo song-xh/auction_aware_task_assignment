@@ -6,7 +6,7 @@ from time import perf_counter
 from typing import Callable, Iterable, List, Mapping, Sequence
 
 from .constraints import is_deadline_feasible_by_geo, is_within_service_radius, is_within_service_radius_by_geo
-from .models import Assignment, CAMAResult, CAPAConfig, CandidatePair, Courier, Parcel
+from .models import Assignment, CAMAResult, CAPAConfig, CandidatePair, Courier, Parcel, ThresholdHistory
 from .utility import (
     DistanceMatrixTravelModel,
     GeoIndex,
@@ -149,6 +149,7 @@ def run_cama(
     geo_index: GeoIndex | None = None,
     speed_m_per_s: float = 0.0,
     candidate_couriers_by_parcel: Mapping[str, Sequence[Courier]] | None = None,
+    threshold_history: ThresholdHistory | None = None,
     progress_callback: Callable[[Mapping[str, float | int | str]], None] | None = None,
 ) -> CAMAResult:
     """Run Algorithm 2 exactly at the candidate-set level defined in the paper."""
@@ -203,10 +204,14 @@ def run_cama(
                 }
             )
 
-    threshold = calculate_threshold(
-        (pair.utility.value for pair in all_feasible_pairs),
-        config.threshold_omega,
-    )
+    if threshold_history is None:
+        threshold = calculate_threshold(
+            (pair.utility.value for pair in all_feasible_pairs),
+            config.threshold_omega,
+        )
+    else:
+        threshold_history.add_values(pair.utility.value for pair in all_feasible_pairs)
+        threshold = threshold_history.calculate_threshold(config.threshold_omega)
 
     local_assignments: List[Assignment] = []
     for pair in candidate_best_pairs:
