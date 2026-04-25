@@ -8,6 +8,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
+from capa.config import (
+    DEFAULT_COURIER_ALPHA,
+    DEFAULT_COURIER_SERVICE_SCORE,
+    DEFAULT_PLATFORM_QUALITY_START,
+    DEFAULT_PLATFORM_QUALITY_STEP,
+    validate_courier_preference,
+)
 from env.chengdu import (
     ChengduEnvironment,
     build_geo_index_from_travel_model,
@@ -30,6 +37,11 @@ class ChengduEnvironmentSeed:
         platform_sharing_rates: Platform sharing-rate configuration.
         platform_qualities: Platform quality configuration.
         movement_callback: Optional legacy movement callback reused across clones.
+        courier_alpha: Courier detour-preference weight.
+        courier_beta: Courier service-score preference weight.
+        courier_service_score: Courier service-score proxy.
+        platform_quality_start: Initial cooperating-platform quality proxy.
+        platform_quality_step: Per-platform quality decrement.
     """
 
     tasks: Sequence[Any]
@@ -46,8 +58,20 @@ class ChengduEnvironmentSeed:
     task_window_start_seconds: float | None = None
     task_window_end_seconds: float | None = None
     task_sampling_seed: int = 1
+    courier_alpha: float = DEFAULT_COURIER_ALPHA
+    courier_beta: float | None = None
+    courier_service_score: float = DEFAULT_COURIER_SERVICE_SCORE
+    platform_quality_start: float = DEFAULT_PLATFORM_QUALITY_START
+    platform_quality_step: float = DEFAULT_PLATFORM_QUALITY_STEP
     geo_index: Any | None = None
     travel_speed_m_per_s: float = 0.0
+
+    def __post_init__(self) -> None:
+        """Validate and materialize derived courier preference weights."""
+
+        alpha, beta = validate_courier_preference(self.courier_alpha, self.courier_beta)
+        object.__setattr__(self, "courier_alpha", alpha)
+        object.__setattr__(self, "courier_beta", beta)
 
 
 def build_environment_seed(environment: ChengduEnvironment) -> ChengduEnvironmentSeed:
@@ -72,6 +96,11 @@ def build_environment_seed(environment: ChengduEnvironment) -> ChengduEnvironmen
         task_window_start_seconds=environment.task_window_start_seconds,
         task_window_end_seconds=environment.task_window_end_seconds,
         task_sampling_seed=environment.task_sampling_seed,
+        courier_alpha=environment.courier_alpha,
+        courier_beta=environment.courier_beta,
+        courier_service_score=environment.courier_service_score,
+        platform_quality_start=environment.platform_quality_start,
+        platform_quality_step=environment.platform_quality_step,
         geo_index=environment.geo_index,
         travel_speed_m_per_s=environment.travel_speed_m_per_s,
     )
@@ -99,6 +128,11 @@ def clone_environment_from_seed(seed: ChengduEnvironmentSeed) -> ChengduEnvironm
         task_window_start_seconds=seed.task_window_start_seconds,
         task_window_end_seconds=seed.task_window_end_seconds,
         task_sampling_seed=seed.task_sampling_seed,
+        courier_alpha=seed.courier_alpha,
+        courier_beta=seed.courier_beta,
+        courier_service_score=seed.courier_service_score,
+        platform_quality_start=seed.platform_quality_start,
+        platform_quality_step=seed.platform_quality_step,
         geo_index=seed.geo_index,
         travel_speed_m_per_s=seed.travel_speed_m_per_s,
     )
@@ -133,6 +167,11 @@ def save_environment_seed(seed: ChengduEnvironmentSeed, output_path: Path) -> No
         "task_window_start_seconds": seed.task_window_start_seconds,
         "task_window_end_seconds": seed.task_window_end_seconds,
         "task_sampling_seed": seed.task_sampling_seed,
+        "courier_alpha": seed.courier_alpha,
+        "courier_beta": seed.courier_beta,
+        "courier_service_score": seed.courier_service_score,
+        "platform_quality_start": seed.platform_quality_start,
+        "platform_quality_step": seed.platform_quality_step,
         "travel_speed_m_per_s": seed.travel_speed_m_per_s,
     }
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -179,6 +218,11 @@ def load_environment_seed(
         task_window_start_seconds=payload.get("task_window_start_seconds"),
         task_window_end_seconds=payload.get("task_window_end_seconds"),
         task_sampling_seed=int(payload.get("task_sampling_seed", 1)),
+        courier_alpha=float(payload.get("courier_alpha", DEFAULT_COURIER_ALPHA)),
+        courier_beta=payload.get("courier_beta"),
+        courier_service_score=float(payload.get("courier_service_score", DEFAULT_COURIER_SERVICE_SCORE)),
+        platform_quality_start=float(payload.get("platform_quality_start", DEFAULT_PLATFORM_QUALITY_START)),
+        platform_quality_step=float(payload.get("platform_quality_step", DEFAULT_PLATFORM_QUALITY_STEP)),
         geo_index=build_geo_index_from_travel_model(travel_model),
         travel_speed_m_per_s=float(payload.get("travel_speed_m_per_s", get_travel_speed_m_per_s(travel_model))),
     )
@@ -264,6 +308,22 @@ def derive_environment_with_platforms_from_seed(
             f"Requested {platform_count} platforms but canonical seed only has {len(platform_items)}."
         )
     environment.partner_couriers_by_platform = dict(platform_items[:platform_count])
+    selected_platforms = set(environment.partner_couriers_by_platform)
+    environment.platform_base_prices = {
+        platform_id: price
+        for platform_id, price in environment.platform_base_prices.items()
+        if platform_id in selected_platforms
+    }
+    environment.platform_sharing_rates = {
+        platform_id: rate
+        for platform_id, rate in environment.platform_sharing_rates.items()
+        if platform_id in selected_platforms
+    }
+    environment.platform_qualities = {
+        platform_id: quality
+        for platform_id, quality in environment.platform_qualities.items()
+        if platform_id in selected_platforms
+    }
     _rebind_station_member_references(environment)
     return environment
 
@@ -320,6 +380,35 @@ def derive_environment_with_courier_capacity_from_seed(
     return environment
 
 
+def derive_environment_with_courier_alpha_from_seed(
+    seed: ChengduEnvironmentSeed,
+    courier_alpha: float,
+) -> ChengduEnvironment:
+    """Clone one canonical seed and change only courier preference weights.
+
+    Args:
+        seed: Canonical environment seed.
+        courier_alpha: Requested detour-preference weight.
+
+    Returns:
+        Mutable Chengdu environment with unchanged parcels/positions and updated
+        courier `w`/`c` attributes.
+    """
+
+    alpha, beta = validate_courier_preference(courier_alpha, None)
+    environment = clone_environment_from_seed(seed)
+    environment.courier_alpha = alpha
+    environment.courier_beta = beta
+    for courier in _iter_environment_couriers(environment):
+        if isinstance(courier, dict):
+            courier["w"] = alpha
+            courier["c"] = beta
+        else:
+            courier.w = alpha
+            courier.c = beta
+    return environment
+
+
 def derive_environment_for_axis(
     seed: ChengduEnvironmentSeed,
     axis: str,
@@ -346,7 +435,22 @@ def derive_environment_for_axis(
         return derive_environment_with_platforms_from_seed(seed, int(value))
     if axis == "courier_capacity":
         return derive_environment_with_courier_capacity_from_seed(seed, float(value))
+    if axis == "courier_alpha":
+        return derive_environment_with_courier_alpha_from_seed(seed, float(value))
     raise ValueError(f"Unsupported canonical derive axis: {axis}")
+
+
+def _iter_environment_couriers(environment: ChengduEnvironment) -> list[Any]:
+    """Return all local and partner couriers from one environment."""
+
+    return [
+        *environment.local_couriers,
+        *[
+            courier
+            for couriers in environment.partner_couriers_by_platform.values()
+            for courier in couriers
+        ],
+    ]
 
 
 def _rebind_courier_station_references(environment: ChengduEnvironment) -> None:

@@ -8,7 +8,14 @@ from pathlib import Path
 from typing import Any, Callable, Sequence
 
 from algorithms.registry import build_algorithm_runner
-from capa.config import DEFAULT_CAPA_BATCH_SIZE, DEFAULT_IMPGTA_WINDOW_SECONDS
+from capa.config import (
+    DEFAULT_CAPA_BATCH_SIZE,
+    DEFAULT_COURIER_ALPHA,
+    DEFAULT_COURIER_SERVICE_SCORE,
+    DEFAULT_IMPGTA_WINDOW_SECONDS,
+    DEFAULT_PLATFORM_QUALITY_START,
+    DEFAULT_PLATFORM_QUALITY_STEP,
+)
 from env.chengdu import ChengduEnvironment
 
 from .config import ExperimentConfig, apply_sweep_axis
@@ -62,6 +69,11 @@ def run_comparison_sweep(
         task_window_start_seconds=fixed_config.get("task_window_start_seconds"),
         task_window_end_seconds=fixed_config.get("task_window_end_seconds"),
         task_sampling_seed=fixed_config.get("task_sampling_seed", 1),
+        courier_alpha=fixed_config.get("courier_alpha", DEFAULT_COURIER_ALPHA),
+        courier_beta=fixed_config.get("courier_beta"),
+        courier_service_score=fixed_config.get("courier_service_score", DEFAULT_COURIER_SERVICE_SCORE),
+        platform_quality_start=fixed_config.get("platform_quality_start", DEFAULT_PLATFORM_QUALITY_START),
+        platform_quality_step=fixed_config.get("platform_quality_step", DEFAULT_PLATFORM_QUALITY_STEP),
         extra=dict(fixed_config.get("extra", {})),
     )
 
@@ -178,6 +190,11 @@ def _run_comparison_point(
         task_window_start_seconds=fixed_config.get("task_window_start_seconds"),
         task_window_end_seconds=fixed_config.get("task_window_end_seconds"),
         task_sampling_seed=fixed_config.get("task_sampling_seed", 1),
+        courier_alpha=fixed_config.get("courier_alpha", DEFAULT_COURIER_ALPHA),
+        courier_beta=fixed_config.get("courier_beta"),
+        courier_service_score=fixed_config.get("courier_service_score", DEFAULT_COURIER_SERVICE_SCORE),
+        platform_quality_start=fixed_config.get("platform_quality_start", DEFAULT_PLATFORM_QUALITY_START),
+        platform_quality_step=fixed_config.get("platform_quality_step", DEFAULT_PLATFORM_QUALITY_STEP),
         rl_min_batch_size=fixed_config.get("rl_min_batch_size", 10),
         rl_max_batch_size=fixed_config.get("rl_max_batch_size", 20),
         rl_step_seconds=fixed_config.get("rl_step_seconds", 60),

@@ -8,6 +8,16 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from algorithms.registry import build_algorithm_runner, get_algorithm_names
+from capa.config import (
+    DEFAULT_CAPA_BATCH_SIZE,
+    DEFAULT_COURIER_ALPHA,
+    DEFAULT_COURIER_SERVICE_SCORE,
+    DEFAULT_IMPGTA_PREDICTION_SAMPLING_SEED,
+    DEFAULT_IMPGTA_PREDICTION_SUCCESS_RATE,
+    DEFAULT_IMPGTA_WINDOW_SECONDS,
+    DEFAULT_PLATFORM_QUALITY_START,
+    DEFAULT_PLATFORM_QUALITY_STEP,
+)
 from env.chengdu import ChengduEnvironment
 from experiments.compare import run_comparison_sweep
 from experiments.sweep import run_parameter_sweep
@@ -60,10 +70,15 @@ def _add_common_environment_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--couriers-per-platform", type=int, default=5, help="Number of couriers per cooperating platform.")
     parser.add_argument("--courier-capacity", type=float, default=None, help="Optional courier capacity override for all seeded couriers.")
     parser.add_argument("--service-radius-km", type=float, default=None, help="Optional courier service radius in kilometers.")
-    parser.add_argument("--batch-size", type=int, default=300, help="Batch size in seconds for algorithms that use batching.")
+    parser.add_argument("--batch-size", type=int, default=DEFAULT_CAPA_BATCH_SIZE, help="Batch size in seconds for algorithms that use batching.")
     parser.add_argument("--task-window-start-seconds", type=float, default=None, help="Optional lower bound of the parcel sampling time window.")
     parser.add_argument("--task-window-end-seconds", type=float, default=None, help="Optional upper bound of the parcel sampling time window.")
     parser.add_argument("--task-sampling-seed", type=int, default=1, help="Deterministic random seed used when sampling parcels inside the time window.")
+    parser.add_argument("--courier-alpha", type=float, default=DEFAULT_COURIER_ALPHA, help="Courier detour-preference weight alpha used by CAPA/DAPA bids.")
+    parser.add_argument("--courier-beta", type=float, default=None, help="Optional courier service-score weight beta; defaults to 1-alpha.")
+    parser.add_argument("--courier-service-score", type=float, default=DEFAULT_COURIER_SERVICE_SCORE, help="Courier service-score proxy used by CAPA/DAPA bids.")
+    parser.add_argument("--platform-quality-start", type=float, default=DEFAULT_PLATFORM_QUALITY_START, help="Initial cooperating-platform quality proxy f(P1).")
+    parser.add_argument("--platform-quality-step", type=float, default=DEFAULT_PLATFORM_QUALITY_STEP, help="Per-platform quality decrement for generated f(P).")
     parser.add_argument("--min-batch-size", type=int, default=10, help="Lower bound of the RL-CAPA batch-size action space.")
     parser.add_argument("--max-batch-size", type=int, default=20, help="Upper bound of the RL-CAPA batch-size action space.")
     parser.add_argument("--step-seconds", type=int, default=60, help="Simulation step size in seconds for RL-CAPA.")
@@ -77,19 +92,19 @@ def _add_common_environment_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--prediction-window-seconds",
         type=int,
-        default=180,
+        default=DEFAULT_IMPGTA_WINDOW_SECONDS,
         help="Future observation window in seconds for ImpGTA.",
     )
     parser.add_argument(
         "--prediction-success-rate",
         type=float,
-        default=0.8,
+        default=DEFAULT_IMPGTA_PREDICTION_SUCCESS_RATE,
         help="Prediction success rate used to down-sample ImpGTA's simplified future window.",
     )
     parser.add_argument(
         "--prediction-sampling-seed",
         type=int,
-        default=1,
+        default=DEFAULT_IMPGTA_PREDICTION_SAMPLING_SEED,
         help="Deterministic sampling seed used by ImpGTA's simplified future-window prediction.",
     )
     parser.add_argument("--output-dir", default="outputs/plots/chengdu_run", help="Directory for summary files and plots.")
@@ -148,6 +163,11 @@ def _run_single_experiment(args: argparse.Namespace) -> int:
         task_window_start_seconds=args.task_window_start_seconds,
         task_window_end_seconds=args.task_window_end_seconds,
         task_sampling_seed=args.task_sampling_seed,
+        courier_alpha=args.courier_alpha,
+        courier_beta=args.courier_beta,
+        courier_service_score=args.courier_service_score,
+        platform_quality_start=args.platform_quality_start,
+        platform_quality_step=args.platform_quality_step,
     )
     runner = build_algorithm_runner(args.algorithm, **build_algorithm_kwargs(args))
     try:
@@ -228,6 +248,11 @@ def _build_fixed_config(args: argparse.Namespace) -> dict[str, Any]:
         "task_window_start_seconds": args.task_window_start_seconds,
         "task_window_end_seconds": args.task_window_end_seconds,
         "task_sampling_seed": args.task_sampling_seed,
+        "courier_alpha": args.courier_alpha,
+        "courier_beta": args.courier_beta,
+        "courier_service_score": args.courier_service_score,
+        "platform_quality_start": args.platform_quality_start,
+        "platform_quality_step": args.platform_quality_step,
         "prediction_window_seconds": args.prediction_window_seconds,
         "prediction_success_rate": args.prediction_success_rate,
         "prediction_sampling_seed": args.prediction_sampling_seed,
