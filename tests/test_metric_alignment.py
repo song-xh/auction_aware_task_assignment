@@ -8,6 +8,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from capa.config import DEFAULT_CROSS_PLATFORM_SHARING_RATE_MU2
 from capa.utility import DistanceMatrixTravelModel
 from baselines.greedy import run_greedy_baseline_environment
 from baselines.gta import GTABid, future_tasks_within_window, run_basegta_baseline_environment, run_impgta_baseline_environment
@@ -364,7 +365,7 @@ class MetricAlignmentTest(unittest.TestCase):
         ):
             result = run_impgta_baseline_environment(environment=environment)
 
-        self.assertAlmostEqual(result["TR"], 20.0 - (6.1 + 8.0))
+        self.assertAlmostEqual(result["TR"], 20.0 - (6.1 + DEFAULT_CROSS_PLATFORM_SHARING_RATE_MU2 * 20.0))
 
     def test_basegta_cross_tr_uses_platform_payment_with_partner_sharing(self) -> None:
         """BaseGTA should report cross revenue after deducting partner-platform sharing payment."""
@@ -398,7 +399,7 @@ class MetricAlignmentTest(unittest.TestCase):
         ):
             result = run_basegta_baseline_environment(environment=environment)
 
-        self.assertAlmostEqual(result["TR"], 20.0 - (6.1 + 8.0))
+        self.assertAlmostEqual(result["TR"], 20.0 - (6.1 + DEFAULT_CROSS_PLATFORM_SHARING_RATE_MU2 * 20.0))
 
     def test_select_available_courier_uses_insertion_increment_dispatch_cost(self) -> None:
         """GTA dispatch cost should use incremental insertion distance under the CPUL route model."""

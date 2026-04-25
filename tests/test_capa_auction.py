@@ -88,6 +88,30 @@ class CrossShortlistTest(unittest.TestCase):
             [winning_courier_id],
         )
 
+    def test_run_dapa_rejects_invalid_platform_base_price_constraint(self) -> None:
+        """DAPA should fail when p_min violates the paper base-price constraint."""
+
+        parcel = Parcel(parcel_id="p1", location="parcel", arrival_time=0, deadline=20, weight=1.0, fare=10.0)
+        platform = CooperatingPlatform(
+            platform_id="P1",
+            couriers=[
+                Courier(courier_id="winner", current_location="near", depot_location="depot", capacity=10.0, alpha=0.5, beta=0.5, service_score=0.8),
+            ],
+            base_price=3.0,
+            sharing_rate_gamma=0.5,
+            historical_quality=1.0,
+        )
+        travel_model = FakeTravelModel(
+            distances={
+                ("near", "parcel"): 2.0,
+                ("parcel", "depot"): 4.0,
+                ("near", "depot"): 6.0,
+            }
+        )
+
+        with self.assertRaises(ValueError):
+            run_dapa([parcel], [platform], travel_model, CAPAConfig(), now=0)
+
 
 if __name__ == "__main__":
     unittest.main()

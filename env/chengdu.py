@@ -24,7 +24,7 @@ from capa.config import (
 )
 from capa.dapa import build_cross_candidate_shortlist, run_dapa
 from capa.metrics import build_run_metrics
-from capa.models import Assignment, BatchReport, CAPAConfig, CAPAResult, CooperatingPlatform, Courier, Parcel
+from capa.models import Assignment, BatchReport, CAPAConfig, CAPAResult, CooperatingPlatform, Courier, Parcel, ThresholdHistory
 from capa.utility import (
     BatchDistanceMatrix,
     GeoIndex,
@@ -215,6 +215,7 @@ class ChengduBatchRuntime:
     insertion_cache: InsertionCache = field(default_factory=InsertionCache)
     persistent_travel_model: Any | None = None
     batch_index: int = 0
+    threshold_history: ThresholdHistory = field(default_factory=ThresholdHistory)
 
     def __post_init__(self) -> None:
         """Initialize derived runtime members after dataclass construction."""
@@ -1306,6 +1307,7 @@ def run_time_stepped_chengdu_batches(
             insertion_cache=runtime.insertion_cache,
             geo_index=runtime.geo_index,
             speed_m_per_s=runtime.speed_m_per_s,
+            threshold_history=runtime.threshold_history,
             progress_callback=(
                 None
                 if progress_callback is None

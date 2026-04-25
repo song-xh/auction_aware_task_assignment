@@ -9,7 +9,7 @@ if TYPE_CHECKING:
 
 
 # 论文 CAPA 默认参数
-DEFAULT_CAPA_BATCH_SIZE = 300
+DEFAULT_CAPA_BATCH_SIZE = 20
 # 算法 1 中的批大小阈值 Δb，表示将到达包裹流累积成一个 batch 的时间窗口。
 
 DEFAULT_UTILITY_BALANCE_GAMMA = 0.5
@@ -24,7 +24,7 @@ DEFAULT_LOCAL_PAYMENT_RATIO_ZETA = 0.2
 DEFAULT_LOCAL_SHARING_RATE_MU1 = 0.5
 # Loc 的第一层共享比例 μ1，用于定义 p'τ = μ1·pτ，即本地平台愿意给跨平台骑手的最高起始支付上界。
 
-DEFAULT_CROSS_PLATFORM_SHARING_RATE_MU2 = 0.4
+DEFAULT_CROSS_PLATFORM_SHARING_RATE_MU2 = 0.5
 # Loc 的第二层共享比例 μ2，用于平台层拍卖奖励与支付上界；论文要求 μ1 + μ2 ≤ 1。
 
 DEFAULT_PAPER_CAPA_RUNNER_KWARGS: dict[str, float] = {
@@ -157,6 +157,66 @@ def validate_courier_preference(courier_alpha: float, courier_beta: float | None
     if abs((alpha + beta) - 1.0) > 1e-9:
         raise ValueError(f"courier_alpha + courier_beta must equal 1, got {alpha + beta}.")
     return alpha, beta
+
+
+def validate_sharing_rates(
+    local_payment_ratio_zeta: float,
+    local_sharing_rate_mu1: float,
+    cross_platform_sharing_rate_mu2: float,
+) -> None:
+    """Validate CAPA payment and sharing-rate parameters.
+
+    Args:
+        local_payment_ratio_zeta: Fixed local courier payment ratio.
+        local_sharing_rate_mu1: Local-platform first-layer sharing ratio.
+        cross_platform_sharing_rate_mu2: Local-platform second-layer sharing ratio.
+
+    Raises:
+        ValueError: Any ratio is outside `[0, 1]` or `mu1 + mu2 > 1`.
+    """
+
+    for name, value in {
+        "local_payment_ratio_zeta": local_payment_ratio_zeta,
+        "local_sharing_rate_mu1": local_sharing_rate_mu1,
+        "cross_platform_sharing_rate_mu2": cross_platform_sharing_rate_mu2,
+    }.items():
+        numeric_value = float(value)
+        if numeric_value < 0.0 or numeric_value > 1.0:
+            raise ValueError(f"{name} must be in [0, 1], got {value}.")
+    if float(local_sharing_rate_mu1) + float(cross_platform_sharing_rate_mu2) > 1.0 + 1e-9:
+        raise ValueError(
+            "local_sharing_rate_mu1 + cross_platform_sharing_rate_mu2 must not exceed 1."
+        )
+
+
+def validate_platform_base_price_constraint(
+    base_price: float,
+    platform_sharing_rate_gamma: float,
+    local_sharing_rate_mu1: float,
+    parcel_fare: float,
+) -> None:
+    """Validate the DAPA base-price constraint from the paper.
+
+    Args:
+        base_price: Cooperating platform `p_min`.
+        platform_sharing_rate_gamma: Platform sharing rate `gamma`.
+        local_sharing_rate_mu1: Local platform first-layer sharing ratio `mu1`.
+        parcel_fare: Fare of the parcel being auctioned.
+
+    Raises:
+        ValueError: The platform sharing rate is invalid or
+            `p_min > (1 - gamma) * mu1 * p_tau`.
+    """
+
+    gamma = float(platform_sharing_rate_gamma)
+    if gamma < 0.0 or gamma > 1.0:
+        raise ValueError(f"platform_sharing_rate_gamma must be in [0, 1], got {platform_sharing_rate_gamma}.")
+    maximum_base_price = (1.0 - gamma) * float(local_sharing_rate_mu1) * float(parcel_fare)
+    if float(base_price) > maximum_base_price + 1e-9:
+        raise ValueError(
+            "Platform base price violates p_min <= (1 - gamma) * mu1 * fare: "
+            f"{base_price} > {maximum_base_price}."
+        )
 
 
 def build_default_platform_base_prices(

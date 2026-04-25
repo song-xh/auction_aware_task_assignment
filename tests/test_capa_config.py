@@ -41,6 +41,7 @@ from capa.config import (
     build_default_platform_base_prices,
     build_default_platform_qualities,
     build_default_platform_sharing_rates,
+    validate_platform_base_price_constraint,
     validate_courier_preference,
 )
 from capa.experiments import build_default_chengdu_config
@@ -57,6 +58,10 @@ class CAPAConfigCentralizationTests(unittest.TestCase):
     def test_capa_config_defaults_match_centralized_constants(self) -> None:
         """`CAPAConfig()` should expose the centralized paper defaults."""
 
+        self.assertEqual(DEFAULT_CAPA_BATCH_SIZE, 20)
+        self.assertEqual(DEFAULT_PLATFORM_SHARING_RATE, 0.5)
+        self.assertEqual(DEFAULT_LOCAL_SHARING_RATE_MU1, 0.5)
+        self.assertEqual(DEFAULT_CROSS_PLATFORM_SHARING_RATE_MU2, 0.5)
         self.assertEqual(
             CAPAConfig(),
             CAPAConfig(
@@ -68,6 +73,31 @@ class CAPAConfigCentralizationTests(unittest.TestCase):
                 cross_platform_sharing_rate_mu2=DEFAULT_CROSS_PLATFORM_SHARING_RATE_MU2,
             ),
         )
+
+    def test_capa_config_rejects_invalid_sharing_rates(self) -> None:
+        """CAPA paper constraints should fail fast for invalid sharing rates."""
+
+        with self.assertRaises(ValueError):
+            CAPAConfig(local_sharing_rate_mu1=0.7, cross_platform_sharing_rate_mu2=0.4)
+        with self.assertRaises(ValueError):
+            CAPAConfig(local_payment_ratio_zeta=1.2)
+
+    def test_platform_base_price_constraint_matches_dapa_requirement(self) -> None:
+        """DAPA base-price constraints should be validated explicitly."""
+
+        validate_platform_base_price_constraint(
+            base_price=2.0,
+            platform_sharing_rate_gamma=0.5,
+            local_sharing_rate_mu1=0.5,
+            parcel_fare=10.0,
+        )
+        with self.assertRaises(ValueError):
+            validate_platform_base_price_constraint(
+                base_price=3.0,
+                platform_sharing_rate_gamma=0.5,
+                local_sharing_rate_mu1=0.5,
+                parcel_fare=10.0,
+            )
 
     def test_default_chengdu_config_reuses_centralized_defaults(self) -> None:
         """The Chengdu experiment builder should only override batch size."""

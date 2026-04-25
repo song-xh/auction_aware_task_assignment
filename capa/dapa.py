@@ -6,6 +6,7 @@ from time import perf_counter
 from typing import Callable, List, Mapping, Sequence
 
 from .cama import is_courier_available
+from .config import validate_platform_base_price_constraint
 from .constraints import is_deadline_feasible_by_geo, is_within_service_radius, is_within_service_radius_by_geo
 from .models import (
     Assignment,
@@ -224,6 +225,13 @@ def run_dapa(
     progress_stride = max(1, len(parcels) // 100) if parcels else 1
 
     for parcel_index, parcel in enumerate(parcels, start=1):
+        for platform in platforms:
+            validate_platform_base_price_constraint(
+                base_price=platform.base_price,
+                platform_sharing_rate_gamma=platform.sharing_rate_gamma,
+                local_sharing_rate_mu1=config.local_sharing_rate_mu1,
+                parcel_fare=parcel.fare,
+            )
         platform_winners: List[PlatformBid] = []
         shortlisted_platforms = (
             None
