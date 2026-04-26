@@ -9,12 +9,14 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from capa.config import DEFAULT_CROSS_PLATFORM_SHARING_RATE_MU2
+from capa.dapa import run_dapa
+from capa.models import CAPAConfig
 from capa.utility import DistanceMatrixTravelModel
 from baselines.greedy import run_greedy_baseline_environment
-from baselines.gta import GTABid, future_tasks_within_window, run_basegta_baseline_environment, run_impgta_baseline_environment
+from baselines.gta import GTABid, future_tasks_within_window, run_basegta_baseline_environment, run_impgta_baseline_environment, settle_aim_auction
 from baselines.mra import run_mra_baseline_environment
 from baselines.ramcom import run_ramcom_baseline_environment
-from env.chengdu import ChengduEnvironment, select_station_pick_tasks
+from env.chengdu import ChengduEnvironment, legacy_platform_to_capa, legacy_task_to_parcel, select_station_pick_tasks
 from experiments.config import ExperimentConfig
 from experiments.paper_chengdu import build_fixed_config_from_args, build_paper_runner_overrides_from_fixed_config
 from experiments.seeding import build_environment_seed, clone_environment_from_seed
@@ -228,8 +230,20 @@ class MetricAlignmentTest(unittest.TestCase):
         ]
 
         def build_environment() -> SimpleNamespace:
+            partner_station = SimpleNamespace(l_node="depot")
             local_courier = SimpleNamespace(num=1, location="local", re_schedule=[], re_weight=0.0, max_weight=5.0)
-            partner_courier = SimpleNamespace(num=11, location="outer", re_schedule=[], re_weight=0.0, max_weight=5.0)
+            partner_courier = SimpleNamespace(
+                num=11,
+                location="outer",
+                re_schedule=[],
+                re_weight=0.0,
+                max_weight=5.0,
+                station=partner_station,
+                station_num=1,
+                w=0.5,
+                c=0.5,
+                service_score=0.8,
+            )
             return SimpleNamespace(
                 tasks=[task],
                 local_couriers=[local_courier],
@@ -239,6 +253,9 @@ class MetricAlignmentTest(unittest.TestCase):
                 station_set=[],
                 travel_model=SimpleNamespace(distance=lambda start, end: 0.0, travel_time=lambda start, end: 0.0),
                 service_radius_km=None,
+                platform_base_prices={"P1": 1.0},
+                platform_sharing_rates={"P1": 0.5},
+                platform_qualities={"P1": 1.0},
             )
 
         def fake_select(*, couriers, **kwargs):
@@ -263,6 +280,144 @@ class MetricAlignmentTest(unittest.TestCase):
 
         self.assertEqual(zero_success["accepted_assignments"], 1)
         self.assertEqual(full_success["accepted_assignments"], 0)
+
+    def test_impgta_cross_payment_matches_capa_dlam_payment(self) -> None:
+        """ImpGTA cross completions should reuse CAPA/DLAM payment instead of AIM payment."""
+
+        task = SimpleNamespace(num="t1", fare=20.0, s_time=0.0, d_time=300.0, weight=1.0, l_node="X")
+        local_courier = SimpleNamespace(num=1, location="L", re_schedule=[], re_weight=0.0, max_weight=0.0)
+        station_one = SimpleNamespace(l_node="DA")
+        station_two = SimpleNamespace(l_node="DB")
+        outer_one = SimpleNamespace(
+            num=11,
+            location="A",
+            re_schedule=[],
+            re_weight=0.0,
+            max_weight=5.0,
+            station=station_one,
+            station_num=1,
+            w=0.5,
+            c=0.5,
+            service_score=0.8,
+        )
+        outer_two = SimpleNamespace(
+            num=12,
+            location="B",
+            re_schedule=[],
+            re_weight=0.0,
+            max_weight=5.0,
+            station=station_two,
+            station_num=2,
+            w=0.5,
+            c=0.5,
+            service_score=0.8,
+        )
+        travel_model = DistanceMatrixTravelModel(
+            distances={
+                ("A", "X"): 1000.0,
+                ("X", "DA"): 1000.0,
+                ("A", "DA"): 1500.0,
+                ("B", "X"): 1000.0,
+                ("X", "DB"): 1000.0,
+                ("B", "DB"): 1500.0,
+            },
+            speed=1000.0,
+        )
+        platform_base_prices = {"P1": 1.0, "P2": 1.0}
+        platform_sharing_rates = {"P1": 0.5, "P2": 0.5}
+        platform_qualities = {"P1": 1.0, "P2": 0.9}
+        platforms = [
+            legacy_platform_to_capa("P1", [outer_one], platform_base_prices["P1"], platform_sharing_rates["P1"], platform_qualities["P1"]),
+            legacy_platform_to_capa("P2", [outer_two], platform_base_prices["P2"], platform_sharing_rates["P2"], platform_qualities["P2"]),
+        ]
+        expected = run_dapa([legacy_task_to_parcel(task)], platforms, travel_model, CAPAConfig(), now=0)
+        environment = SimpleNamespace(
+            tasks=[task],
+            local_couriers=[local_courier],
+            partner_couriers_by_platform={"P1": [outer_one], "P2": [outer_two]},
+            partner_tasks_by_platform={"P1": [], "P2": []},
+            movement_callback=lambda *args, **kwargs: None,
+            station_set=[],
+            travel_model=travel_model,
+            service_radius_km=None,
+            platform_base_prices=platform_base_prices,
+            platform_sharing_rates=platform_sharing_rates,
+            platform_qualities=platform_qualities,
+        )
+
+        with patch("baselines.gta.drain_legacy_routes", return_value=1):
+            result = run_impgta_baseline_environment(environment=environment, prediction_success_rate=0.0)
+
+        self.assertEqual(len(expected.cross_assignments), 1)
+        self.assertAlmostEqual(result["TR"], expected.cross_assignments[0].local_platform_revenue)
+
+    def test_impgta_cross_assignment_does_not_call_aim(self) -> None:
+        """ImpGTA should use CAPA/DLAM for cross settlement while BaseGTA keeps AIM."""
+
+        task = SimpleNamespace(num="t1", fare=20.0, s_time=0.0, d_time=300.0, weight=1.0, l_node="X")
+        local_courier = SimpleNamespace(num=1, location="L", re_schedule=[], re_weight=0.0, max_weight=0.0)
+        station = SimpleNamespace(l_node="D")
+        outer = SimpleNamespace(
+            num=11,
+            location="A",
+            re_schedule=[],
+            re_weight=0.0,
+            max_weight=5.0,
+            station=station,
+            station_num=1,
+            w=0.5,
+            c=0.5,
+            service_score=0.8,
+        )
+        travel_model = DistanceMatrixTravelModel(
+            distances={
+                ("A", "X"): 1000.0,
+                ("X", "D"): 1000.0,
+                ("A", "D"): 1500.0,
+            },
+            speed=1000.0,
+        )
+
+        def build_environment() -> SimpleNamespace:
+            fresh_local = SimpleNamespace(num=1, location="L", re_schedule=[], re_weight=0.0, max_weight=0.0)
+            fresh_outer = SimpleNamespace(
+                num=11,
+                location="A",
+                re_schedule=[],
+                re_weight=0.0,
+                max_weight=5.0,
+                station=station,
+                station_num=1,
+                w=0.5,
+                c=0.5,
+                service_score=0.8,
+            )
+            return SimpleNamespace(
+                tasks=[task],
+                local_couriers=[fresh_local],
+                partner_couriers_by_platform={"P1": [fresh_outer]},
+                partner_tasks_by_platform={"P1": []},
+                movement_callback=lambda *args, **kwargs: None,
+                station_set=[],
+                travel_model=travel_model,
+                service_radius_km=None,
+                platform_base_prices={"P1": 1.0},
+                platform_sharing_rates={"P1": 0.5},
+                platform_qualities={"P1": 1.0},
+            )
+
+        with (
+            patch("baselines.gta.settle_aim_auction", wraps=settle_aim_auction) as aim_spy,
+            patch("baselines.gta.drain_legacy_routes", return_value=1),
+        ):
+            run_basegta_baseline_environment(environment=build_environment())
+        self.assertGreater(aim_spy.call_count, 0)
+
+        with (
+            patch("baselines.gta.settle_aim_auction", side_effect=AssertionError("ImpGTA must not use AIM")),
+            patch("baselines.gta.drain_legacy_routes", return_value=1),
+        ):
+            run_impgta_baseline_environment(environment=build_environment(), prediction_success_rate=0.0)
 
     def test_runner_builds_impgta_prediction_success_kwargs(self) -> None:
         """Unified runner kwargs should expose ImpGTA prediction-success controls."""
@@ -406,8 +561,44 @@ class MetricAlignmentTest(unittest.TestCase):
 
         task = SimpleNamespace(num="t1", fare=20.0, s_time=0.0, d_time=10.0, weight=1.0, l_node="p1")
         local_courier = SimpleNamespace(num=1, location="local", re_schedule=[], re_weight=0.0, max_weight=5.0)
-        outer_one = SimpleNamespace(num=11, location="o1", re_schedule=[], re_weight=0.0, max_weight=5.0)
-        outer_two = SimpleNamespace(num=12, location="o2", re_schedule=[], re_weight=0.0, max_weight=5.0)
+        outer_one = SimpleNamespace(
+            num=11,
+            location="o1",
+            re_schedule=[],
+            re_weight=0.0,
+            max_weight=5.0,
+            station=SimpleNamespace(l_node="d1"),
+            station_num=1,
+            w=0.5,
+            c=0.5,
+            service_score=0.8,
+        )
+        outer_two = SimpleNamespace(
+            num=12,
+            location="o2",
+            re_schedule=[],
+            re_weight=0.0,
+            max_weight=5.0,
+            station=SimpleNamespace(l_node="d2"),
+            station_num=2,
+            w=0.5,
+            c=0.5,
+            service_score=0.8,
+        )
+        travel_model = SimpleNamespace(distance=lambda start, end: 0.0, travel_time=lambda start, end: 0.0)
+        platform_base_prices = {"p1": 1.0, "p2": 1.0}
+        platform_sharing_rates = {"p1": 0.5, "p2": 0.5}
+        platform_qualities = {"p1": 1.0, "p2": 0.9}
+        expected = run_dapa(
+            [legacy_task_to_parcel(task)],
+            [
+                legacy_platform_to_capa("p1", [outer_one], platform_base_prices["p1"], platform_sharing_rates["p1"], platform_qualities["p1"]),
+                legacy_platform_to_capa("p2", [outer_two], platform_base_prices["p2"], platform_sharing_rates["p2"], platform_qualities["p2"]),
+            ],
+            travel_model,
+            CAPAConfig(),
+            now=0,
+        )
         environment = SimpleNamespace(
             tasks=[task],
             local_couriers=[local_courier],
@@ -415,8 +606,11 @@ class MetricAlignmentTest(unittest.TestCase):
             partner_tasks_by_platform={"p1": [], "p2": []},
             movement_callback=lambda *args, **kwargs: None,
             station_set=[],
-            travel_model=SimpleNamespace(distance=lambda start, end: 0.0, travel_time=lambda start, end: 0.0),
+            travel_model=travel_model,
             service_radius_km=None,
+            platform_base_prices=platform_base_prices,
+            platform_sharing_rates=platform_sharing_rates,
+            platform_qualities=platform_qualities,
         )
 
         def fake_select(*, couriers, **kwargs):
@@ -434,7 +628,8 @@ class MetricAlignmentTest(unittest.TestCase):
         ):
             result = run_impgta_baseline_environment(environment=environment)
 
-        self.assertAlmostEqual(result["TR"], 20.0 - (6.1 + DEFAULT_CROSS_PLATFORM_SHARING_RATE_MU2 * 20.0))
+        self.assertEqual(len(expected.cross_assignments), 1)
+        self.assertAlmostEqual(result["TR"], expected.cross_assignments[0].local_platform_revenue)
 
     def test_basegta_cross_tr_uses_platform_payment_with_partner_sharing(self) -> None:
         """BaseGTA should report cross revenue after deducting partner-platform sharing payment."""

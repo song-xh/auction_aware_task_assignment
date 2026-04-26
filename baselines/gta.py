@@ -16,6 +16,8 @@ from capa.config import (
     DEFAULT_IMPGTA_WINDOW_SECONDS,
 )
 from capa.constraints import is_deadline_feasible_by_geo, is_within_service_radius
+from capa.dapa import run_dapa
+from capa.models import CAPAConfig
 from capa.utility import (
     DEFAULT_LOCAL_PAYMENT_RATIO,
     GeoIndex,
@@ -30,6 +32,9 @@ from env.chengdu import (
     drain_legacy_routes,
     flatten_partner_couriers,
     framework_movement_callback,
+    legacy_platform_to_capa,
+    legacy_task_to_parcel,
+    partner_courier_snapshot_id,
     sort_legacy_tasks,
 )
 
@@ -397,6 +402,98 @@ def settle_aim_auction(
     )
 
 
+def settle_dlam_auction_for_impgta(
+    task: Any,
+    platform_ids: Sequence[str],
+    partner_couriers_by_platform: Mapping[str, Sequence[Any]],
+    travel_model: Any,
+    now: int,
+    platform_base_prices: Mapping[str, float],
+    platform_sharing_rates: Mapping[str, float],
+    platform_qualities: Mapping[str, float],
+    cross_platform_sharing_rate_mu2: float = DEFAULT_CROSS_PLATFORM_SHARING_RATE_MU2,
+    service_radius_meters: float | None = None,
+    timing: TimingAccumulator | None = None,
+    geo_index: GeoIndex | None = None,
+    speed_m_per_s: float = 0.0,
+) -> AIMOutcome | None:
+    """Settle an ImpGTA cross assignment through CAPA's DLAM/DAPA auction.
+
+    Args:
+        task: Legacy parcel selected for cross-platform dispatch.
+        platform_ids: Partner platforms that passed ImpGTA's prediction rule.
+        partner_couriers_by_platform: Active partner courier pools.
+        travel_model: Shared travel model used for exact feasibility and bids.
+        now: Current simulation time in seconds.
+        platform_base_prices: DAPA base price per platform.
+        platform_sharing_rates: DAPA first-layer sharing rate per platform.
+        platform_qualities: Historical quality proxy per platform.
+        cross_platform_sharing_rate_mu2: CAPA second-layer sharing rate.
+        service_radius_meters: Optional service-radius constraint.
+        timing: Optional accumulator for unified BPT accounting.
+        geo_index: Optional geographic lower-bound index.
+        speed_m_per_s: Optional travel speed for deadline prefilters.
+
+    Returns:
+        Realized auction outcome, or `None` if DLAM finds no valid winner.
+    """
+
+    if not platform_ids:
+        return None
+    parcel = legacy_task_to_parcel(task)
+    config = CAPAConfig(cross_platform_sharing_rate_mu2=cross_platform_sharing_rate_mu2)
+    platforms = [
+        legacy_platform_to_capa(
+            platform_id=platform_id,
+            couriers=partner_couriers_by_platform[platform_id],
+            base_price=platform_base_prices[platform_id],
+            sharing_rate_gamma=platform_sharing_rates[platform_id],
+            historical_quality=platform_qualities[platform_id],
+        )
+        for platform_id in platform_ids
+    ]
+    dapa_result = run_dapa(
+        [parcel],
+        platforms,
+        travel_model,
+        config,
+        now=now,
+        service_radius_meters=service_radius_meters,
+        timing=timing,
+        geo_index=geo_index,
+        speed_m_per_s=speed_m_per_s,
+    )
+    if not dapa_result.cross_assignments:
+        return None
+    assignment = dapa_result.cross_assignments[0]
+    if assignment.platform_id is None:
+        raise ValueError("DAPA returned a cross assignment without a platform id.")
+    legacy_courier_lookup = {
+        partner_courier_snapshot_id(platform_id, courier): courier
+        for platform_id, couriers in partner_couriers_by_platform.items()
+        for courier in couriers
+    }
+    legacy_courier = legacy_courier_lookup[assignment.courier.courier_id]
+    insertion_option = find_best_legacy_insertion_option(
+        task=task,
+        courier=legacy_courier,
+        travel_model=travel_model,
+        now=now,
+        service_radius_meters=service_radius_meters,
+        geo_index=geo_index,
+        speed_m_per_s=speed_m_per_s,
+    )
+    if insertion_option is None:
+        raise RuntimeError("DAPA selected a courier that is no longer feasible in the legacy route state.")
+    return AIMOutcome(
+        platform_id=assignment.platform_id,
+        courier=legacy_courier,
+        dispatch_cost=assignment.courier_payment,
+        payment=assignment.platform_payment,
+        insertion_index=insertion_option.insertion_index,
+    )
+
+
 def future_tasks_within_window(
     tasks: Sequence[Any],
     now: int,
@@ -479,12 +576,29 @@ def _run_gta_environment(
         platform_id: sort_legacy_tasks(list(tasks))
         for platform_id, tasks in getattr(environment, "partner_tasks_by_platform", {}).items()
     }
+    platform_base_prices = dict(getattr(environment, "platform_base_prices", {}))
+    platform_sharing_rates = dict(getattr(environment, "platform_sharing_rates", {}))
+    platform_qualities = dict(getattr(environment, "platform_qualities", {}))
     if algorithm == "impgta":
         missing_partner_task_streams = sorted(set(partner_couriers_by_platform) - set(partner_tasks_by_platform))
         if missing_partner_task_streams:
             raise ValueError(
                 "ImpGTA requires partner own-task streams for every cooperating platform: "
                 f"missing {missing_partner_task_streams}."
+            )
+        missing_platform_config = sorted(
+            platform_id
+            for platform_id in partner_couriers_by_platform
+            if (
+                platform_id not in platform_base_prices
+                or platform_id not in platform_sharing_rates
+                or platform_id not in platform_qualities
+            )
+        )
+        if missing_platform_config:
+            raise ValueError(
+                "ImpGTA requires CAPA/DLAM platform price, sharing-rate, and quality config for every platform: "
+                f"missing {missing_platform_config}."
             )
     movement = environment.movement_callback or framework_movement_callback
     timing = TimingAccumulator()
@@ -577,6 +691,7 @@ def _run_gta_environment(
                     continue
 
             outer_bids: list[GTABid] = []
+            dlam_platform_ids: list[str] = []
             for platform_id, partner_couriers in partner_couriers_by_platform.items():
                 partner_future_tasks: list[Any] = []
                 if algorithm == "impgta" and prediction_window_seconds is not None:
@@ -613,19 +728,39 @@ def _run_gta_environment(
                         future_tasks=partner_future_tasks,
                     ):
                         continue
+                    dlam_platform_ids.append(platform_id)
+                    continue
                 outer_bids.append(
                     GTABid(
                         platform_id=platform_id,
                         courier=partner_bid.courier,
                         dispatch_cost=partner_bid.dispatch_cost,
+                        insertion_index=partner_bid.insertion_index,
                     )
                 )
 
-            outcome = settle_aim_auction(
-                task,
-                outer_bids,
-                cross_platform_sharing_rate_mu2=cross_platform_sharing_rate_mu2,
-            )
+            if algorithm == "impgta":
+                outcome = settle_dlam_auction_for_impgta(
+                    task=task,
+                    platform_ids=dlam_platform_ids,
+                    partner_couriers_by_platform=partner_couriers_by_platform,
+                    travel_model=timed_travel_model,
+                    now=current_time,
+                    platform_base_prices=platform_base_prices,
+                    platform_sharing_rates=platform_sharing_rates,
+                    platform_qualities=platform_qualities,
+                    cross_platform_sharing_rate_mu2=cross_platform_sharing_rate_mu2,
+                    service_radius_meters=service_radius_meters,
+                    timing=timing,
+                    geo_index=geo_index,
+                    speed_m_per_s=speed_m_per_s,
+                )
+            else:
+                outcome = settle_aim_auction(
+                    task,
+                    outer_bids,
+                    cross_platform_sharing_rate_mu2=cross_platform_sharing_rate_mu2,
+                )
             if outcome is not None:
                 apply_assignment_to_legacy_courier(task, outcome.courier, outcome.insertion_index)
                 accepted_assignments += 1
