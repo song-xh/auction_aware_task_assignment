@@ -76,6 +76,7 @@ class ExperimentConfig:
     rl_discount_factor: float = 0.9
     rl_entropy_coeff: float = 0.01
     rl_max_grad_norm: float = 0.5
+    rl_future_feature_window_seconds: int = 300
     rl_device: str | None = None
     extra: dict[str, Any] = field(default_factory=dict)
 
@@ -117,6 +118,7 @@ class ExperimentConfig:
             "rl_discount_factor": self.rl_discount_factor,
             "rl_entropy_coeff": self.rl_entropy_coeff,
             "rl_max_grad_norm": self.rl_max_grad_norm,
+            "rl_future_feature_window_seconds": self.rl_future_feature_window_seconds,
             "rl_device": self.rl_device,
             "extra": dict(self.extra),
         }

@@ -5,10 +5,15 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import torch
+
+from capa.metrics import compute_batch_processing_time
 from capa.models import CAPAConfig
 from experiments.seeding import ChengduEnvironmentSeed
 from rl_capa.config import RLCAPAConfig
+from rl_capa.evaluate_core import evaluate
 from rl_capa.env import RLCAPAEnv
+from rl_capa.trainer import RLCAPATrainer, TrainingConfig
 
 
 class DefaultTravelModel:
@@ -82,8 +87,16 @@ def _seed(
         platform_base_prices={"P1": 1.0} if partner_couriers else {},
         platform_sharing_rates={"P1": 0.5} if partner_couriers else {},
         platform_qualities={"P1": 1.0} if partner_couriers else {},
-        movement_callback=lambda *_args, **_kwargs: None,
+        movement_callback=_complete_routes,
     )
+
+
+def _complete_routes(local_couriers: list[SimpleNamespace], partner_couriers: list[SimpleNamespace], *_args: object) -> None:
+    """Simulate route progression by delivering all currently queued tasks."""
+
+    for courier in [*local_couriers, *partner_couriers]:
+        courier.re_schedule.clear()
+        courier.re_weight = 0.0
 
 
 def test_stage2_decisions_apply_to_full_batch_without_cama() -> None:
@@ -136,3 +149,64 @@ def test_local_stage_failure_returns_to_backlog_for_next_batch() -> None:
 
     assert [parcel.parcel_id for parcel in env.batch_reports()[0].unresolved_parcels] == ["heavy"]
     assert not env.is_done()
+
+
+def test_stage1_state_uses_six_dimensions_and_true_future_window() -> None:
+    """Stage 1 should expose true future parcel/courier counts in a 6D state."""
+
+    seed = _seed([
+        _task("now", "now-node", release=0),
+        _task("soon", "soon-node", release=5),
+        _task("later", "later-node", release=50),
+    ])
+    short_env = RLCAPAEnv(
+        environment_seed=seed,
+        capa_config=CAPAConfig(),
+        rl_config=RLCAPAConfig(min_batch_size=10, max_batch_size=10, future_feature_window_seconds=10),
+    )
+    long_env = RLCAPAEnv(
+        environment_seed=seed,
+        capa_config=CAPAConfig(),
+        rl_config=RLCAPAConfig(min_batch_size=10, max_batch_size=10, future_feature_window_seconds=100),
+    )
+
+    short_env.reset()
+    long_env.reset()
+    short_state = short_env.get_stage1_state()
+    long_state = long_env.get_stage1_state()
+
+    assert short_state.shape == (6,)
+    assert long_state.shape == (6,)
+    assert short_state[2] == 1.0
+    assert long_state[2] == 2.0
+
+
+def test_trainer_uses_six_dimensional_stage1_networks_and_adam() -> None:
+    """Trainer dimensions should match 6D stage-1 state while keeping Adam."""
+
+    env = RLCAPAEnv(
+        environment_seed=_seed([_task("now", "now-node")]),
+        capa_config=CAPAConfig(),
+        rl_config=RLCAPAConfig(min_batch_size=10, max_batch_size=10),
+    )
+    trainer = RLCAPATrainer(env=env, config=TrainingConfig(num_episodes=0), num_batch_actions=1)
+
+    assert trainer.norm_s1.dim == 6
+    assert trainer.pi1.net[0].in_features == 6
+    assert trainer.v1.net[0].in_features == 6
+    assert isinstance(trainer.opt_pi1, torch.optim.Adam)
+
+
+def test_evaluate_bpt_matches_environment_batch_reports() -> None:
+    """RL-CAPA evaluation BPT should aggregate unified environment batch timing."""
+
+    env = RLCAPAEnv(
+        environment_seed=_seed([_task("now", "now-node")]),
+        capa_config=CAPAConfig(),
+        rl_config=RLCAPAConfig(min_batch_size=10, max_batch_size=10),
+    )
+    trainer = RLCAPATrainer(env=env, config=TrainingConfig(num_episodes=0), num_batch_actions=1)
+
+    result = evaluate(env=env, trainer=trainer, batch_action_values=[10], max_steps=5)
+
+    assert result.batch_processing_time == compute_batch_processing_time(env.batch_reports())

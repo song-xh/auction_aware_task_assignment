@@ -1,7 +1,7 @@
 """State construction helpers for RL-CAPA (spec Section 3, 9.2).
 
 Provides:
-  - build_stage1_state: 4-dim s_t^(1) from environment
+  - build_stage1_state: 6-dim s_t^(1) from environment
   - build_stage2_states: per-parcel 9-dim s_{t,i}^(2)
   - aggregate_stage2_states: mean-pooling for V2 input
   - RunningNormalizer: online feature normalization
@@ -15,6 +15,10 @@ import numpy as np
 
 from capa.cama import is_feasible_local_match
 from capa.models import Courier, Parcel
+
+
+STAGE1_STATE_DIM = 6
+STAGE2_STATE_DIM = 9
 
 
 class RunningNormalizer:
@@ -82,11 +86,13 @@ def build_stage1_state(
     travel_model: object,
     now: int,
     service_radius_meters: float | None = None,
+    future_parcel_count: int = 0,
+    future_courier_count: int = 0,
 ) -> np.ndarray:
-    """Construct the 4-dim first-stage state s_t^(1).
+    """Construct the 6-dim first-stage state s_t^(1).
 
     Features (spec Section 3.1):
-      [|Gamma_t^Loc|, |C_t^Loc|, |D|, |T|]
+      [|Gamma_t^Loc|, |C_t^Loc|, N_Z^Gamma, N_Z^C, |D|, |T|]
 
     Args:
         pending_parcels: Parcels awaiting assignment.
@@ -94,9 +100,11 @@ def build_stage1_state(
         travel_model: Shared travel model for distance queries.
         now: Current batch-boundary time.
         service_radius_meters: Optional service radius constraint.
+        future_parcel_count: True future parcel count inside the configured window.
+        future_courier_count: True future local courier availability count.
 
     Returns:
-        Float32 array of shape (4,).
+        Float32 array of shape (6,).
     """
     pending_count = float(len(pending_parcels))
     available_count = float(
@@ -130,7 +138,14 @@ def build_stage1_state(
     )
 
     return np.array(
-        [pending_count, available_count, avg_distance, avg_urgency],
+        [
+            pending_count,
+            available_count,
+            float(future_parcel_count),
+            float(future_courier_count),
+            avg_distance,
+            avg_urgency,
+        ],
         dtype=np.float32,
     )
 
@@ -207,5 +222,5 @@ def aggregate_stage2_states(states: List[np.ndarray]) -> np.ndarray:
         Returns zeros if input is empty.
     """
     if not states:
-        return np.zeros(9, dtype=np.float32)
+        return np.zeros(STAGE2_STATE_DIM, dtype=np.float32)
     return np.mean(states, axis=0).astype(np.float32)

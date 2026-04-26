@@ -25,7 +25,7 @@ from rl_capa.networks import (
     CrossOrNotActor,
     StateValueCritic,
 )
-from rl_capa.state_builder import RunningNormalizer, aggregate_stage2_states
+from rl_capa.state_builder import STAGE1_STATE_DIM, STAGE2_STATE_DIM, RunningNormalizer, aggregate_stage2_states
 from rl_capa.utils import compute_discounted_returns, select_torch_device
 
 
@@ -58,7 +58,7 @@ class StepRecord:
     """One step's data in the episode buffer.
 
     Args:
-        s1: First-stage state tensor (4,).
+        s1: First-stage state tensor (6,).
         a1_index: Sampled batch-size action index.
         log_prob_1: Log probability of a1 under pi1.
         s2_agg: Mean-pooled second-stage state tensor (9,).
@@ -139,11 +139,11 @@ class RLCAPATrainer:
 
         # 4 networks (spec Section 7)
         self.pi1 = BatchSizeActor(
-            state_dim=4, num_actions=num_batch_actions, hidden_dim=128
+            state_dim=STAGE1_STATE_DIM, num_actions=num_batch_actions, hidden_dim=128
         ).to(self.device)
-        self.pi2 = CrossOrNotActor(state_dim=9, hidden_dim=128).to(self.device)
-        self.v1 = StateValueCritic(state_dim=4, hidden_dim=128).to(self.device)
-        self.v2 = ConditionalValueCritic(state_dim=9, hidden_dim=128).to(self.device)
+        self.pi2 = CrossOrNotActor(state_dim=STAGE2_STATE_DIM, hidden_dim=128).to(self.device)
+        self.v1 = StateValueCritic(state_dim=STAGE1_STATE_DIM, hidden_dim=128).to(self.device)
+        self.v2 = ConditionalValueCritic(state_dim=STAGE2_STATE_DIM, hidden_dim=128).to(self.device)
 
         # 4 independent optimizers (spec Section 6.4)
         self.opt_pi1 = torch.optim.Adam(self.pi1.parameters(), lr=config.lr_actor)
@@ -152,8 +152,8 @@ class RLCAPATrainer:
         self.opt_v2 = torch.optim.Adam(self.v2.parameters(), lr=config.lr_critic)
 
         # Running normalizers for feature vectors
-        self.norm_s1 = RunningNormalizer(dim=4)
-        self.norm_s2 = RunningNormalizer(dim=9)
+        self.norm_s1 = RunningNormalizer(dim=STAGE1_STATE_DIM)
+        self.norm_s2 = RunningNormalizer(dim=STAGE2_STATE_DIM)
 
         # Batch action values for index-to-duration mapping
         self._batch_action_values: List[int] = []
@@ -292,7 +292,7 @@ class RLCAPATrainer:
             log_prob_2 = torch.tensor(0.0, device=self.device)
             entropy_2 = torch.tensor(0.0, device=self.device)
             decisions = {}
-            s2_agg_tensor = torch.zeros(9, device=self.device)
+            s2_agg_tensor = torch.zeros(STAGE2_STATE_DIM, device=self.device)
 
         # Apply local/cross decisions -> direct local + DAPA, returns R_t
         reward = self.env.apply_stage2_decisions(decisions)

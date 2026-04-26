@@ -88,6 +88,7 @@ def _add_common_environment_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--rl-discount-factor", type=float, default=0.9, help="Discount factor used by RL-CAPA.")
     parser.add_argument("--rl-entropy-coeff", type=float, default=0.01, help="Entropy regularization coefficient for RL-CAPA.")
     parser.add_argument("--rl-max-grad-norm", type=float, default=0.5, help="Gradient clipping threshold for RL-CAPA.")
+    parser.add_argument("--rl-future-feature-window-seconds", type=int, default=300, help="True future window in seconds used by RL-CAPA stage-1 features.")
     parser.add_argument("--rl-device", default=None, help="Optional torch device override for RL-CAPA, for example `cpu` or `cuda`.")
     parser.add_argument(
         "--prediction-window-seconds",
@@ -131,6 +132,7 @@ def build_algorithm_kwargs(args: argparse.Namespace) -> dict[str, Any]:
             "discount_factor": args.rl_discount_factor,
             "entropy_coeff": args.rl_entropy_coeff,
             "max_grad_norm": args.rl_max_grad_norm,
+            "future_feature_window_seconds": args.rl_future_feature_window_seconds,
             "device": args.rl_device,
         }
     return {}
@@ -265,6 +267,7 @@ def _build_fixed_config(args: argparse.Namespace) -> dict[str, Any]:
         "rl_discount_factor": args.rl_discount_factor,
         "rl_entropy_coeff": args.rl_entropy_coeff,
         "rl_max_grad_norm": args.rl_max_grad_norm,
+        "rl_future_feature_window_seconds": args.rl_future_feature_window_seconds,
         "rl_device": args.rl_device,
     }
 

@@ -158,6 +158,7 @@ def _build_runner_kwargs(algorithm_name: str, config: ExperimentConfig) -> dict[
             "discount_factor": config.rl_discount_factor,
             "entropy_coeff": config.rl_entropy_coeff,
             "max_grad_norm": config.rl_max_grad_norm,
+            "future_feature_window_seconds": config.rl_future_feature_window_seconds,
             "device": config.rl_device,
         }
     return {}
@@ -204,6 +205,7 @@ def _run_comparison_point(
         rl_discount_factor=fixed_config.get("rl_discount_factor", 0.9),
         rl_entropy_coeff=fixed_config.get("rl_entropy_coeff", 0.01),
         rl_max_grad_norm=fixed_config.get("rl_max_grad_norm", 0.5),
+        rl_future_feature_window_seconds=fixed_config.get("rl_future_feature_window_seconds", 300),
         rl_device=fixed_config.get("rl_device"),
         extra=dict(fixed_config.get("extra", {})),
     )
