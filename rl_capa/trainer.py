@@ -258,13 +258,11 @@ class RLCAPATrainer:
         # Apply batch size -> advances time, accumulates parcels
         self.env.apply_batch_size(batch_duration)
 
-        # === CAMA local matching ===
-        local_assignments, unassigned = self.env.run_local_matching()
+        # === Stage 2: per-parcel local-or-cross ===
+        batch_parcels = self.env.current_eligible_parcels()
+        s2_list = self.env.get_stage2_states(batch_parcels)
 
-        # === Stage 2: per-parcel cross-or-not ===
-        s2_list = self.env.get_stage2_states(unassigned)
-
-        num_unassigned = len(unassigned)
+        num_unassigned = len(batch_parcels)
         num_cross = 0
 
         if s2_list:
@@ -281,7 +279,7 @@ class RLCAPATrainer:
             # Build decisions dict
             decisions = {
                 p.parcel_id: int(a.item())
-                for p, a in zip(unassigned, actions_2)
+                for p, a in zip(batch_parcels, actions_2)
             }
             num_cross = sum(1 for a in actions_2 if a.item() == 1)
 
@@ -296,8 +294,8 @@ class RLCAPATrainer:
             decisions = {}
             s2_agg_tensor = torch.zeros(9, device=self.device)
 
-        # Apply cross decisions -> DAPA + defer, returns R_t
-        reward = self.env.apply_cross_decisions(decisions)
+        # Apply local/cross decisions -> direct local + DAPA, returns R_t
+        reward = self.env.apply_stage2_decisions(decisions)
 
         return StepRecord(
             s1=s1_tensor,

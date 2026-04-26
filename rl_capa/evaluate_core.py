@@ -86,11 +86,11 @@ def evaluate(
             total_decision_time += perf_counter() - t_start
 
             env.apply_batch_size(batch_duration)
-            local_assignments, unassigned = env.run_local_matching()
+            batch_parcels = env.current_eligible_parcels()
 
             # Stage 2: threshold 0.5
             t_stage2 = perf_counter()
-            s2_list = env.get_stage2_states(unassigned)
+            s2_list = env.get_stage2_states(batch_parcels)
             if s2_list:
                 s2_normed = [norm_s2.normalize(s) for s in s2_list]
                 s2_tensor = torch.from_numpy(np.stack(s2_normed)).to(device)
@@ -99,13 +99,13 @@ def evaluate(
                 actions = (probs > 0.5).long()
                 decisions = {
                     p.parcel_id: int(a.item())
-                    for p, a in zip(unassigned, actions)
+                    for p, a in zip(batch_parcels, actions)
                 }
             else:
                 decisions = {}
             total_decision_time += perf_counter() - t_stage2
 
-            env.apply_cross_decisions(decisions)
+            env.apply_stage2_decisions(decisions)
 
     env.finalize_episode()
 
