@@ -90,6 +90,7 @@ python3 runner.py sweep \
 - `platforms`
 - `batch_size`
 - `courier_capacity`
+- `courier_alpha`
 
 `service_radius` 使用公里单位，通过 `--values 0.5 1.0 1.5 ...` 传入。
 
@@ -137,12 +138,18 @@ python3 runner.py compare \
 - `--courier-capacity`：courier 容量上限。
 - `--service-radius-km`：服务半径 `rad`，单位公里。
 - `--batch-size`：批处理时间窗口，单位秒，不是包裹数。
-- `--prediction-window-seconds`：`ImpGTA` 简化预测窗口长度，单位秒，默认 `1800`。
+- `--prediction-window-seconds`：`ImpGTA` 简化预测窗口长度，单位秒，默认 `180`。
 - `--prediction-success-rate`：`ImpGTA` 简化预测成功率，范围 `[0, 1]`，默认 `0.8`。
 - `--prediction-sampling-seed`：`ImpGTA` 预测下采样随机种子，默认 `1`。
 - `--task-window-start-seconds`：包裹抽样时间窗起点，单位秒。默认 `None`，表示数据集最早包裹时间。
 - `--task-window-end-seconds`：包裹抽样时间窗终点，单位秒。默认 `None`，表示数据集最晚包裹时间。
 - `--task-sampling-seed`：时间窗内随机抽样包裹时使用的随机种子，默认 `1`。
+- `--courier-alpha`：CAPA/DAPA bid 中 courier detour preference `alpha`，默认 `0.5`，可作为收益敏感性实验轴。
+- `--courier-beta`：CAPA/DAPA bid 中 service-score preference `beta`，默认 `1-alpha`。
+- `--courier-service-score`：courier service score 代理值，默认 `0.8`。
+- `--platform-quality-start`：第一个合作平台历史质量代理值，默认 `1.0`。
+- `--platform-quality-step`：合作平台质量递减步长，默认 `0.1`。
+- `--rl-future-feature-window-seconds`：RL-CAPA 第一阶段真实未来特征统计窗口，单位秒，默认 `300`。
 - `--seed-path`：复用已有 canonical environment seed，保证不同点位或不同轮次使用同一初始环境。
 
 `execution-mode` 的推荐用法：
@@ -157,6 +164,9 @@ python3 runner.py compare \
 - 环境会先根据 `--task-window-start-seconds` / `--task-window-end-seconds` 过滤候选任务。
 - 再在该时间窗内随机抽样 `--num-parcels` 个包裹，随机性由 `--task-sampling-seed` 控制。
 - 抽样完成后仍按时间顺序回放这些包裹。
+- 合作平台自有任务流使用同一时间窗与站点边界，从未被本地平台选中的候选任务中为每个平台构造 disjoint stream。
+- `ImpGTA` 的 `prediction_success_rate` 同时作用于本地 inner 未来窗口和合作平台 outer 未来窗口。
+- `ImpGTA` 的 cross settlement 复用 CAPA/DLAM bid/payment 逻辑；`BaseGTA` 保留参考算法 AIM 结算。
 
 如果要按受控方式运行 `Exp-1`，并在 `batch_size=30s` 下做多轮 CAPA 参数试验、把每轮结果先写到 `/tmp`，可以使用：
 
@@ -168,7 +178,7 @@ python3 experiments/run_chengdu_exp1_num_parcels.py \
   --preset formal \
   --algorithms capa greedy ramcom mra basegta impgta \
   --batch-size 30 \
-  --prediction-window-seconds 1800 \
+  --prediction-window-seconds 180 \
   --prediction-success-rate 0.8 \
   --prediction-sampling-seed 1 \
   --poll-seconds 10
@@ -203,7 +213,7 @@ python3 experiments/run_chengdu_exp1_num_parcels.py \
 
 - `run_chengdu_exp1_num_parcels.py`
   - 变动参数：`|Γ| = num_parcels`
-  - 固定参数默认值：`|C|=200`、`|P|=4`、每个平台 `50` 个 courier、容量 `50`、服务半径 `1.0km`、`batch_size=300s`、`prediction_window_seconds=1800`、`prediction_success_rate=0.8`、`prediction_sampling_seed=1`、`task_sampling_seed=1`
+  - 固定参数默认值：`|C|=200`、`|P|=4`、每个平台 `50` 个 courier、容量 `50`、服务半径 `1.0km`、`batch_size=300s`、`prediction_window_seconds=180`、`prediction_success_rate=0.8`、`prediction_sampling_seed=1`、`task_sampling_seed=1`
   - 输出指标：`TR vs |Γ|`、`CR vs |Γ|`、`BPT vs |Γ|`
   - 正式 split 命令：
 ```bash
@@ -220,7 +230,7 @@ python3 -u experiments/run_chengdu_exp1_num_parcels.py \
   --courier-capacity 50 \
   --service-radius-km 1.0 \
   --batch-size 30 \
-  --prediction-window-seconds 1800 \
+  --prediction-window-seconds 180 \
   --prediction-success-rate 0.8 \
   --prediction-sampling-seed 1 \
   --poll-seconds 10
@@ -233,7 +243,7 @@ python3 -u experiments/run_chengdu_exp1_num_parcels.py \
 ```
 - `run_chengdu_exp2_couriers.py`
   - 变动参数：`|C| = local_couriers`
-  - 固定参数默认值：`|Γ|=3000`、`|P|=4`、每个平台 `50` 个 courier、容量 `50`、服务半径 `1.0km`、`batch_size=300s`、`prediction_window_seconds=1800`、`prediction_success_rate=0.8`、`prediction_sampling_seed=1`
+  - 固定参数默认值：`|Γ|=3000`、`|P|=4`、每个平台 `50` 个 courier、容量 `50`、服务半径 `1.0km`、`batch_size=300s`、`prediction_window_seconds=180`、`prediction_success_rate=0.8`、`prediction_sampling_seed=1`
   - 输出指标：`TR vs |C|`、`CR vs |C|`、`BPT vs |C|`
   - 正式 split 命令：
 ```bash
@@ -250,14 +260,14 @@ python3 experiments/run_chengdu_exp2_couriers.py \
   --courier-capacity 50 \
   --service-radius-km 1.0 \
   --batch-size 300 \
-  --prediction-window-seconds 1800 \
+  --prediction-window-seconds 180 \
   --prediction-success-rate 0.8 \
   --prediction-sampling-seed 1 \
   --poll-seconds 10
 ```
 - `run_chengdu_exp3_radius.py`
   - 变动参数：`rad = service_radius`
-  - 固定参数默认值：`|Γ|=3000`、`|C|=200`、`|P|=4`、每个平台 `50` 个 courier、容量 `50`、`batch_size=300s`、`prediction_window_seconds=1800`、`prediction_success_rate=0.8`、`prediction_sampling_seed=1`
+  - 固定参数默认值：`|Γ|=3000`、`|C|=200`、`|P|=4`、每个平台 `50` 个 courier、容量 `50`、`batch_size=300s`、`prediction_window_seconds=180`、`prediction_success_rate=0.8`、`prediction_sampling_seed=1`
   - 输出指标：`TR vs rad`、`CR vs rad`、`BPT vs rad`
   - 正式 split 命令：
 ```bash
@@ -274,14 +284,14 @@ python3 experiments/run_chengdu_exp3_radius.py \
   --couriers-per-platform 50 \
   --courier-capacity 50 \
   --batch-size 300 \
-  --prediction-window-seconds 1800 \
+  --prediction-window-seconds 180 \
   --prediction-success-rate 0.8 \
   --prediction-sampling-seed 1 \
   --poll-seconds 10
 ```
 - `run_chengdu_exp4_platforms.py`
   - 变动参数：`|P| = platforms`
-  - 固定参数默认值：`|Γ|=3000`、`|C|=200`、每个平台 `50` 个 courier、容量 `50`、服务半径 `1.0km`、`batch_size=300s`、`prediction_window_seconds=1800`、`prediction_success_rate=0.8`、`prediction_sampling_seed=1`
+  - 固定参数默认值：`|Γ|=3000`、`|C|=200`、每个平台 `50` 个 courier、容量 `50`、服务半径 `1.0km`、`batch_size=300s`、`prediction_window_seconds=180`、`prediction_success_rate=0.8`、`prediction_sampling_seed=1`
   - 输出指标：`TR vs |P|`、`CR vs |P|`、`BPT vs |P|`
   - 正式 split 命令：
 ```bash
@@ -298,14 +308,14 @@ python3 experiments/run_chengdu_exp4_platforms.py \
   --courier-capacity 50 \
   --service-radius-km 1.0 \
   --batch-size 300 \
-  --prediction-window-seconds 1800 \
+  --prediction-window-seconds 180 \
   --prediction-success-rate 0.8 \
   --prediction-sampling-seed 1 \
   --poll-seconds 10
 ```
 - `run_chengdu_exp5_default_compare.py`
   - 变动参数：无
-  - 固定参数默认值：`|Γ|=3000`、`|C|=200`、`|P|=4`、每个平台 `50` 个 courier、容量 `50`、服务半径 `1.0km`、`batch_size=300s`、`prediction_window_seconds=1800`、`prediction_success_rate=0.8`、`prediction_sampling_seed=1`
+  - 固定参数默认值：`|Γ|=3000`、`|C|=200`、`|P|=4`、每个平台 `50` 个 courier、容量 `50`、服务半径 `1.0km`、`batch_size=300s`、`prediction_window_seconds=180`、`prediction_success_rate=0.8`、`prediction_sampling_seed=1`
   - 输出指标：各算法默认设置下的 `TR`、`CR`、`BPT`
   - 默认对比命令：
 ```bash
@@ -320,13 +330,13 @@ python3 experiments/run_chengdu_exp5_default_compare.py \
   --courier-capacity 50 \
   --service-radius-km 1.0 \
   --batch-size 300 \
-  --prediction-window-seconds 1800 \
+  --prediction-window-seconds 180 \
   --prediction-success-rate 0.8 \
   --prediction-sampling-seed 1
 ```
 - `run_chengdu_exp6_capacity.py`
   - 变动参数：courier capacity
-  - 固定参数默认值：`|Γ|=3000`、`|C|=200`、`|P|=4`、每个平台 `50` 个 courier、服务半径 `1.0km`、`batch_size=300s`、`prediction_window_seconds=1800`、`prediction_success_rate=0.8`、`prediction_sampling_seed=1`
+  - 固定参数默认值：`|Γ|=3000`、`|C|=200`、`|P|=4`、每个平台 `50` 个 courier、服务半径 `1.0km`、`batch_size=300s`、`prediction_window_seconds=180`、`prediction_success_rate=0.8`、`prediction_sampling_seed=1`
   - 输出指标：`TR vs capacity`、`CR vs capacity`、`BPT vs capacity`
   - 正式 split 命令：
 ```bash
@@ -343,7 +353,7 @@ python3 experiments/run_chengdu_exp6_capacity.py \
   --couriers-per-platform 50 \
   --service-radius-km 1.0 \
   --batch-size 300 \
-  --prediction-window-seconds 1800 \
+  --prediction-window-seconds 180 \
   --prediction-success-rate 0.8 \
   --prediction-sampling-seed 1 \
   --poll-seconds 10
@@ -365,7 +375,7 @@ python3 experiments/run_chengdu_paper_suite.py \
   --courier-capacity 50 \
   --service-radius-km 1.0 \
   --batch-size 300 \
-  --prediction-window-seconds 1800 \
+  --prediction-window-seconds 180 \
   --prediction-success-rate 0.8 \
   --prediction-sampling-seed 1 \
   --max-workers 4
