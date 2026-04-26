@@ -29,6 +29,7 @@ class RLCAPAAlgorithmRunner(AlgorithmRunner):
         discount_factor: float = 0.9,
         entropy_coeff: float = 0.01,
         max_grad_norm: float = 0.5,
+        future_feature_window_seconds: int = 300,
         device: str | None = None,
     ) -> None:
         """Store the RL-CAPA hyperparameters exposed through the unified runner.
@@ -43,6 +44,7 @@ class RLCAPAAlgorithmRunner(AlgorithmRunner):
             discount_factor: Gamma used for discounted returns.
             entropy_coeff: Entropy regularization coefficient.
             max_grad_norm: Gradient clipping threshold.
+            future_feature_window_seconds: True future window used by stage-1 features.
             device: Optional torch device override.
         """
 
@@ -55,6 +57,7 @@ class RLCAPAAlgorithmRunner(AlgorithmRunner):
         self._discount_factor = discount_factor
         self._entropy_coeff = entropy_coeff
         self._max_grad_norm = max_grad_norm
+        self._future_feature_window_seconds = future_feature_window_seconds
         self._device = device
 
     def run(
@@ -82,6 +85,7 @@ class RLCAPAAlgorithmRunner(AlgorithmRunner):
             min_batch_size=self._min_batch_size,
             max_batch_size=self._max_batch_size,
             step_seconds=self._step_seconds,
+            future_feature_window_seconds=self._future_feature_window_seconds,
         )
         training_config = RLTrainingConfig(
             episodes=self._episodes,
@@ -127,6 +131,7 @@ def build_rl_capa_runner(
     discount_factor: float = 0.9,
     entropy_coeff: float = 0.01,
     max_grad_norm: float = 0.5,
+    future_feature_window_seconds: int = 300,
     device: str | None = None,
 ) -> RLCAPAAlgorithmRunner:
     """Build the unified RL-CAPA runner with explicit training hyperparameters."""
@@ -141,5 +146,6 @@ def build_rl_capa_runner(
         discount_factor=discount_factor,
         entropy_coeff=entropy_coeff,
         max_grad_norm=max_grad_norm,
+        future_feature_window_seconds=future_feature_window_seconds,
         device=device,
     )

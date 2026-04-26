@@ -10,12 +10,12 @@ Greedy evaluation:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from time import perf_counter
 from typing import List
 
 import numpy as np
 import torch
 
+from capa.metrics import compute_batch_processing_time
 from rl_capa.state_builder import RunningNormalizer, aggregate_stage2_states
 
 
@@ -69,27 +69,23 @@ def evaluate(
     info = env.reset()
     total_parcels = info["total_parcels"]
     step = 0
-    total_decision_time = 0.0
 
     with torch.no_grad():
         while not env.is_done() and step < max_steps:
             step += 1
 
             # Stage 1: argmax batch size
-            t_start = perf_counter()
             s1_raw = env.get_stage1_state()
             s1_norm = norm_s1.normalize(s1_raw)
             s1_tensor = torch.from_numpy(s1_norm).to(device)
             dist1 = pi1(s1_tensor)
             a1_index = dist1.probs.argmax().item()
             batch_duration = batch_action_values[a1_index]
-            total_decision_time += perf_counter() - t_start
 
             env.apply_batch_size(batch_duration)
             batch_parcels = env.current_eligible_parcels()
 
             # Stage 2: threshold 0.5
-            t_stage2 = perf_counter()
             s2_list = env.get_stage2_states(batch_parcels)
             if s2_list:
                 s2_normed = [norm_s2.normalize(s) for s in s2_list]
@@ -103,7 +99,6 @@ def evaluate(
                 }
             else:
                 decisions = {}
-            total_decision_time += perf_counter() - t_stage2
 
             env.apply_stage2_decisions(decisions)
 
@@ -120,7 +115,7 @@ def evaluate(
     return EvalResult(
         total_revenue=total_revenue,
         completion_rate=completion_rate,
-        batch_processing_time=total_decision_time,
+        batch_processing_time=compute_batch_processing_time(env.batch_reports()),
         total_parcels=total_parcels,
         assignments=len(accepted),
         steps=step,

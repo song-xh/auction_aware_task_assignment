@@ -482,7 +482,7 @@ def legacy_courier_to_capa(courier: Any, courier_id: str) -> Courier:
         capacity=float(getattr(courier, "max_weight")),
         current_load=float(getattr(courier, "re_weight")),
         route_locations=[getattr(task, "l_node") for task in getattr(courier, "re_schedule", [])],
-        available_from=0,
+        available_from=int(float(getattr(courier, "available_from", 0))),
         alpha=float(getattr(courier, "w", DEFAULT_COURIER_ALPHA)),
         beta=float(getattr(courier, "c", DEFAULT_COURIER_BETA)),
         service_score=float(getattr(courier, "service_score", DEFAULT_COURIER_SERVICE_SCORE)),

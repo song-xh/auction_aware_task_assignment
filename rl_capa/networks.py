@@ -13,16 +13,18 @@ import torch
 import torch.nn as nn
 from torch.distributions import Bernoulli, Categorical
 
+from rl_capa.state_builder import STAGE1_STATE_DIM, STAGE2_STATE_DIM
+
 
 class BatchSizeActor(nn.Module):
     """pi1: select batch time-window size.
 
-    Input:  s_t^(1) in R^4
+    Input:  s_t^(1) in R^6
     Hidden: 2-layer MLP, 128 units, ReLU
     Output: softmax over |A_b| discrete actions
     """
 
-    def __init__(self, state_dim: int = 4, num_actions: int = 11, hidden_dim: int = 128) -> None:
+    def __init__(self, state_dim: int = STAGE1_STATE_DIM, num_actions: int = 11, hidden_dim: int = 128) -> None:
         """Initialize pi1.
 
         Args:
@@ -43,7 +45,7 @@ class BatchSizeActor(nn.Module):
         """Compute action distribution.
 
         Args:
-            state: Tensor of shape (batch, 4) or (4,).
+            state: Tensor of shape (batch, 6) or (6,).
 
         Returns:
             Categorical distribution over batch-size actions.
@@ -60,7 +62,7 @@ class CrossOrNotActor(nn.Module):
     Output: sigmoid -> P(a_{t,i} = 1)
     """
 
-    def __init__(self, state_dim: int = 9, hidden_dim: int = 128) -> None:
+    def __init__(self, state_dim: int = STAGE2_STATE_DIM, hidden_dim: int = 128) -> None:
         """Initialize pi2.
 
         Args:
@@ -92,12 +94,12 @@ class CrossOrNotActor(nn.Module):
 class StateValueCritic(nn.Module):
     """V1: state value before first-stage action.
 
-    Input:  s_t^(1) in R^4
+    Input:  s_t^(1) in R^6
     Hidden: 2-layer MLP, 128 units, ReLU
     Output: scalar value
     """
 
-    def __init__(self, state_dim: int = 4, hidden_dim: int = 128) -> None:
+    def __init__(self, state_dim: int = STAGE1_STATE_DIM, hidden_dim: int = 128) -> None:
         """Initialize V1.
 
         Args:
@@ -117,7 +119,7 @@ class StateValueCritic(nn.Module):
         """Compute state value.
 
         Args:
-            state: Tensor of shape (batch, 4) or (4,).
+            state: Tensor of shape (batch, 6) or (6,).
 
         Returns:
             Scalar value tensor.
@@ -134,7 +136,7 @@ class ConditionalValueCritic(nn.Module):
     Output: scalar value
     """
 
-    def __init__(self, state_dim: int = 9, hidden_dim: int = 128) -> None:
+    def __init__(self, state_dim: int = STAGE2_STATE_DIM, hidden_dim: int = 128) -> None:
         """Initialize V2.
 
         Args:

@@ -119,17 +119,20 @@ class RLCAPAEnv:
         }
 
     def get_stage1_state(self) -> np.ndarray:
-        """Construct the 4-dimensional first-stage state ``s_t^(1)``."""
+        """Construct the 6-dimensional first-stage state ``s_t^(1)``."""
 
         runtime = self._require_runtime()
         pending_parcels = [legacy_task_to_parcel(task) for task in self._pending_tasks_before_next_batch()]
         local_couriers = self._snapshot_local_couriers()
+        future_window_end = runtime.current_time + self._rl_config.future_feature_window_seconds
         return build_stage1_state(
             pending_parcels=pending_parcels,
             local_couriers=local_couriers,
             travel_model=runtime.persistent_travel_model,
             now=runtime.current_time,
             service_radius_meters=runtime.service_radius_meters,
+            future_parcel_count=self._count_future_parcels(future_window_end),
+            future_courier_count=self._count_future_local_couriers(local_couriers, future_window_end),
         )
 
     def apply_batch_size(self, batch_size: int) -> None:
@@ -343,6 +346,31 @@ class RLCAPAEnv:
                 continue
             break
         return pending_tasks
+
+    def _count_future_parcels(self, future_window_end: int) -> int:
+        """Count true future parcel arrivals inside the configured feature window."""
+
+        runtime = self._require_runtime()
+        count = 0
+        pointer = runtime.next_task_index
+        while pointer < len(runtime.sorted_tasks):
+            task_time = int(float(getattr(runtime.sorted_tasks[pointer], "s_time")))
+            if task_time > future_window_end:
+                break
+            if task_time > runtime.current_time:
+                count += 1
+            pointer += 1
+        return count
+
+    def _count_future_local_couriers(self, local_couriers: Sequence[Courier], future_window_end: int) -> int:
+        """Count local couriers that become available inside the future window."""
+
+        runtime = self._require_runtime()
+        return sum(
+            1
+            for courier in local_couriers
+            if runtime.current_time < courier.available_from <= future_window_end
+        )
 
     def _snapshot_local_couriers(self) -> list[Courier]:
         """Return current CAPA courier projections for the local platform."""

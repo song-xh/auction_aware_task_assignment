@@ -12,6 +12,7 @@ class RLCAPAConfig:
     min_batch_size: int
     max_batch_size: int
     step_seconds: int = 60
+    future_feature_window_seconds: int = 300
 
     def batch_action_values(self) -> list[int]:
         """Return the discrete batch-size action values ``A_b``."""

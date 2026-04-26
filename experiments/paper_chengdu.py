@@ -58,6 +58,7 @@ DEFAULT_CHENGDU_PAPER_FIXED_CONFIG: dict[str, Any] = {
     "courier_service_score": DEFAULT_COURIER_SERVICE_SCORE,
     "platform_quality_start": DEFAULT_PLATFORM_QUALITY_START,
     "platform_quality_step": DEFAULT_PLATFORM_QUALITY_STEP,
+    "rl_future_feature_window_seconds": 300,
 }
 
 
@@ -332,6 +333,8 @@ def run_chengdu_paper_split_experiment(
             str(fixed_config["platform_quality_start"]),
             "--platform-quality-step",
             str(fixed_config["platform_quality_step"]),
+            "--rl-future-feature-window-seconds",
+            str(fixed_config["rl_future_feature_window_seconds"]),
         ]
         if fixed_config["courier_beta"] is not None:
             command.extend(["--courier-beta", str(fixed_config["courier_beta"])])
@@ -659,6 +662,7 @@ def build_script_parser(description: str) -> argparse.ArgumentParser:
     parser.add_argument("--courier-service-score", type=float, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["courier_service_score"])
     parser.add_argument("--platform-quality-start", type=float, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["platform_quality_start"])
     parser.add_argument("--platform-quality-step", type=float, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["platform_quality_step"])
+    parser.add_argument("--rl-future-feature-window-seconds", type=int, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["rl_future_feature_window_seconds"])
     parser.add_argument("--success-tr-ratio", type=float, default=0.9)
     parser.add_argument("--success-cr-gap", type=float, default=0.02)
     parser.add_argument("--utility-balance-gamma", type=float, default=None)
@@ -691,6 +695,7 @@ def build_fixed_config_from_args(args: argparse.Namespace) -> dict[str, Any]:
         "courier_service_score": getattr(args, "courier_service_score", DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["courier_service_score"]),
         "platform_quality_start": getattr(args, "platform_quality_start", DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["platform_quality_start"]),
         "platform_quality_step": getattr(args, "platform_quality_step", DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["platform_quality_step"]),
+        "rl_future_feature_window_seconds": getattr(args, "rl_future_feature_window_seconds", DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["rl_future_feature_window_seconds"]),
     }
 
 
@@ -730,6 +735,14 @@ def build_paper_runner_overrides_from_fixed_config(
             "prediction_window_seconds": int(fixed_config["prediction_window_seconds"]),
             "prediction_success_rate": float(fixed_config["prediction_success_rate"]),
             "prediction_sampling_seed": int(fixed_config["prediction_sampling_seed"]),
+        },
+        "rl-capa": {
+            "future_feature_window_seconds": int(
+                fixed_config.get(
+                    "rl_future_feature_window_seconds",
+                    DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["rl_future_feature_window_seconds"],
+                )
+            ),
         }
     }
     for algorithm, overrides in (explicit_overrides or {}).items():
