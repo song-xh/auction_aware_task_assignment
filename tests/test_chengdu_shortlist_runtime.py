@@ -6,8 +6,9 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from capa.models import Assignment, CAPAConfig, CAMAResult, CandidatePair, UtilityEvaluation
-from env.chengdu import run_time_stepped_chengdu_batches
+from capa.models import Assignment, CAPAConfig, CAMAResult, CandidatePair, DAPAResult, UtilityEvaluation
+from capa.utility import TimingAccumulator
+from env.chengdu import ChengduBatchRuntime, run_chengdu_cross_matching, run_time_stepped_chengdu_batches
 
 from tests.capa_test_support import FakeGeoIndex, FakeTravelModel
 
@@ -155,6 +156,71 @@ class ChengduShortlistRuntimeTest(unittest.TestCase):
         self.assertEqual(
             [courier.courier_id for courier in shortlist["1"]],
             ["local-1"],
+        )
+        self.assertNotIn(("far", "depot"), travel_model.distance_calls)
+        self.assertNotIn(("far", "parcel"), travel_model.distance_calls)
+
+    def test_cross_runtime_passes_shortlist_to_dapa_and_warms_only_shortlisted_pairs(self) -> None:
+        """Formal Chengdu cross path should prune partner couriers before warmup and DAPA."""
+
+        station = _build_station()
+        task = _build_task(1, "parcel")
+        near = _build_courier(1, station, "near")
+        far = _build_courier(2, station, "far")
+        travel_model = FakeTravelModel(
+            distances={
+                ("near", "depot"): 4.0,
+                ("near", "parcel"): 2.0,
+                ("parcel", "depot"): 2.0,
+                ("far", "depot"): 4.0,
+                ("far", "parcel"): 8.0,
+            }
+        )
+        geo_index = FakeGeoIndex(
+            lower_bounds={
+                ("near", "parcel"): 5.0,
+                ("far", "parcel"): 50.0,
+            }
+        )
+        runtime = ChengduBatchRuntime(
+            sorted_tasks=[task],
+            active_local_couriers=[],
+            active_partner_by_platform={"P1": [near, far]},
+            station_set=[station],
+            travel_model=travel_model,
+            config=CAPAConfig(),
+            movement=_draining_movement,
+            platform_base_prices={"P1": 2.0},
+            platform_sharing_rates={"P1": 0.5},
+            platform_qualities={"P1": 1.0},
+            service_radius_meters=10.0,
+            geo_index=geo_index,
+            speed_m_per_s=1.0,
+            step_seconds=10,
+            current_time=0,
+        )
+        captured: dict[str, object] = {}
+
+        def fake_run_dapa(parcels, platforms, travel_model, config, now, **kwargs):  # type: ignore[no-untyped-def]
+            captured["shortlist"] = kwargs.get("candidate_couriers_by_parcel")
+            return DAPAResult(
+                cross_assignments=[],
+                unassigned_parcels=list(parcels),
+                platform_bids=[],
+            )
+
+        with patch("env.chengdu.run_dapa", side_effect=fake_run_dapa):
+            realized = run_chengdu_cross_matching(
+                runtime=runtime,
+                auction_tasks=[task],
+                timing=TimingAccumulator(),
+            )
+
+        self.assertEqual(realized, [])
+        shortlist = captured["shortlist"]
+        self.assertEqual(
+            [courier.courier_id for courier in shortlist["1"]["P1"]],
+            ["P1-1"],
         )
         self.assertNotIn(("far", "depot"), travel_model.distance_calls)
         self.assertNotIn(("far", "parcel"), travel_model.distance_calls)
