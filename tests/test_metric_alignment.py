@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import py_compile
+import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -418,6 +419,76 @@ class MetricAlignmentTest(unittest.TestCase):
             patch("baselines.gta.drain_legacy_routes", return_value=1),
         ):
             run_impgta_baseline_environment(environment=build_environment(), prediction_success_rate=0.0)
+
+    def test_impgta_bpt_excludes_dlam_routing_delay(self) -> None:
+        """ImpGTA BPT should not include route-query delay introduced by DAPA settlement."""
+
+        class SlowTravelModel:
+            """Travel model that records an artificial delay on every distance query."""
+
+            speed = 1000.0
+
+            def __init__(self) -> None:
+                """Initialize deterministic distances and delay accounting."""
+
+                self.delay_seconds = 0.002
+                self.routing_delay_seconds = 0.0
+
+            def distance(self, start, end) -> float:
+                """Return a deterministic distance while simulating routing latency."""
+
+                self.routing_delay_seconds += self.delay_seconds
+                time.sleep(self.delay_seconds)
+                if start == end:
+                    return 0.0
+                if {start, end} == {"A", "X"}:
+                    return 1000.0
+                if {start, end} == {"X", "D"}:
+                    return 1000.0
+                if {start, end} == {"A", "D"}:
+                    return 1500.0
+                raise KeyError((start, end))
+
+            def travel_time(self, start, end) -> float:
+                """Return travel time derived from the delayed distance query."""
+
+                return self.distance(start, end) / self.speed
+
+        task = SimpleNamespace(num="t1", fare=20.0, s_time=0.0, d_time=300.0, weight=1.0, l_node="X")
+        local_courier = SimpleNamespace(num=1, location="L", re_schedule=[], re_weight=0.0, max_weight=0.0)
+        outer = SimpleNamespace(
+            num=11,
+            location="A",
+            re_schedule=[],
+            re_weight=0.0,
+            max_weight=5.0,
+            station=SimpleNamespace(l_node="D"),
+            station_num=1,
+            w=0.5,
+            c=0.5,
+            service_score=0.8,
+        )
+        travel_model = SlowTravelModel()
+        environment = SimpleNamespace(
+            tasks=[task],
+            local_couriers=[local_courier],
+            partner_couriers_by_platform={"P1": [outer]},
+            partner_tasks_by_platform={"P1": []},
+            movement_callback=lambda *args, **kwargs: None,
+            station_set=[],
+            travel_model=travel_model,
+            service_radius_km=None,
+            platform_base_prices={"P1": 1.0},
+            platform_sharing_rates={"P1": 0.5},
+            platform_qualities={"P1": 1.0},
+        )
+
+        with patch("baselines.gta.drain_legacy_routes", return_value=1):
+            result = run_impgta_baseline_environment(environment=environment, prediction_success_rate=0.0)
+
+        self.assertGreater(travel_model.routing_delay_seconds, 0.0)
+        self.assertGreaterEqual(result["BPT"], 0.0)
+        self.assertLess(result["BPT"], travel_model.routing_delay_seconds)
 
     def test_runner_builds_impgta_prediction_success_kwargs(self) -> None:
         """Unified runner kwargs should expose ImpGTA prediction-success controls."""
