@@ -10,7 +10,7 @@ import random
 from time import perf_counter
 from typing import Any, Callable, Dict, Iterable, List, Mapping, MutableSequence, Sequence
 
-from capa.cama import build_local_candidate_shortlist, run_cama
+from capa.cama import build_local_candidate_shortlist, is_feasible_local_match, run_cama
 from capa.config import (
     DEFAULT_COURIER_ALPHA,
     DEFAULT_COURIER_BETA,
@@ -32,6 +32,9 @@ from capa.utility import (
     PersistentDirectedDistanceCache,
     TimedTravelModel,
     TimingAccumulator,
+    build_route_nodes,
+    compute_local_courier_payment,
+    compute_local_platform_revenue_for_local_completion,
     find_best_local_insertion,
 )
 
@@ -1029,6 +1032,133 @@ def commit_chengdu_local_assignments(
         task for task in matching_runtime.task_lookup.values() if id(task) not in assigned_task_ids
     ]
     return local_assignments, remaining_tasks
+
+
+def run_chengdu_direct_local_matching(
+    runtime: ChengduBatchRuntime,
+    local_tasks: Sequence[Any],
+    timing: TimingAccumulator,
+) -> tuple[list[Assignment], list[Any]]:
+    """Directly match selected tasks to local couriers without CAMA thresholding.
+
+    Args:
+        runtime: Mutable Chengdu runtime shared by the RL-CAPA episode.
+        local_tasks: Legacy tasks whose second-stage action is local (`a=0`).
+        timing: Batch timing accumulator used to keep BPT accounting aligned.
+
+    Returns:
+        Tuple of accepted local assignments and unresolved legacy tasks.
+    """
+
+    if not local_tasks:
+        return [], []
+    started = perf_counter()
+    routing_before = timing.routing_time_seconds
+    insertion_before = timing.insertion_time_seconds
+    movement_before = timing.movement_time_seconds
+    timed_travel_model = TimedTravelModel(runtime.persistent_travel_model, timing)
+    local_snapshots = [
+        runtime.snapshot_cache.get(courier, courier_id=local_courier_snapshot_id(courier))
+        for courier in runtime.active_local_couriers
+    ]
+    parcels = [legacy_task_to_parcel(task) for task in local_tasks]
+    distance_matrix = BatchDistanceMatrix(timed_travel_model)
+    distance_matrix.precompute_for_insertions(local_snapshots, parcels)
+    local_lookup = {
+        local_courier_snapshot_id(courier): courier
+        for courier in runtime.active_local_couriers
+    }
+    assignments: list[Assignment] = []
+    unresolved_tasks: list[Any] = []
+    for task, parcel in zip(local_tasks, parcels):
+        best_candidate: tuple[float, float, str, int, Courier] | None = None
+        for courier in local_snapshots:
+            if not is_feasible_local_match(
+                parcel,
+                courier,
+                distance_matrix,
+                runtime.current_time,
+                service_radius_meters=runtime.service_radius_meters,
+                geo_index=runtime.geo_index,
+                speed_m_per_s=runtime.speed_m_per_s,
+            ):
+                continue
+            _, insertion_index = find_best_local_insertion(
+                parcel,
+                courier,
+                distance_matrix,
+                timing=timing,
+                insertion_cache=runtime.insertion_cache,
+                geo_index=runtime.geo_index,
+            )
+            increment = _calculate_insertion_increment(parcel, courier, distance_matrix, insertion_index)
+            arrival_time = runtime.current_time + distance_matrix.travel_time(courier.current_location, parcel.location)
+            candidate = (increment, arrival_time, courier.courier_id, insertion_index, courier)
+            if best_candidate is None or candidate[:4] < best_candidate[:4]:
+                best_candidate = candidate
+        if best_candidate is None:
+            unresolved_tasks.append(task)
+            continue
+        _, _, _, insertion_index, snapshot_courier = best_candidate
+        legacy_courier = local_lookup[snapshot_courier.courier_id]
+        apply_assignment_to_legacy_courier(task, legacy_courier, insertion_index)
+        snapshot_courier.route_locations.insert(insertion_index, parcel.location)
+        snapshot_courier.current_load += parcel.weight
+        runtime.snapshot_cache.invalidate(snapshot_courier.courier_id)
+        runtime.insertion_cache.invalidate_courier(snapshot_courier.courier_id)
+        runtime.accepted_assignment_ids.add(str(getattr(task, "num")))
+        assignment = Assignment(
+            parcel=parcel,
+            courier=snapshot_courier,
+            mode="local",
+            platform_id=None,
+            courier_payment=compute_local_courier_payment(
+                parcel_fare=parcel.fare,
+                local_payment_ratio=runtime.config.local_payment_ratio_zeta,
+            ),
+            platform_payment=compute_local_courier_payment(
+                parcel_fare=parcel.fare,
+                local_payment_ratio=runtime.config.local_payment_ratio_zeta,
+            ),
+            local_platform_revenue=compute_local_platform_revenue_for_local_completion(
+                parcel_fare=parcel.fare,
+                local_payment_ratio=runtime.config.local_payment_ratio_zeta,
+            ),
+            cooperating_platform_revenue=0.0,
+            courier_revenue=compute_local_courier_payment(
+                parcel_fare=parcel.fare,
+                local_payment_ratio=runtime.config.local_payment_ratio_zeta,
+            ),
+            utility_value=None,
+        )
+        assignments.append(bind_assignment_to_legacy_objects(assignment, task, legacy_courier))
+    elapsed = perf_counter() - started
+    timing.decision_time_seconds += max(
+        0.0,
+        elapsed
+        - (timing.routing_time_seconds - routing_before)
+        - (timing.insertion_time_seconds - insertion_before)
+        - (timing.movement_time_seconds - movement_before),
+    )
+    return assignments, unresolved_tasks
+
+
+def _calculate_insertion_increment(
+    parcel: Parcel,
+    courier: Courier,
+    travel_model: Any,
+    insertion_index: int,
+) -> float:
+    """Return exact extra distance added by inserting a parcel at one route index."""
+
+    route_nodes = build_route_nodes(courier)
+    start = route_nodes[insertion_index]
+    end = route_nodes[insertion_index + 1]
+    return (
+        float(travel_model.distance(start, parcel.location))
+        + float(travel_model.distance(parcel.location, end))
+        - float(travel_model.distance(start, end))
+    )
 
 
 def run_chengdu_cross_matching(
