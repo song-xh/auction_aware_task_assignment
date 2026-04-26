@@ -1306,8 +1306,21 @@ def run_chengdu_cross_matching(
     partner_snapshots = [courier for platform in partner_platforms for courier in platform.couriers]
     runtime.insertion_cache.prune_to_active_routes(partner_snapshots)
     timed_travel_model = TimedTravelModel(runtime.persistent_travel_model, timing)
+    cross_candidate_couriers_by_parcel = build_cross_candidate_shortlist(
+        remaining_parcels,
+        partner_platforms,
+        now=runtime.current_time,
+        service_radius_meters=runtime.service_radius_meters,
+        geo_index=runtime.geo_index,
+        speed_m_per_s=runtime.speed_m_per_s,
+    )
     distance_matrix = BatchDistanceMatrix(timed_travel_model)
-    distance_matrix.precompute_for_insertions(partner_snapshots, remaining_parcels)
+    distance_matrix.precompute_for_candidate_pairs(
+        (courier, parcel)
+        for parcel in remaining_parcels
+        for platform in partner_platforms
+        for courier in cross_candidate_couriers_by_parcel.get(parcel.parcel_id, {}).get(platform.platform_id, ())
+    )
     dapa_result = run_dapa(
         remaining_parcels,
         partner_platforms,
@@ -1319,6 +1332,7 @@ def run_chengdu_cross_matching(
         insertion_cache=runtime.insertion_cache,
         geo_index=runtime.geo_index,
         speed_m_per_s=runtime.speed_m_per_s,
+        candidate_couriers_by_parcel=cross_candidate_couriers_by_parcel,
         progress_callback=progress_callback,
     )
     realized: list[Assignment] = []
