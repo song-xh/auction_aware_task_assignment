@@ -142,6 +142,28 @@ class MetricAlignmentTest(unittest.TestCase):
         self.assertEqual(cloned.task_window_end_seconds, 500)
         self.assertEqual(cloned.task_sampling_seed, 21)
 
+    def test_environment_seed_preserves_partner_own_task_streams(self) -> None:
+        """Canonical Chengdu seeds should replay partner-platform own-task streams."""
+
+        partner_task = SimpleNamespace(num="p-own-1", s_time=30.0, d_time=300.0, fare=50.0)
+        environment = ChengduEnvironment(
+            tasks=[],
+            local_couriers=[],
+            partner_couriers_by_platform={"P1": []},
+            station_set=[],
+            travel_model=SimpleNamespace(),
+            platform_base_prices={"P1": 1.0},
+            platform_sharing_rates={"P1": 0.5},
+            platform_qualities={"P1": 1.0},
+            partner_tasks_by_platform={"P1": [partner_task]},
+        )
+
+        seed = build_environment_seed(environment)
+        cloned = clone_environment_from_seed(seed)
+
+        self.assertEqual([task.num for task in seed.partner_tasks_by_platform["P1"]], ["p-own-1"])
+        self.assertEqual([task.num for task in cloned.partner_tasks_by_platform["P1"]], ["p-own-1"])
+
     def test_impgta_prediction_success_rate_controls_future_window(self) -> None:
         """ImpGTA should preserve the full simplified future window when prediction success is 100%."""
 
@@ -195,6 +217,52 @@ class MetricAlignmentTest(unittest.TestCase):
         )
 
         self.assertEqual([task.num for task in predicted], ["t3", "t4", "t5"])
+
+    def test_impgta_outer_prediction_success_rate_changes_partner_bid_decision(self) -> None:
+        """ImpGTA outer bidding should use partner own-task predictions, not an empty future window."""
+
+        task = SimpleNamespace(num="t1", fare=20.0, s_time=0.0, d_time=300.0, weight=1.0, l_node="p1")
+        future_tasks = [
+            SimpleNamespace(num="p-f1", fare=100.0, s_time=10.0, d_time=400.0, weight=1.0, l_node="p2"),
+            SimpleNamespace(num="p-f2", fare=100.0, s_time=20.0, d_time=500.0, weight=1.0, l_node="p3"),
+        ]
+
+        def build_environment() -> SimpleNamespace:
+            local_courier = SimpleNamespace(num=1, location="local", re_schedule=[], re_weight=0.0, max_weight=5.0)
+            partner_courier = SimpleNamespace(num=11, location="outer", re_schedule=[], re_weight=0.0, max_weight=5.0)
+            return SimpleNamespace(
+                tasks=[task],
+                local_couriers=[local_courier],
+                partner_couriers_by_platform={"P1": [partner_courier]},
+                partner_tasks_by_platform={"P1": list(future_tasks)},
+                movement_callback=lambda *args, **kwargs: None,
+                station_set=[],
+                travel_model=SimpleNamespace(distance=lambda start, end: 0.0, travel_time=lambda start, end: 0.0),
+                service_radius_km=None,
+            )
+
+        def fake_select(*, couriers, **kwargs):
+            if getattr(couriers[0], "num") == 1:
+                return None
+            return GTABid(platform_id="", courier=couriers[0], dispatch_cost=1.0)
+
+        with (
+            patch("baselines.gta.select_available_courier_for_task", side_effect=fake_select),
+            patch("baselines.gta.drain_legacy_routes", return_value=1),
+        ):
+            zero_success = run_impgta_baseline_environment(
+                environment=build_environment(),
+                prediction_window_seconds=100,
+                prediction_success_rate=0.0,
+            )
+            full_success = run_impgta_baseline_environment(
+                environment=build_environment(),
+                prediction_window_seconds=100,
+                prediction_success_rate=1.0,
+            )
+
+        self.assertEqual(zero_success["accepted_assignments"], 1)
+        self.assertEqual(full_success["accepted_assignments"], 0)
 
     def test_runner_builds_impgta_prediction_success_kwargs(self) -> None:
         """Unified runner kwargs should expose ImpGTA prediction-success controls."""
@@ -344,6 +412,7 @@ class MetricAlignmentTest(unittest.TestCase):
             tasks=[task],
             local_couriers=[local_courier],
             partner_couriers_by_platform={"p1": [outer_one], "p2": [outer_two]},
+            partner_tasks_by_platform={"p1": [], "p2": []},
             movement_callback=lambda *args, **kwargs: None,
             station_set=[],
             travel_model=SimpleNamespace(distance=lambda start, end: 0.0, travel_time=lambda start, end: 0.0),
