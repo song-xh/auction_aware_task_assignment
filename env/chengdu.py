@@ -75,6 +75,7 @@ class ChengduEnvironment:
     platform_quality_step: float = DEFAULT_PLATFORM_QUALITY_STEP
     geo_index: GeoIndex | None = None
     travel_speed_m_per_s: float = 0.0
+    partner_tasks_by_platform: Mapping[str, Sequence[Any]] = field(default_factory=dict)
 
     @classmethod
     def build(
@@ -148,6 +149,10 @@ class ChengduEnvironment:
             "platform_quality_step": self.platform_quality_step,
             "geo_index": self.geo_index,
             "travel_speed_m_per_s": self.travel_speed_m_per_s,
+            "partner_tasks_by_platform": {
+                platform_id: list(tasks)
+                for platform_id, tasks in self.partner_tasks_by_platform.items()
+            },
         }
 
     def advance(self, seconds: int) -> None:
@@ -319,35 +324,14 @@ def select_station_pick_tasks(
     """Assign pick-up tasks to stations after deterministic random sampling inside one time window."""
     if num_parcels <= 0:
         raise ValueError("The requested parcel count must be positive.")
-    if not ordered_pick_tasks:
-        raise ValueError("At least one ordered pick-up task is required.")
-    min_time, max_time = legacy_pick_task_time_bounds(ordered_pick_tasks)
-    normalized_window_start = min_time if window_start_seconds is None else float(window_start_seconds)
-    normalized_window_end = max_time if window_end_seconds is None else float(window_end_seconds)
-    if normalized_window_start < min_time or normalized_window_start > max_time:
-        raise ValueError(
-            f"Task window start {normalized_window_start} is outside the dataset range [{min_time}, {max_time}]."
-        )
-    if normalized_window_end < min_time or normalized_window_end > max_time:
-        raise ValueError(
-            f"Task window end {normalized_window_end} is outside the dataset range [{min_time}, {max_time}]."
-        )
-    if normalized_window_start > normalized_window_end:
-        raise ValueError("Task window start must be less than or equal to task window end.")
     for station in station_set:
         station.f_pick_task_set = []
-    candidates: list[Any] = []
-    for task in ordered_pick_tasks:
-        task_time = float(getattr(task, "s_time"))
-        if task_time < normalized_window_start or task_time > normalized_window_end:
-            continue
-        for station in station_set:
-            station_range = getattr(station, "station_range", None)
-            if not station_range or len(station_range) != 4:
-                continue
-            if station_range[0] <= float(getattr(task, "l_lng")) < station_range[1] and station_range[2] <= float(getattr(task, "l_lat")) < station_range[3]:
-                candidates.append(task)
-                break
+    candidates = collect_station_pick_task_candidates(
+        station_set=station_set,
+        ordered_pick_tasks=ordered_pick_tasks,
+        window_start_seconds=window_start_seconds,
+        window_end_seconds=window_end_seconds,
+    )
     if len(candidates) < num_parcels:
         raise ValueError(
             f"Only {len(candidates)} pick-up tasks fall inside the requested time window and station bounds, fewer than the requested {num_parcels}."
@@ -370,6 +354,112 @@ def select_station_pick_tasks(
                 station.f_pick_task_set.append(task)
                 break
     return selected
+
+
+def collect_station_pick_task_candidates(
+    station_set: Sequence[Any],
+    ordered_pick_tasks: Sequence[Any],
+    window_start_seconds: float | None = None,
+    window_end_seconds: float | None = None,
+) -> list[Any]:
+    """Collect station-bounded pick-up candidates inside one explicit time window.
+
+    Args:
+        station_set: Legacy stations whose rectangular ranges define valid tasks.
+        ordered_pick_tasks: Pick-up task stream sorted by request time.
+        window_start_seconds: Optional inclusive start of the sampling window.
+        window_end_seconds: Optional inclusive end of the sampling window.
+
+    Returns:
+        Pick-up tasks that fall inside both the time window and a station range.
+    """
+
+    if not ordered_pick_tasks:
+        raise ValueError("At least one ordered pick-up task is required.")
+    min_time, max_time = legacy_pick_task_time_bounds(ordered_pick_tasks)
+    normalized_window_start = min_time if window_start_seconds is None else float(window_start_seconds)
+    normalized_window_end = max_time if window_end_seconds is None else float(window_end_seconds)
+    if normalized_window_start < min_time or normalized_window_start > max_time:
+        raise ValueError(
+            f"Task window start {normalized_window_start} is outside the dataset range [{min_time}, {max_time}]."
+        )
+    if normalized_window_end < min_time or normalized_window_end > max_time:
+        raise ValueError(
+            f"Task window end {normalized_window_end} is outside the dataset range [{min_time}, {max_time}]."
+        )
+    if normalized_window_start > normalized_window_end:
+        raise ValueError("Task window start must be less than or equal to task window end.")
+    candidates: list[Any] = []
+    for task in ordered_pick_tasks:
+        task_time = float(getattr(task, "s_time"))
+        if task_time < normalized_window_start or task_time > normalized_window_end:
+            continue
+        for station in station_set:
+            station_range = getattr(station, "station_range", None)
+            if not station_range or len(station_range) != 4:
+                continue
+            if station_range[0] <= float(getattr(task, "l_lng")) < station_range[1] and station_range[2] <= float(getattr(task, "l_lat")) < station_range[3]:
+                candidates.append(task)
+                break
+    return candidates
+
+
+def build_partner_own_task_streams(
+    station_set: Sequence[Any],
+    ordered_pick_tasks: Sequence[Any],
+    platform_ids: Sequence[str],
+    tasks_per_platform: int,
+    window_start_seconds: float | None = None,
+    window_end_seconds: float | None = None,
+    sampling_seed: int = 1,
+    excluded_task_ids: Iterable[str] = (),
+) -> dict[str, list[Any]]:
+    """Build deterministic disjoint own-task streams for cooperating platforms.
+
+    Args:
+        station_set: Legacy stations defining valid task geometry.
+        ordered_pick_tasks: Full ordered pick-up task stream.
+        platform_ids: Stable cooperating platform identifiers.
+        tasks_per_platform: Number of own tasks allocated to each platform.
+        window_start_seconds: Optional inclusive start of the sampling window.
+        window_end_seconds: Optional inclusive end of the sampling window.
+        sampling_seed: Base deterministic sampling seed.
+        excluded_task_ids: Local-platform task identifiers to exclude.
+
+    Returns:
+        Mapping from platform id to a time-sorted disjoint own-task stream.
+    """
+
+    if tasks_per_platform <= 0:
+        raise ValueError("tasks_per_platform must be positive.")
+    excluded_ids = set(excluded_task_ids)
+    candidates = [
+        task for task in collect_station_pick_task_candidates(
+            station_set=station_set,
+            ordered_pick_tasks=ordered_pick_tasks,
+            window_start_seconds=window_start_seconds,
+            window_end_seconds=window_end_seconds,
+        )
+        if str(getattr(task, "num")) not in excluded_ids
+    ]
+    streams: dict[str, list[Any]] = {}
+    remaining = list(candidates)
+    for platform_index, platform_id in enumerate(platform_ids, start=1):
+        if len(remaining) < tasks_per_platform:
+            raise ValueError(
+                f"Only {len(remaining)} remaining pick-up tasks are available for partner platform {platform_id}, "
+                f"fewer than the requested {tasks_per_platform}."
+            )
+        rng = random.Random(int(sampling_seed) + platform_index * 1_000_003)
+        selected = (
+            list(remaining)
+            if len(remaining) == tasks_per_platform
+            else rng.sample(remaining, tasks_per_platform)
+        )
+        selected_ids = {str(getattr(task, "num")) for task in selected}
+        streams[platform_id] = sort_legacy_tasks(selected)
+        remaining = [task for task in remaining if str(getattr(task, "num")) not in selected_ids]
+    return streams
 
 
 def assign_delivery_tasks_to_stations(station_set: Sequence[Any], ordered_delivery_tasks: Sequence[Any]) -> None:
@@ -1587,6 +1677,7 @@ def build_framework_chengdu_environment(
     seeded_couriers: list[Any] = []
     station_by_num: dict[int, Any] = {}
     tasks: list[Any] = []
+    partner_tasks_by_platform: dict[str, list[Any]] = {}
     framework.pick_task_set = []
     for delivery_seed_count in iter_delivery_seed_counts(required_couriers, len(ordered_delivery)):
         framework.delivery_task_set = ordered_delivery[:delivery_seed_count]
@@ -1616,6 +1707,17 @@ def build_framework_chengdu_environment(
             window_start_seconds=task_window_start_seconds,
             window_end_seconds=task_window_end_seconds,
             sampling_seed=task_sampling_seed,
+        )
+        platform_ids = [f"P{platform_index + 1}" for platform_index in range(cooperating_platform_count)]
+        partner_tasks_by_platform = build_partner_own_task_streams(
+            station_set=station_set,
+            ordered_pick_tasks=ordered_pick,
+            platform_ids=platform_ids,
+            tasks_per_platform=num_parcels,
+            window_start_seconds=task_window_start_seconds,
+            window_end_seconds=task_window_end_seconds,
+            sampling_seed=task_sampling_seed,
+            excluded_task_ids={str(getattr(task, "num")) for task in tasks},
         )
         if len(seeded_couriers) >= required_couriers and len(tasks) >= num_parcels:
             break
@@ -1667,4 +1769,5 @@ def build_framework_chengdu_environment(
         platform_quality_step=float(platform_quality_step),
         geo_index=build_geo_index_from_travel_model(travel_model),
         travel_speed_m_per_s=get_travel_speed_m_per_s(travel_model),
+        partner_tasks_by_platform=partner_tasks_by_platform,
     )

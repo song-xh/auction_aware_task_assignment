@@ -419,6 +419,21 @@ def future_tasks_within_window(
     return [task for task in future_tasks if rng.random() < float(prediction_success_rate)]
 
 
+def platform_prediction_sampling_seed(base_seed: int, platform_id: str) -> int:
+    """Derive a stable per-platform prediction seed for ImpGTA future windows.
+
+    Args:
+        base_seed: Experiment-level prediction sampling seed.
+        platform_id: Stable cooperating platform identifier.
+
+    Returns:
+        Deterministic integer seed independent of Python hash randomization.
+    """
+
+    platform_offset = sum((index + 1) * ord(character) for index, character in enumerate(str(platform_id)))
+    return int(base_seed) * 1_000_003 + platform_offset
+
+
 def advance_simulation(
     local_couriers: MutableSequence[Any],
     partner_couriers_by_platform: Mapping[str, MutableSequence[Any]],
@@ -460,6 +475,17 @@ def _run_gta_environment(
         platform_id: list(couriers)
         for platform_id, couriers in environment.partner_couriers_by_platform.items()
     }
+    partner_tasks_by_platform = {
+        platform_id: sort_legacy_tasks(list(tasks))
+        for platform_id, tasks in getattr(environment, "partner_tasks_by_platform", {}).items()
+    }
+    if algorithm == "impgta":
+        missing_partner_task_streams = sorted(set(partner_couriers_by_platform) - set(partner_tasks_by_platform))
+        if missing_partner_task_streams:
+            raise ValueError(
+                "ImpGTA requires partner own-task streams for every cooperating platform: "
+                f"missing {missing_partner_task_streams}."
+            )
     movement = environment.movement_callback or framework_movement_callback
     timing = TimingAccumulator()
     timed_travel_model = TimedTravelModel(environment.travel_model, timing)
@@ -552,6 +578,18 @@ def _run_gta_environment(
 
             outer_bids: list[GTABid] = []
             for platform_id, partner_couriers in partner_couriers_by_platform.items():
+                partner_future_tasks: list[Any] = []
+                if algorithm == "impgta" and prediction_window_seconds is not None:
+                    partner_future_tasks = future_tasks_within_window(
+                        partner_tasks_by_platform[platform_id],
+                        current_time,
+                        prediction_window_seconds,
+                        prediction_success_rate=prediction_success_rate,
+                        prediction_sampling_seed=platform_prediction_sampling_seed(
+                            prediction_sampling_seed,
+                            platform_id,
+                        ),
+                    )
                 partner_bid = select_available_courier_for_task(
                     task=task,
                     couriers=partner_couriers,
@@ -572,7 +610,7 @@ def _run_gta_environment(
                             current_time,
                             prediction_window_seconds or 0,
                         ),
-                        future_tasks=[],
+                        future_tasks=partner_future_tasks,
                     ):
                         continue
                 outer_bids.append(

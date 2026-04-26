@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pickle
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
@@ -31,6 +31,7 @@ class ChengduEnvironmentSeed:
         tasks: Deep-copiable initial task objects.
         local_couriers: Deep-copiable initial local courier objects.
         partner_couriers_by_platform: Deep-copiable initial partner courier pools.
+        partner_tasks_by_platform: Deep-copiable partner own-task streams.
         station_set: Deep-copiable initial station objects.
         travel_model: Shared read-only travel model object.
         platform_base_prices: Platform base-price configuration.
@@ -65,6 +66,7 @@ class ChengduEnvironmentSeed:
     platform_quality_step: float = DEFAULT_PLATFORM_QUALITY_STEP
     geo_index: Any | None = None
     travel_speed_m_per_s: float = 0.0
+    partner_tasks_by_platform: Mapping[str, Sequence[Any]] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         """Validate and materialize derived courier preference weights."""
@@ -83,6 +85,12 @@ def build_environment_seed(environment: ChengduEnvironment) -> ChengduEnvironmen
             {
                 platform_id: list(couriers)
                 for platform_id, couriers in environment.partner_couriers_by_platform.items()
+            }
+        ),
+        partner_tasks_by_platform=deepcopy(
+            {
+                platform_id: list(tasks)
+                for platform_id, tasks in environment.partner_tasks_by_platform.items()
             }
         ),
         station_set=deepcopy(list(environment.station_set)),
@@ -115,6 +123,12 @@ def clone_environment_from_seed(seed: ChengduEnvironmentSeed) -> ChengduEnvironm
             {
                 platform_id: list(couriers)
                 for platform_id, couriers in seed.partner_couriers_by_platform.items()
+            }
+        ),
+        partner_tasks_by_platform=deepcopy(
+            {
+                platform_id: list(tasks)
+                for platform_id, tasks in seed.partner_tasks_by_platform.items()
             }
         ),
         station_set=deepcopy(list(seed.station_set)),
@@ -156,6 +170,12 @@ def save_environment_seed(seed: ChengduEnvironmentSeed, output_path: Path) -> No
             {
                 platform_id: list(couriers)
                 for platform_id, couriers in seed.partner_couriers_by_platform.items()
+            }
+        ),
+        "partner_tasks_by_platform": deepcopy(
+            {
+                platform_id: list(tasks)
+                for platform_id, tasks in seed.partner_tasks_by_platform.items()
             }
         ),
         "station_set": deepcopy(list(seed.station_set)),
@@ -207,6 +227,7 @@ def load_environment_seed(
         tasks=payload["tasks"],
         local_couriers=payload["local_couriers"],
         partner_couriers_by_platform=payload["partner_couriers_by_platform"],
+        partner_tasks_by_platform=payload.get("partner_tasks_by_platform", {}),
         station_set=payload["station_set"],
         travel_model=travel_model,
         platform_base_prices=payload["platform_base_prices"],
@@ -254,6 +275,10 @@ def derive_environment_from_seed(seed: ChengduEnvironmentSeed, num_parcels: int)
         if task_id is not None
     }
     environment.tasks = selected_tasks
+    environment.partner_tasks_by_platform = {
+        platform_id: sorted(list(tasks), key=_task_sort_key)[:num_parcels]
+        for platform_id, tasks in environment.partner_tasks_by_platform.items()
+    }
     for station in environment.station_set:
         _filter_station_sequence(station, "f_pick_task_set", selected_ids)
     return environment
@@ -309,6 +334,11 @@ def derive_environment_with_platforms_from_seed(
         )
     environment.partner_couriers_by_platform = dict(platform_items[:platform_count])
     selected_platforms = set(environment.partner_couriers_by_platform)
+    environment.partner_tasks_by_platform = {
+        platform_id: tasks
+        for platform_id, tasks in environment.partner_tasks_by_platform.items()
+        if platform_id in selected_platforms
+    }
     environment.platform_base_prices = {
         platform_id: price
         for platform_id, price in environment.platform_base_prices.items()
