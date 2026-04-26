@@ -255,6 +255,7 @@ class ChengduMatchingRuntime:
     task_lookup: Mapping[str, Any]
     local_lookup: Mapping[str, Any]
     distance_matrix: BatchDistanceMatrix
+    local_candidate_couriers_by_parcel: Mapping[str, Sequence[Courier]]
 
 
 def limit_legacy_tasks(
@@ -1074,8 +1075,20 @@ def build_chengdu_local_matching_runtime(
     ]
     runtime.insertion_cache.prune_to_active_routes(local_snapshots)
     batch_parcels = [legacy_task_to_parcel(task) for task in prepared_batch.eligible_tasks]
+    local_candidate_couriers_by_parcel = build_local_candidate_shortlist(
+        batch_parcels,
+        local_snapshots,
+        now=runtime.current_time,
+        service_radius_meters=runtime.service_radius_meters,
+        geo_index=runtime.geo_index,
+        speed_m_per_s=runtime.speed_m_per_s,
+    )
     distance_matrix = BatchDistanceMatrix(timed_travel_model)
-    distance_matrix.precompute_for_insertions(local_snapshots, batch_parcels)
+    distance_matrix.precompute_for_candidate_pairs(
+        (courier, parcel)
+        for parcel in batch_parcels
+        for courier in local_candidate_couriers_by_parcel.get(parcel.parcel_id, ())
+    )
     return ChengduMatchingRuntime(
         timing=timing,
         timed_travel_model=timed_travel_model,
@@ -1086,6 +1099,7 @@ def build_chengdu_local_matching_runtime(
             local_courier_snapshot_id(courier): courier for courier in runtime.active_local_couriers
         },
         distance_matrix=distance_matrix,
+        local_candidate_couriers_by_parcel=local_candidate_couriers_by_parcel,
     )
 
 
@@ -1527,6 +1541,7 @@ def run_time_stepped_chengdu_batches(
             insertion_cache=runtime.insertion_cache,
             geo_index=runtime.geo_index,
             speed_m_per_s=runtime.speed_m_per_s,
+            candidate_couriers_by_parcel=matching_runtime.local_candidate_couriers_by_parcel,
             threshold_history=runtime.threshold_history,
             progress_callback=(
                 None
