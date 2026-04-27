@@ -62,8 +62,8 @@ class ExperimentConfig:
     task_window_start_seconds: float | None = None
     task_window_end_seconds: float | None = None
     task_sampling_seed: int = 1
-    partner_history_task_count_start: int = 25_000
-    partner_history_task_count_step: int = 2_500
+    partner_history_task_count_start: int = 0
+    partner_history_task_count_step: int = 0
     courier_alpha: float = DEFAULT_COURIER_ALPHA
     courier_beta: float | None = None
     courier_service_score: float = DEFAULT_COURIER_SERVICE_SCORE
