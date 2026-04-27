@@ -102,7 +102,7 @@ def run_mra_baseline_environment(
     sharing_rate: float = DEFAULT_MRA_SHARING_RATE,
     local_payment_ratio: float = DEFAULT_LOCAL_PAYMENT_RATIO,
     progress_callback: Callable[[Mapping[str, Any]], None] | None = None,
-) -> dict[str, float]:
+) -> dict[str, Any]:
     """Run the Chengdu-adapted MRA baseline on the unified environment.
 
     Args:
@@ -124,6 +124,11 @@ def run_mra_baseline_environment(
             "BPT": 0.0,
             "delivered_parcels": 0,
             "accepted_assignments": 0,
+            "local_assignment_count": 0,
+            "cross_assignment_count": 0,
+            "unresolved_parcel_count": 0,
+            "partner_cross_assignment_counts": {},
+            "partner_cross_revenues": {},
         }
 
     local_couriers = list(environment.local_couriers)
@@ -270,4 +275,9 @@ def run_mra_baseline_environment(
         "BPT": timing.decision_time_seconds,
         "delivered_parcels": delivered_parcels,
         "accepted_assignments": accepted_assignments,
+        "local_assignment_count": accepted_assignments,
+        "cross_assignment_count": 0,
+        "unresolved_parcel_count": max(0, total_tasks - accepted_assignments),
+        "partner_cross_assignment_counts": {},
+        "partner_cross_revenues": {},
     }

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections import defaultdict
+from datetime import datetime
 import json
 from pathlib import Path
 from typing import Any, Callable, Mapping
@@ -19,6 +21,7 @@ from capa.models import CAPAConfig
 from env.chengdu import run_time_stepped_chengdu_batches
 
 from .base import AlgorithmRunner
+from .summary_utils import build_algorithm_summary
 
 
 class CAPAAlgorithmRunner(AlgorithmRunner):
@@ -58,6 +61,7 @@ class CAPAAlgorithmRunner(AlgorithmRunner):
         progress_callback: Callable[[Mapping[str, Any]], None] | None = None,
     ) -> dict[str, Any]:
         """Execute CAPA on the provided Chengdu environment and return a normalized summary."""
+        started_at = datetime.now().astimezone()
         config = CAPAConfig(
             batch_size=self._batch_size,
             utility_balance_gamma=self._utility_balance_gamma,
@@ -84,24 +88,48 @@ class CAPAAlgorithmRunner(AlgorithmRunner):
             speed_m_per_s=float(getattr(environment, "travel_speed_m_per_s", 0.0)),
             progress_callback=progress_callback,
         )
-        summary = {
-            "algorithm": "capa",
-            "batch_size": self._batch_size,
-            "config": {
+        finished_at = datetime.now().astimezone()
+        partner_cross_assignment_counts: dict[str, int] = defaultdict(int)
+        partner_cross_revenues: dict[str, float] = defaultdict(float)
+        local_assignment_count = 0
+        cross_assignment_count = 0
+        for assignment in result.matching_plan:
+            if assignment.mode == "local":
+                local_assignment_count += 1
+                continue
+            cross_assignment_count += 1
+            if assignment.platform_id is not None:
+                partner_cross_assignment_counts[assignment.platform_id] += 1
+                partner_cross_revenues[assignment.platform_id] += float(assignment.cooperating_platform_revenue)
+        metrics = {
+            "TR": result.metrics.total_revenue,
+            "CR": result.metrics.completion_rate,
+            "BPT": result.metrics.batch_processing_time,
+            "delivered_parcels": result.metrics.delivered_parcel_count,
+            "accepted_assignments": result.metrics.accepted_parcel_count,
+        }
+        summary = build_algorithm_summary(
+            algorithm="capa",
+            environment=environment,
+            metrics=metrics,
+            local_assignment_count=local_assignment_count,
+            cross_assignment_count=cross_assignment_count,
+            unresolved_parcel_count=len(list(result.unassigned_parcels)),
+            partner_cross_assignment_counts=partner_cross_assignment_counts,
+            partner_cross_revenues=partner_cross_revenues,
+            started_at=started_at,
+            finished_at=finished_at,
+            extra_fields={
+                "batch_size": self._batch_size,
+                "config": {
                 "utility_balance_gamma": self._utility_balance_gamma,
                 "threshold_omega": self._threshold_omega,
                 "local_payment_ratio_zeta": self._local_payment_ratio_zeta,
                 "local_sharing_rate_mu1": self._local_sharing_rate_mu1,
                 "cross_platform_sharing_rate_mu2": self._cross_platform_sharing_rate_mu2,
             },
-            "metrics": {
-                "TR": result.metrics.total_revenue,
-                "CR": result.metrics.completion_rate,
-                "BPT": result.metrics.batch_processing_time,
-                "delivered_parcels": result.metrics.delivered_parcel_count,
-                "accepted_assignments": result.metrics.accepted_parcel_count,
             },
-        }
+        )
         if output_dir is not None:
             output_dir.mkdir(parents=True, exist_ok=True)
             save_experiment_plots(result.batch_reports, result.metrics, output_dir)
