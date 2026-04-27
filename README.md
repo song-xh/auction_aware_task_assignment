@@ -267,11 +267,13 @@ python3 experiments/run_chengdu_exp2_couriers.py \
   --couriers-per-platform 50 \
   --courier-capacity 50 \
   --service-radius-km 1.0 \
-  --batch-size 300 \
+  --batch-size 30 \
   --prediction-window-seconds 180 \
   --prediction-success-rate 0.8 \
   --prediction-sampling-seed 1 \
-  --poll-seconds 10
+  --poll-seconds 10 \
+  --task-window-start-seconds 0 \
+  --task-window-end-seconds 3600
 ```
 - `run_chengdu_exp3_radius.py`
   - 变动参数：`rad = service_radius`
@@ -291,11 +293,13 @@ python3 experiments/run_chengdu_exp3_radius.py \
   --platforms 4 \
   --couriers-per-platform 50 \
   --courier-capacity 50 \
-  --batch-size 300 \
+  --batch-size 30 \
   --prediction-window-seconds 180 \
   --prediction-success-rate 0.8 \
   --prediction-sampling-seed 1 \
-  --poll-seconds 10
+  --poll-seconds 10 \
+  --task-window-start-seconds 0 \
+  --task-window-end-seconds 3600
 ```
 - `run_chengdu_exp4_platforms.py`
   - 变动参数：`|P| = platforms`
@@ -315,11 +319,13 @@ python3 experiments/run_chengdu_exp4_platforms.py \
   --couriers-per-platform 50 \
   --courier-capacity 50 \
   --service-radius-km 1.0 \
-  --batch-size 300 \
+  --batch-size 30 \
   --prediction-window-seconds 180 \
   --prediction-success-rate 0.8 \
   --prediction-sampling-seed 1 \
-  --poll-seconds 10
+  --poll-seconds 10 \
+  --task-window-start-seconds 0 \
+  --task-window-end-seconds 3600
 ```
 - `run_chengdu_exp5_default_compare.py`
   - 变动参数：无
@@ -337,10 +343,12 @@ python3 experiments/run_chengdu_exp5_default_compare.py \
   --couriers-per-platform 50 \
   --courier-capacity 50 \
   --service-radius-km 1.0 \
-  --batch-size 300 \
+  --batch-size 30 \
   --prediction-window-seconds 180 \
   --prediction-success-rate 0.8 \
-  --prediction-sampling-seed 1
+  --prediction-sampling-seed 1 \
+  --task-window-start-seconds 0 \
+  --task-window-end-seconds 3600
 ```
 - `run_chengdu_exp6_capacity.py`
   - 变动参数：courier capacity
@@ -364,7 +372,9 @@ python3 experiments/run_chengdu_exp6_capacity.py \
   --prediction-window-seconds 180 \
   --prediction-success-rate 0.8 \
   --prediction-sampling-seed 1 \
-  --poll-seconds 10
+  --poll-seconds 10 \
+  --task-window-start-seconds 0 \
+  --task-window-end-seconds 3600
 ```
 - `run_chengdu_paper_suite.py`
   - 按 preset 批量运行上述所有 sweep
