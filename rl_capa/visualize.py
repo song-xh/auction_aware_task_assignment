@@ -12,10 +12,22 @@ Plots 7 curves with sliding-window smoothing (window=50):
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import List, Sequence
 
 import numpy as np
+
+from capa.metrics import compute_completion_rate, compute_total_revenue
+from capa.models import BatchReport
+
+
+def _configure_matplotlib_cache() -> None:
+    """Ensure matplotlib uses a writable cache directory in this environment."""
+
+    cache_dir = Path("/tmp/matplotlib")
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    os.environ.setdefault("MPLCONFIGDIR", str(cache_dir))
 
 
 def smooth(values: Sequence[float], window: int = 50) -> np.ndarray:
@@ -58,6 +70,7 @@ def plot_training_curves(
     Returns:
         Path to saved image.
     """
+    _configure_matplotlib_cache()
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -107,3 +120,84 @@ def plot_training_curves(
     fig.savefig(str(output_path), dpi=150)
     plt.close(fig)
     return output_path
+
+
+def plot_evaluation_curves(
+    batch_reports: Sequence[BatchReport],
+    total_parcels: int,
+    total_revenue: float,
+    completion_rate: float,
+    batch_processing_time: float,
+    output_dir: str | Path,
+) -> dict[str, str]:
+    """Plot batch-level evaluation curves and return their saved paths.
+
+    Args:
+        batch_reports: Realized batch reports from one evaluation episode.
+        total_parcels: Total parcel count in the episode.
+        total_revenue: Final TR metric used in the chart title.
+        completion_rate: Final CR metric used in the chart title.
+        batch_processing_time: Final BPT metric used in the chart title.
+        output_dir: Directory receiving the saved plot files.
+
+    Returns:
+        Mapping of metric label to saved image path.
+    """
+    _configure_matplotlib_cache()
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    normalized_output_dir = Path(output_dir)
+    normalized_output_dir.mkdir(parents=True, exist_ok=True)
+
+    tr_values: list[float] = []
+    cr_values: list[float] = []
+    bpt_values: list[float] = []
+    batch_indices = list(range(1, len(batch_reports) + 1))
+
+    for report in batch_reports:
+        assignments = [*report.local_assignments, *report.cross_assignments]
+        tr_values.append(compute_total_revenue(assignments))
+        cr_values.append(
+            compute_completion_rate(
+                [None] * report.delivered_parcel_count,
+                total_parcels,
+            )
+        )
+        bpt_values.append(report.timing.decision_time_seconds)
+
+    paths = {
+        "TR": str(normalized_output_dir / "tr_over_batches.png"),
+        "CR": str(normalized_output_dir / "cr_over_batches.png"),
+        "BPT": str(normalized_output_dir / "bpt_over_batches.png"),
+    }
+
+    plt.figure()
+    plt.plot(batch_indices, tr_values, marker="o")
+    plt.title(f"TR Over Batches (Total={total_revenue:.2f})")
+    plt.xlabel("Batch")
+    plt.ylabel("TR")
+    plt.tight_layout()
+    plt.savefig(paths["TR"], dpi=150)
+    plt.close()
+
+    plt.figure()
+    plt.plot(batch_indices, cr_values, marker="o")
+    plt.title(f"CR Over Batches (Final={completion_rate:.4f})")
+    plt.xlabel("Batch")
+    plt.ylabel("CR")
+    plt.tight_layout()
+    plt.savefig(paths["CR"], dpi=150)
+    plt.close()
+
+    plt.figure()
+    plt.plot(batch_indices, bpt_values, marker="o")
+    plt.title(f"BPT Over Batches (Total={batch_processing_time:.4f}s)")
+    plt.xlabel("Batch")
+    plt.ylabel("BPT (s)")
+    plt.tight_layout()
+    plt.savefig(paths["BPT"], dpi=150)
+    plt.close()
+
+    return paths

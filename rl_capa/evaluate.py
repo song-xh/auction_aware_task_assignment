@@ -13,6 +13,7 @@ from .config import RLCAPAConfig, RLTrainingConfig
 from .env import RLCAPAEnv
 from .evaluate_core import EvalResult, evaluate, run_capa_baseline
 from .trainer import RLCAPATrainer, TrainingConfig
+from .visualize import plot_evaluation_curves
 
 
 def evaluate_rl_capa(
@@ -74,6 +75,14 @@ def evaluate_rl_capa(
         },
     }
     output_dir.mkdir(parents=True, exist_ok=True)
+    summary["plots"] = plot_evaluation_curves(
+        batch_reports=env.batch_reports(),
+        total_parcels=result.total_parcels,
+        total_revenue=result.total_revenue,
+        completion_rate=result.completion_rate,
+        batch_processing_time=result.batch_processing_time,
+        output_dir=output_dir,
+    )
     with (output_dir / "summary.json").open("w", encoding="utf-8") as handle:
         json.dump(summary, handle, indent=2)
     return summary

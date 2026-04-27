@@ -16,6 +16,7 @@ from experiments.seeding import ChengduEnvironmentSeed
 from .config import RLCAPAConfig, RLTrainingConfig
 from .env import RLCAPAEnv
 from .trainer import RLCAPATrainer, TrainingConfig
+from .visualize import plot_training_curves
 
 
 def train_rl_capa(
@@ -90,6 +91,10 @@ def train_rl_capa(
     finally:
         progress_bar.close()
     trainer.save_checkpoint(checkpoint_dir)
+    training_plot_path = plot_training_curves(
+        history=history,
+        output_path=output_dir / "training_curves.png",
+    )
 
     summary = {
         "episode_returns": [log.total_reward for log in history],
@@ -101,6 +106,9 @@ def train_rl_capa(
         "batch_size_sequences": [list(log.batch_sizes) for log in history],
         "checkpoint_dir": str(checkpoint_dir),
         "device": str(trainer.device),
+        "plots": {
+            "training_curves": str(training_plot_path),
+        },
     }
     with (output_dir / "training_summary.json").open("w", encoding="utf-8") as handle:
         json.dump(summary, handle, indent=2)

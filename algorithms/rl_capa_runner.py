@@ -123,7 +123,12 @@ class RLCAPAAlgorithmRunner(AlgorithmRunner):
         summary = {
             "algorithm": "rl-capa",
             "training": training_summary,
+            "evaluation": evaluation_summary,
             "metrics": evaluation_summary["metrics"],
+            "plots": {
+                "training": dict(training_summary.get("plots", {})),
+                "evaluation": dict(evaluation_summary.get("plots", {})),
+            },
         }
         with (normalized_output_dir / "summary.json").open("w", encoding="utf-8") as handle:
             json.dump(summary, handle, indent=2)
