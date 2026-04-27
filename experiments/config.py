@@ -62,6 +62,8 @@ class ExperimentConfig:
     task_window_start_seconds: float | None = None
     task_window_end_seconds: float | None = None
     task_sampling_seed: int = 1
+    partner_history_task_count_start: int = 25_000
+    partner_history_task_count_step: int = 2_500
     courier_alpha: float = DEFAULT_COURIER_ALPHA
     courier_beta: float | None = None
     courier_service_score: float = DEFAULT_COURIER_SERVICE_SCORE
@@ -104,6 +106,8 @@ class ExperimentConfig:
             "task_window_start_seconds": self.task_window_start_seconds,
             "task_window_end_seconds": self.task_window_end_seconds,
             "task_sampling_seed": self.task_sampling_seed,
+            "partner_history_task_count_start": self.partner_history_task_count_start,
+            "partner_history_task_count_step": self.partner_history_task_count_step,
             "courier_alpha": self.courier_alpha,
             "courier_beta": self.courier_beta,
             "courier_service_score": self.courier_service_score,
@@ -149,6 +153,8 @@ class ExperimentConfig:
         if self.task_window_end_seconds is not None:
             kwargs["task_window_end_seconds"] = self.task_window_end_seconds
         kwargs["task_sampling_seed"] = self.task_sampling_seed
+        kwargs["partner_history_task_count_start"] = self.partner_history_task_count_start
+        kwargs["partner_history_task_count_step"] = self.partner_history_task_count_step
         kwargs["courier_alpha"] = self.courier_alpha
         kwargs["courier_beta"] = self.courier_beta
         kwargs["courier_service_score"] = self.courier_service_score

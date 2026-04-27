@@ -275,10 +275,6 @@ def derive_environment_from_seed(seed: ChengduEnvironmentSeed, num_parcels: int)
         if task_id is not None
     }
     environment.tasks = selected_tasks
-    environment.partner_tasks_by_platform = {
-        platform_id: sorted(list(tasks), key=_task_sort_key)[:num_parcels]
-        for platform_id, tasks in environment.partner_tasks_by_platform.items()
-    }
     for station in environment.station_set:
         _filter_station_sequence(station, "f_pick_task_set", selected_ids)
     return environment
