@@ -79,7 +79,6 @@ class RLCAPAAlgorithmRunner(AlgorithmRunner):
             Normalized experiment summary with training metadata and evaluation metrics.
         """
 
-        del progress_callback
         normalized_output_dir = Path("outputs/plots/rl_capa_run") if output_dir is None else output_dir
         normalized_output_dir.mkdir(parents=True, exist_ok=True)
         environment_seed = build_environment_seed(environment)
@@ -111,6 +110,7 @@ class RLCAPAAlgorithmRunner(AlgorithmRunner):
             rl_config=rl_config,
             training_config=training_config,
             output_dir=normalized_output_dir,
+            progress_callback=progress_callback,
         )
         evaluation_summary = evaluate_rl_capa(
             environment_seed=environment_seed,

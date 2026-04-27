@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, Mapping
 
 import numpy as np
 import torch
+from tqdm.auto import tqdm
 
 from capa.models import CAPAConfig
 from experiments.seeding import ChengduEnvironmentSeed
@@ -23,6 +24,7 @@ def train_rl_capa(
     rl_config: RLCAPAConfig,
     training_config: RLTrainingConfig,
     output_dir: Path,
+    progress_callback: Callable[[Mapping[str, float | int | bool]], None] | None = None,
 ) -> dict[str, Any]:
     """Train the hierarchical actor-critic RL-CAPA policy.
 
@@ -60,7 +62,33 @@ def train_rl_capa(
         ),
         num_batch_actions=len(rl_config.batch_action_values()),
     )
-    history = trainer.train(batch_action_values=rl_config.batch_action_values())
+    progress_bar = tqdm(
+        total=training_config.episodes,
+        desc="RL-CAPA train",
+        unit="ep",
+        disable=training_config.episodes <= 0,
+    )
+
+    def handle_progress(payload: Mapping[str, float | int | bool]) -> None:
+        """Bridge trainer progress events to the user-facing tqdm bar."""
+
+        progress_bar.update(1)
+        progress_bar.set_postfix(
+            reward=f"{float(payload['total_reward']):.2f}",
+            steps=int(payload["steps"]),
+            batch=f"{float(payload['avg_batch_size']):.1f}",
+            trunc="yes" if bool(payload["truncated"]) else "no",
+        )
+        if progress_callback is not None:
+            progress_callback(payload)
+
+    try:
+        history = trainer.train(
+            batch_action_values=rl_config.batch_action_values(),
+            progress_callback=handle_progress,
+        )
+    finally:
+        progress_bar.close()
     trainer.save_checkpoint(checkpoint_dir)
 
     summary = {

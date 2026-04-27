@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Mapping, Optional
 
 import numpy as np
 import torch
@@ -109,6 +109,7 @@ class EpisodeLog:
     assignments: int
     batch_sizes: List[int] = field(default_factory=list)
     cross_rate: float = 0.0
+    truncated: bool = False
 
 
 class RLCAPATrainer:
@@ -161,11 +162,16 @@ class RLCAPATrainer:
         # Training history
         self.history: List[EpisodeLog] = []
 
-    def train(self, batch_action_values: List[int]) -> List[EpisodeLog]:
+    def train(
+        self,
+        batch_action_values: List[int],
+        progress_callback: Callable[[Mapping[str, float | int | bool]], None] | None = None,
+    ) -> List[EpisodeLog]:
         """Run the full training loop.
 
         Args:
             batch_action_values: Ordered list of batch durations for A_b.
+            progress_callback: Optional structured progress sink invoked once per episode.
 
         Returns:
             List of per-episode logs.
@@ -176,6 +182,13 @@ class RLCAPATrainer:
         for episode_idx in range(self.config.num_episodes):
             log = self._run_episode(episode_idx)
             self.history.append(log)
+            if progress_callback is not None:
+                progress_callback(
+                    self._build_progress_payload(
+                        episode_log=log,
+                        total_episodes=self.config.num_episodes,
+                    )
+                )
 
         return self.history
 
@@ -225,6 +238,7 @@ class RLCAPATrainer:
         total_cross = sum(r.num_cross for r in episode_buffer)
         total_unassigned = sum(r.num_unassigned for r in episode_buffer)
         cross_rate = total_cross / max(total_unassigned, 1)
+        truncated = not self.env.is_done()
         return EpisodeLog(
             episode=episode_idx,
             total_reward=total_reward,
@@ -236,7 +250,31 @@ class RLCAPATrainer:
             assignments=len(self.env.delivered_parcels()),
             batch_sizes=batch_sizes,
             cross_rate=cross_rate,
+            truncated=truncated,
         )
+
+    def _build_progress_payload(
+        self,
+        episode_log: EpisodeLog,
+        total_episodes: int,
+    ) -> dict[str, float | int | bool]:
+        """Serialize one episode log into a compact structured progress payload."""
+
+        avg_batch_size = (
+            sum(episode_log.batch_sizes) / len(episode_log.batch_sizes)
+            if episode_log.batch_sizes
+            else 0.0
+        )
+        return {
+            "episode": episode_log.episode + 1,
+            "total_episodes": total_episodes,
+            "total_reward": episode_log.total_reward,
+            "steps": episode_log.steps,
+            "assignments": episode_log.assignments,
+            "avg_batch_size": avg_batch_size,
+            "cross_rate": episode_log.cross_rate,
+            "truncated": episode_log.truncated,
+        }
 
     def _collect_step(self) -> StepRecord:
         """Collect one environment step with both policy stages.
