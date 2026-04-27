@@ -38,6 +38,9 @@ from capa.utility import (
     find_best_local_insertion,
 )
 
+DEFAULT_PARTNER_HISTORY_TASK_COUNT_START = 25_000
+DEFAULT_PARTNER_HISTORY_TASK_COUNT_STEP = 2_500
+
 
 @dataclass(frozen=True)
 class StationBlueprint:
@@ -90,6 +93,8 @@ class ChengduEnvironment:
         task_window_start_seconds: float | None = None,
         task_window_end_seconds: float | None = None,
         task_sampling_seed: int = 1,
+        partner_history_task_count_start: int = DEFAULT_PARTNER_HISTORY_TASK_COUNT_START,
+        partner_history_task_count_step: int = DEFAULT_PARTNER_HISTORY_TASK_COUNT_STEP,
         courier_alpha: float = DEFAULT_COURIER_ALPHA,
         courier_beta: float | None = None,
         courier_service_score: float = DEFAULT_COURIER_SERVICE_SCORE,
@@ -108,6 +113,8 @@ class ChengduEnvironment:
             task_window_start_seconds=task_window_start_seconds,
             task_window_end_seconds=task_window_end_seconds,
             task_sampling_seed=task_sampling_seed,
+            partner_history_task_count_start=partner_history_task_count_start,
+            partner_history_task_count_step=partner_history_task_count_step,
             courier_alpha=courier_alpha,
             courier_beta=courier_beta,
             courier_service_score=courier_service_score,
@@ -408,31 +415,27 @@ def collect_station_pick_task_candidates(
 def build_partner_own_task_streams(
     station_set: Sequence[Any],
     ordered_pick_tasks: Sequence[Any],
-    platform_ids: Sequence[str],
-    tasks_per_platform: int,
+    platform_task_counts: Mapping[str, int],
     window_start_seconds: float | None = None,
     window_end_seconds: float | None = None,
     sampling_seed: int = 1,
     excluded_task_ids: Iterable[str] = (),
 ) -> dict[str, list[Any]]:
-    """Build deterministic disjoint own-task streams for cooperating platforms.
+    """Build deterministic partner own-task streams for cooperating platforms.
 
     Args:
         station_set: Legacy stations defining valid task geometry.
         ordered_pick_tasks: Full ordered pick-up task stream.
-        platform_ids: Stable cooperating platform identifiers.
-        tasks_per_platform: Number of own tasks allocated to each platform.
+        platform_task_counts: Deterministic own-task counts keyed by platform id.
         window_start_seconds: Optional inclusive start of the sampling window.
         window_end_seconds: Optional inclusive end of the sampling window.
         sampling_seed: Base deterministic sampling seed.
         excluded_task_ids: Local-platform task identifiers to exclude.
 
     Returns:
-        Mapping from platform id to a time-sorted disjoint own-task stream.
+        Mapping from platform id to a time-sorted own-task stream.
     """
 
-    if tasks_per_platform <= 0:
-        raise ValueError("tasks_per_platform must be positive.")
     excluded_ids = set(excluded_task_ids)
     candidates = [
         task for task in collect_station_pick_task_candidates(
@@ -444,23 +447,54 @@ def build_partner_own_task_streams(
         if str(getattr(task, "num")) not in excluded_ids
     ]
     streams: dict[str, list[Any]] = {}
-    remaining = list(candidates)
-    for platform_index, platform_id in enumerate(platform_ids, start=1):
-        if len(remaining) < tasks_per_platform:
+    for platform_id, task_count in platform_task_counts.items():
+        if task_count <= 0:
+            raise ValueError(f"Partner task count for {platform_id} must be positive.")
+        if len(candidates) < task_count:
             raise ValueError(
-                f"Only {len(remaining)} remaining pick-up tasks are available for partner platform {platform_id}, "
-                f"fewer than the requested {tasks_per_platform}."
+                f"Only {len(candidates)} pick-up tasks are available for partner platform {platform_id}, "
+                f"fewer than the requested {task_count}."
             )
-        rng = random.Random(int(sampling_seed) + platform_index * 1_000_003)
+        rng = random.Random(int(sampling_seed) + _stable_platform_seed_offset(platform_id))
         selected = (
-            list(remaining)
-            if len(remaining) == tasks_per_platform
-            else rng.sample(remaining, tasks_per_platform)
+            list(candidates)
+            if len(candidates) == task_count
+            else rng.sample(candidates, task_count)
         )
-        selected_ids = {str(getattr(task, "num")) for task in selected}
         streams[platform_id] = sort_legacy_tasks(selected)
-        remaining = [task for task in remaining if str(getattr(task, "num")) not in selected_ids]
     return streams
+
+
+def build_partner_history_task_counts(
+    platform_ids: Sequence[str],
+    task_count_start: int = DEFAULT_PARTNER_HISTORY_TASK_COUNT_START,
+    task_count_step: int = DEFAULT_PARTNER_HISTORY_TASK_COUNT_STEP,
+) -> dict[str, int]:
+    """Build deterministic per-platform own-task counts for cooperating platforms.
+
+    Args:
+        platform_ids: Stable cooperating platform identifiers.
+        task_count_start: Base count allocated to the first partner platform.
+        task_count_step: Positive increment applied to each subsequent platform.
+
+    Returns:
+        Mapping from platform id to its fixed own-task stream length.
+    """
+
+    if task_count_start <= 0:
+        raise ValueError("task_count_start must be positive.")
+    if task_count_step < 0:
+        raise ValueError("task_count_step must be non-negative.")
+    return {
+        platform_id: int(task_count_start + (platform_index * task_count_step))
+        for platform_index, platform_id in enumerate(platform_ids)
+    }
+
+
+def _stable_platform_seed_offset(platform_id: str) -> int:
+    """Return a deterministic per-platform seed offset independent of platform count."""
+
+    return sum((index + 1) * ord(character) for index, character in enumerate(platform_id)) * 1_000_003
 
 
 def assign_delivery_tasks_to_stations(station_set: Sequence[Any], ordered_delivery_tasks: Sequence[Any]) -> None:
@@ -1681,6 +1715,8 @@ def build_framework_chengdu_environment(
     task_window_start_seconds: float | None = None,
     task_window_end_seconds: float | None = None,
     task_sampling_seed: int = 1,
+    partner_history_task_count_start: int = DEFAULT_PARTNER_HISTORY_TASK_COUNT_START,
+    partner_history_task_count_step: int = DEFAULT_PARTNER_HISTORY_TASK_COUNT_STEP,
     courier_alpha: float = DEFAULT_COURIER_ALPHA,
     courier_beta: float | None = None,
     courier_service_score: float = DEFAULT_COURIER_SERVICE_SCORE,
@@ -1738,11 +1774,15 @@ def build_framework_chengdu_environment(
             sampling_seed=task_sampling_seed,
         )
         platform_ids = [f"P{platform_index + 1}" for platform_index in range(cooperating_platform_count)]
+        partner_task_counts = build_partner_history_task_counts(
+            platform_ids=platform_ids,
+            task_count_start=partner_history_task_count_start,
+            task_count_step=partner_history_task_count_step,
+        )
         partner_tasks_by_platform = build_partner_own_task_streams(
             station_set=station_set,
             ordered_pick_tasks=ordered_pick,
-            platform_ids=platform_ids,
-            tasks_per_platform=num_parcels,
+            platform_task_counts=partner_task_counts,
             window_start_seconds=task_window_start_seconds,
             window_end_seconds=task_window_end_seconds,
             sampling_seed=task_sampling_seed,

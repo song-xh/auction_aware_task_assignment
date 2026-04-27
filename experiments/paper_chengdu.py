@@ -53,6 +53,8 @@ DEFAULT_CHENGDU_PAPER_FIXED_CONFIG: dict[str, Any] = {
     "task_window_start_seconds": None,
     "task_window_end_seconds": None,
     "task_sampling_seed": 1,
+    "partner_history_task_count_start": 25_000,
+    "partner_history_task_count_step": 2_500,
     "courier_alpha": DEFAULT_COURIER_ALPHA,
     "courier_beta": None,
     "courier_service_score": DEFAULT_COURIER_SERVICE_SCORE,
@@ -200,6 +202,8 @@ def run_chengdu_paper_point(
             task_window_start_seconds=float(fixed_config["task_window_start_seconds"]) if fixed_config["task_window_start_seconds"] is not None else None,
             task_window_end_seconds=float(fixed_config["task_window_end_seconds"]) if fixed_config["task_window_end_seconds"] is not None else None,
             task_sampling_seed=int(fixed_config["task_sampling_seed"]),
+            partner_history_task_count_start=int(fixed_config["partner_history_task_count_start"]),
+            partner_history_task_count_step=int(fixed_config["partner_history_task_count_step"]),
             courier_alpha=float(fixed_config["courier_alpha"]),
             courier_beta=float(fixed_config["courier_beta"]) if fixed_config["courier_beta"] is not None else None,
             courier_service_score=float(fixed_config["courier_service_score"]),
@@ -325,6 +329,10 @@ def run_chengdu_paper_split_experiment(
             str(fixed_config["prediction_sampling_seed"]),
             "--task-sampling-seed",
             str(fixed_config["task_sampling_seed"]),
+            "--partner-history-task-count-start",
+            str(fixed_config["partner_history_task_count_start"]),
+            "--partner-history-task-count-step",
+            str(fixed_config["partner_history_task_count_step"]),
             "--courier-alpha",
             str(fixed_config["courier_alpha"]),
             "--courier-service-score",
@@ -586,6 +594,8 @@ def run_chengdu_default_comparison(
         task_window_start_seconds=fixed_config["task_window_start_seconds"],
         task_window_end_seconds=fixed_config["task_window_end_seconds"],
         task_sampling_seed=int(fixed_config["task_sampling_seed"]),
+        partner_history_task_count_start=int(fixed_config["partner_history_task_count_start"]),
+        partner_history_task_count_step=int(fixed_config["partner_history_task_count_step"]),
         courier_alpha=float(fixed_config["courier_alpha"]),
         courier_beta=float(fixed_config["courier_beta"]) if fixed_config["courier_beta"] is not None else None,
         courier_service_score=float(fixed_config["courier_service_score"]),
@@ -655,6 +665,8 @@ def build_script_parser(description: str) -> argparse.ArgumentParser:
     parser.add_argument("--task-window-start-seconds", type=float, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["task_window_start_seconds"])
     parser.add_argument("--task-window-end-seconds", type=float, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["task_window_end_seconds"])
     parser.add_argument("--task-sampling-seed", type=int, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["task_sampling_seed"])
+    parser.add_argument("--partner-history-task-count-start", type=int, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["partner_history_task_count_start"])
+    parser.add_argument("--partner-history-task-count-step", type=int, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["partner_history_task_count_step"])
     parser.add_argument("--prediction-success-rate", type=float, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["prediction_success_rate"])
     parser.add_argument("--prediction-sampling-seed", type=int, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["prediction_sampling_seed"])
     parser.add_argument("--courier-alpha", type=float, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["courier_alpha"])
@@ -690,6 +702,16 @@ def build_fixed_config_from_args(args: argparse.Namespace) -> dict[str, Any]:
         "task_window_start_seconds": args.task_window_start_seconds,
         "task_window_end_seconds": args.task_window_end_seconds,
         "task_sampling_seed": args.task_sampling_seed,
+        "partner_history_task_count_start": getattr(
+            args,
+            "partner_history_task_count_start",
+            DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["partner_history_task_count_start"],
+        ),
+        "partner_history_task_count_step": getattr(
+            args,
+            "partner_history_task_count_step",
+            DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["partner_history_task_count_step"],
+        ),
         "courier_alpha": getattr(args, "courier_alpha", DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["courier_alpha"]),
         "courier_beta": getattr(args, "courier_beta", DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["courier_beta"]),
         "courier_service_score": getattr(args, "courier_service_score", DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["courier_service_score"]),
@@ -823,6 +845,8 @@ def _canonical_environment_kwargs_for_axis(
         "task_window_start_seconds": fixed_config["task_window_start_seconds"],
         "task_window_end_seconds": fixed_config["task_window_end_seconds"],
         "task_sampling_seed": int(fixed_config["task_sampling_seed"]),
+        "partner_history_task_count_start": int(fixed_config["partner_history_task_count_start"]),
+        "partner_history_task_count_step": int(fixed_config["partner_history_task_count_step"]),
         "courier_alpha": float(fixed_config["courier_alpha"]),
         "courier_beta": float(fixed_config["courier_beta"]) if fixed_config["courier_beta"] is not None else None,
         "courier_service_score": float(fixed_config["courier_service_score"]),
