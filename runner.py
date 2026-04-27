@@ -81,6 +81,7 @@ def _add_common_environment_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--platform-quality-step", type=float, default=DEFAULT_PLATFORM_QUALITY_STEP, help="Per-platform quality decrement for generated f(P).")
     parser.add_argument("--min-batch-size", type=int, default=10, help="Lower bound of the RL-CAPA batch-size action space.")
     parser.add_argument("--max-batch-size", type=int, default=20, help="Upper bound of the RL-CAPA batch-size action space.")
+    parser.add_argument("--rl-batch-actions", type=int, nargs="+", default=None, help="Optional explicit RL-CAPA batch-duration action set in seconds, for example `10 15 20`.")
     parser.add_argument("--step-seconds", type=int, default=60, help="Simulation step size in seconds for RL-CAPA.")
     parser.add_argument("--episodes", type=int, default=500, help="Training episodes used by RL-CAPA before evaluation.")
     parser.add_argument("--rl-lr-actor", type=float, default=0.001, help="Actor learning rate for RL-CAPA.")
@@ -125,6 +126,7 @@ def build_algorithm_kwargs(args: argparse.Namespace) -> dict[str, Any]:
         return {
             "min_batch_size": args.min_batch_size,
             "max_batch_size": args.max_batch_size,
+            "batch_actions": args.rl_batch_actions,
             "step_seconds": args.step_seconds,
             "episodes": args.episodes,
             "lr_actor": args.rl_lr_actor,

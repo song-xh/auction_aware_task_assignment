@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Mapping, Sequence
 
 from capa.models import CAPAConfig
 from experiments.seeding import build_environment_seed
@@ -22,6 +22,7 @@ class RLCAPAAlgorithmRunner(AlgorithmRunner):
         self,
         min_batch_size: int = 10,
         max_batch_size: int = 20,
+        batch_actions: Sequence[int] | None = None,
         step_seconds: int = 60,
         episodes: int = 10,
         lr_actor: float = 0.001,
@@ -37,6 +38,7 @@ class RLCAPAAlgorithmRunner(AlgorithmRunner):
         Args:
             min_batch_size: Lower bound of the `M_b` action space.
             max_batch_size: Upper bound of the `M_b` action space.
+            batch_actions: Optional explicit batch-duration action set.
             step_seconds: Simulation time step used by the unified Chengdu environment.
             episodes: Joint-training episode count before evaluation.
             lr_actor: Actor learning rate for actor-critic training.
@@ -50,6 +52,7 @@ class RLCAPAAlgorithmRunner(AlgorithmRunner):
 
         self._min_batch_size = min_batch_size
         self._max_batch_size = max_batch_size
+        self._batch_actions = None if batch_actions is None else [int(value) for value in batch_actions]
         self._step_seconds = step_seconds
         self._episodes = episodes
         self._lr_actor = lr_actor
@@ -80,10 +83,16 @@ class RLCAPAAlgorithmRunner(AlgorithmRunner):
         normalized_output_dir = Path("outputs/plots/rl_capa_run") if output_dir is None else output_dir
         normalized_output_dir.mkdir(parents=True, exist_ok=True)
         environment_seed = build_environment_seed(environment)
-        capa_config = CAPAConfig(batch_size=self._max_batch_size)
+        effective_batch_actions = (
+            self._batch_actions
+            if self._batch_actions is not None
+            else list(range(self._min_batch_size, self._max_batch_size + 1))
+        )
+        capa_config = CAPAConfig(batch_size=max(effective_batch_actions))
         rl_config = RLCAPAConfig(
             min_batch_size=self._min_batch_size,
             max_batch_size=self._max_batch_size,
+            batch_actions=self._batch_actions,
             step_seconds=self._step_seconds,
             future_feature_window_seconds=self._future_feature_window_seconds,
         )
@@ -124,6 +133,7 @@ class RLCAPAAlgorithmRunner(AlgorithmRunner):
 def build_rl_capa_runner(
     min_batch_size: int = 10,
     max_batch_size: int = 20,
+    batch_actions: Sequence[int] | None = None,
     step_seconds: int = 60,
     episodes: int = 10,
     lr_actor: float = 0.001,
@@ -139,6 +149,7 @@ def build_rl_capa_runner(
     return RLCAPAAlgorithmRunner(
         min_batch_size=min_batch_size,
         max_batch_size=max_batch_size,
+        batch_actions=batch_actions,
         step_seconds=step_seconds,
         episodes=episodes,
         lr_actor=lr_actor,

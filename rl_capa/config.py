@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Sequence
 
 
 @dataclass(frozen=True)
@@ -11,12 +12,20 @@ class RLCAPAConfig:
 
     min_batch_size: int
     max_batch_size: int
+    batch_actions: Sequence[int] | None = None
     step_seconds: int = 60
     future_feature_window_seconds: int = 300
 
     def batch_action_values(self) -> list[int]:
         """Return the discrete batch-size action values ``A_b``."""
 
+        if self.batch_actions is not None:
+            values = [int(value) for value in self.batch_actions]
+            if not values:
+                raise ValueError("batch_actions must not be empty when provided.")
+            if any(value <= 0 for value in values):
+                raise ValueError("batch_actions must contain only positive durations.")
+            return values
         if self.min_batch_size <= 0:
             raise ValueError("min_batch_size must be positive.")
         if self.max_batch_size < self.min_batch_size:
