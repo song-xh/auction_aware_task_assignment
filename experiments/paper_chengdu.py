@@ -40,7 +40,7 @@ from .suites import run_experiment_suite
 
 DEFAULT_CHENGDU_PAPER_FIXED_CONFIG: dict[str, Any] = {
     "data_dir": Path("Data"),
-    "num_parcels": 3000,
+    "num_parcels": 5000,
     "local_couriers": 200,
     "platforms": 4,
     "couriers_per_platform": 50,
