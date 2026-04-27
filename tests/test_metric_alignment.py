@@ -10,14 +10,12 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from capa.config import DEFAULT_CROSS_PLATFORM_SHARING_RATE_MU2
-from capa.dapa import run_dapa
-from capa.models import CAPAConfig
 from capa.utility import DistanceMatrixTravelModel
 from baselines.greedy import run_greedy_baseline_environment
 from baselines.gta import GTABid, future_tasks_within_window, run_basegta_baseline_environment, run_impgta_baseline_environment, settle_aim_auction
 from baselines.mra import run_mra_baseline_environment
 from baselines.ramcom import run_ramcom_baseline_environment
-from env.chengdu import ChengduEnvironment, legacy_platform_to_capa, legacy_task_to_parcel, select_station_pick_tasks
+from env.chengdu import ChengduEnvironment, select_station_pick_tasks
 from experiments.config import ExperimentConfig
 from experiments.paper_chengdu import build_fixed_config_from_args, build_paper_runner_overrides_from_fixed_config
 from experiments.seeding import build_environment_seed, clone_environment_from_seed
@@ -282,8 +280,8 @@ class MetricAlignmentTest(unittest.TestCase):
         self.assertEqual(zero_success["accepted_assignments"], 1)
         self.assertEqual(full_success["accepted_assignments"], 0)
 
-    def test_impgta_cross_payment_matches_capa_dlam_payment(self) -> None:
-        """ImpGTA cross completions should reuse CAPA/DLAM payment instead of AIM payment."""
+    def test_impgta_cross_payment_matches_aim_critical_payment(self) -> None:
+        """ImpGTA cross completions should settle with AIM critical payment."""
 
         task = SimpleNamespace(num="t1", fare=20.0, s_time=0.0, d_time=300.0, weight=1.0, l_node="X")
         local_courier = SimpleNamespace(num=1, location="L", re_schedule=[], re_weight=0.0, max_weight=0.0)
@@ -324,14 +322,6 @@ class MetricAlignmentTest(unittest.TestCase):
             },
             speed=1000.0,
         )
-        platform_base_prices = {"P1": 1.0, "P2": 1.0}
-        platform_sharing_rates = {"P1": 0.5, "P2": 0.5}
-        platform_qualities = {"P1": 1.0, "P2": 0.9}
-        platforms = [
-            legacy_platform_to_capa("P1", [outer_one], platform_base_prices["P1"], platform_sharing_rates["P1"], platform_qualities["P1"]),
-            legacy_platform_to_capa("P2", [outer_two], platform_base_prices["P2"], platform_sharing_rates["P2"], platform_qualities["P2"]),
-        ]
-        expected = run_dapa([legacy_task_to_parcel(task)], platforms, travel_model, CAPAConfig(), now=0)
         environment = SimpleNamespace(
             tasks=[task],
             local_couriers=[local_courier],
@@ -341,19 +331,26 @@ class MetricAlignmentTest(unittest.TestCase):
             station_set=[],
             travel_model=travel_model,
             service_radius_km=None,
-            platform_base_prices=platform_base_prices,
-            platform_sharing_rates=platform_sharing_rates,
-            platform_qualities=platform_qualities,
+            platform_base_prices={},
+            platform_sharing_rates={},
+            platform_qualities={},
+        )
+        expected = settle_aim_auction(
+            task,
+            [
+                GTABid(platform_id="P1", courier=outer_one, dispatch_cost=3.0, insertion_index=0),
+                GTABid(platform_id="P2", courier=outer_two, dispatch_cost=3.0, insertion_index=0),
+            ],
         )
 
         with patch("baselines.gta.drain_legacy_routes", return_value=1):
             result = run_impgta_baseline_environment(environment=environment, prediction_success_rate=0.0)
 
-        self.assertEqual(len(expected.cross_assignments), 1)
-        self.assertAlmostEqual(result["TR"], expected.cross_assignments[0].local_platform_revenue)
+        self.assertIsNotNone(expected)
+        self.assertAlmostEqual(result["TR"], float(task.fare) - expected.payment)
 
-    def test_impgta_cross_assignment_does_not_call_aim(self) -> None:
-        """ImpGTA should use CAPA/DLAM for cross settlement while BaseGTA keeps AIM."""
+    def test_impgta_cross_assignment_uses_aim(self) -> None:
+        """ImpGTA and BaseGTA should both settle cross assignments through AIM."""
 
         task = SimpleNamespace(num="t1", fare=20.0, s_time=0.0, d_time=300.0, weight=1.0, l_node="X")
         local_courier = SimpleNamespace(num=1, location="L", re_schedule=[], re_weight=0.0, max_weight=0.0)
@@ -415,13 +412,14 @@ class MetricAlignmentTest(unittest.TestCase):
         self.assertGreater(aim_spy.call_count, 0)
 
         with (
-            patch("baselines.gta.settle_aim_auction", side_effect=AssertionError("ImpGTA must not use AIM")),
+            patch("baselines.gta.settle_aim_auction", wraps=settle_aim_auction) as aim_spy,
             patch("baselines.gta.drain_legacy_routes", return_value=1),
         ):
             run_impgta_baseline_environment(environment=build_environment(), prediction_success_rate=0.0)
+        self.assertGreater(aim_spy.call_count, 0)
 
-    def test_impgta_bpt_excludes_dlam_routing_delay(self) -> None:
-        """ImpGTA BPT should not include route-query delay introduced by DAPA settlement."""
+    def test_impgta_bpt_excludes_aim_routing_delay(self) -> None:
+        """ImpGTA BPT should exclude routing delay even when cross settlement uses AIM."""
 
         class SlowTravelModel:
             """Travel model that records an artificial delay on every distance query."""
@@ -627,8 +625,8 @@ class MetricAlignmentTest(unittest.TestCase):
 
         self.assertAlmostEqual(result["TR"], 7.0)
 
-    def test_impgta_cross_tr_uses_platform_payment_with_partner_sharing(self) -> None:
-        """ImpGTA should also deduct partner-platform sharing payment on cross completions."""
+    def test_impgta_cross_tr_uses_aim_platform_payment_with_partner_sharing(self) -> None:
+        """ImpGTA should deduct AIM platform payment when reporting CAPA-aligned cross TR."""
 
         task = SimpleNamespace(num="t1", fare=20.0, s_time=0.0, d_time=10.0, weight=1.0, l_node="p1")
         local_courier = SimpleNamespace(num=1, location="local", re_schedule=[], re_weight=0.0, max_weight=5.0)
@@ -657,19 +655,6 @@ class MetricAlignmentTest(unittest.TestCase):
             service_score=0.8,
         )
         travel_model = SimpleNamespace(distance=lambda start, end: 0.0, travel_time=lambda start, end: 0.0)
-        platform_base_prices = {"p1": 1.0, "p2": 1.0}
-        platform_sharing_rates = {"p1": 0.5, "p2": 0.5}
-        platform_qualities = {"p1": 1.0, "p2": 0.9}
-        expected = run_dapa(
-            [legacy_task_to_parcel(task)],
-            [
-                legacy_platform_to_capa("p1", [outer_one], platform_base_prices["p1"], platform_sharing_rates["p1"], platform_qualities["p1"]),
-                legacy_platform_to_capa("p2", [outer_two], platform_base_prices["p2"], platform_sharing_rates["p2"], platform_qualities["p2"]),
-            ],
-            travel_model,
-            CAPAConfig(),
-            now=0,
-        )
         environment = SimpleNamespace(
             tasks=[task],
             local_couriers=[local_courier],
@@ -679,9 +664,9 @@ class MetricAlignmentTest(unittest.TestCase):
             station_set=[],
             travel_model=travel_model,
             service_radius_km=None,
-            platform_base_prices=platform_base_prices,
-            platform_sharing_rates=platform_sharing_rates,
-            platform_qualities=platform_qualities,
+            platform_base_prices={},
+            platform_sharing_rates={},
+            platform_qualities={},
         )
 
         def fake_select(*, couriers, **kwargs):
@@ -699,8 +684,15 @@ class MetricAlignmentTest(unittest.TestCase):
         ):
             result = run_impgta_baseline_environment(environment=environment)
 
-        self.assertEqual(len(expected.cross_assignments), 1)
-        self.assertAlmostEqual(result["TR"], expected.cross_assignments[0].local_platform_revenue)
+        expected = settle_aim_auction(
+            task,
+            [
+                GTABid(platform_id="p1", courier=outer_one, dispatch_cost=5.2),
+                GTABid(platform_id="p2", courier=outer_two, dispatch_cost=6.1),
+            ],
+        )
+        self.assertIsNotNone(expected)
+        self.assertAlmostEqual(result["TR"], float(task.fare) - expected.payment)
 
     def test_basegta_cross_tr_uses_platform_payment_with_partner_sharing(self) -> None:
         """BaseGTA should report cross revenue after deducting partner-platform sharing payment."""
