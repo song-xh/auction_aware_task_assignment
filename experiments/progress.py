@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import time
 from pathlib import Path
 from typing import Any, Literal, Mapping
@@ -55,7 +56,9 @@ def write_point_progress(progress_path: Path, snapshot: Mapping[str, Any]) -> No
     """
 
     progress_path.parent.mkdir(parents=True, exist_ok=True)
-    progress_path.write_text(json.dumps(dict(snapshot), indent=2), encoding="utf-8")
+    temp_path = progress_path.with_name(f".{progress_path.name}.tmp")
+    temp_path.write_text(json.dumps(dict(snapshot), indent=2), encoding="utf-8")
+    os.replace(temp_path, progress_path)
 
 
 def read_point_progress(progress_path: Path) -> dict[str, Any] | None:
@@ -70,7 +73,13 @@ def read_point_progress(progress_path: Path) -> dict[str, Any] | None:
 
     if not progress_path.exists():
         return None
-    return json.loads(progress_path.read_text(encoding="utf-8"))
+    payload = progress_path.read_text(encoding="utf-8")
+    if not payload.strip():
+        return None
+    try:
+        return json.loads(payload)
+    except json.JSONDecodeError:
+        return None
 
 
 def compute_point_algorithm_units(point_snapshot: Mapping[str, Any]) -> float:
