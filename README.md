@@ -368,7 +368,7 @@ python3 experiments/run_chengdu_exp6_capacity.py \
   --platforms 4 \
   --couriers-per-platform 50 \
   --service-radius-km 1.0 \
-  --batch-size 300 \
+  --batch-size 30 \
   --prediction-window-seconds 180 \
   --prediction-success-rate 0.8 \
   --prediction-sampling-seed 1 \
