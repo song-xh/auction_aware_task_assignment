@@ -52,7 +52,7 @@ def safe_average(total: float, count: float) -> float:
     return total / count
 
 
-def parse_greedy_metrics(output: str) -> dict[str, float]:
+def parse_greedy_metrics(output: str) -> dict[str, Any]:
     """Parse the legacy Greedy stdout summary into normalized metric keys."""
     match = GREEDY_RESULT_PATTERN.search(output)
     if match is None:
@@ -64,6 +64,11 @@ def parse_greedy_metrics(output: str) -> dict[str, float]:
         "BPT": float(match.group("bpt")) / 1000.0,
         "delivered_parcels": completed,
         "accepted_assignments": completed,
+        "local_assignment_count": completed,
+        "cross_assignment_count": 0,
+        "unresolved_parcel_count": int(float(match.group("failed"))),
+        "partner_cross_assignment_counts": {},
+        "partner_cross_revenues": {},
     }
 
 
@@ -72,7 +77,7 @@ def run_legacy_greedy_stdout(
     batch_size: int,
     utility: float = DEFAULT_GREEDY_UTILITY,
     realtime: int = DEFAULT_GREEDY_REALTIME,
-) -> dict[str, float]:
+) -> dict[str, Any]:
     """Run the original legacy Greedy entrypoint and parse its printed aggregates.
 
     Args:
@@ -108,7 +113,7 @@ def run_greedy_baseline_environment(
     realtime: int = DEFAULT_GREEDY_REALTIME,
     local_payment_ratio: float = DEFAULT_LOCAL_PAYMENT_RATIO,
     progress_callback: Callable[[Mapping[str, Any]], None] | None = None,
-) -> dict[str, float]:
+) -> dict[str, Any]:
     """Run a local-only greedy baseline with CAPA-aligned Eq.5 revenue accounting.
 
     Args:
@@ -134,6 +139,11 @@ def run_greedy_baseline_environment(
             "BPT": 0.0,
             "delivered_parcels": 0,
             "accepted_assignments": 0,
+            "local_assignment_count": 0,
+            "cross_assignment_count": 0,
+            "unresolved_parcel_count": 0,
+            "partner_cross_assignment_counts": {},
+            "partner_cross_revenues": {},
         }
 
     local_couriers = list(environment.local_couriers)
@@ -234,6 +244,11 @@ def run_greedy_baseline_environment(
         "BPT": processing_time_seconds,
         "delivered_parcels": delivered_parcels,
         "accepted_assignments": accepted_assignments,
+        "local_assignment_count": accepted_assignments,
+        "cross_assignment_count": 0,
+        "unresolved_parcel_count": max(0, total_tasks - accepted_assignments),
+        "partner_cross_assignment_counts": {},
+        "partner_cross_revenues": {},
     }
 
 

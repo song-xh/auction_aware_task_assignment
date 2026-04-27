@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import defaultdict
 import math
 import random
 from time import perf_counter
@@ -95,7 +96,7 @@ def run_ramcom_baseline_environment(
     random_seed: int = DEFAULT_RAMCOM_RANDOM_SEED,
     local_payment_ratio: float = DEFAULT_LOCAL_PAYMENT_RATIO,
     progress_callback: Callable[[Mapping[str, Any]], None] | None = None,
-) -> dict[str, float]:
+) -> dict[str, Any]:
     """Run the Chengdu-adapted RamCOM baseline on the unified environment.
 
     Args:
@@ -115,6 +116,11 @@ def run_ramcom_baseline_environment(
             "BPT": 0.0,
             "delivered_parcels": 0,
             "accepted_assignments": 0,
+            "local_assignment_count": 0,
+            "cross_assignment_count": 0,
+            "unresolved_parcel_count": 0,
+            "partner_cross_assignment_counts": {},
+            "partner_cross_revenues": {},
         }
 
     rng = random.Random(random_seed)
@@ -138,6 +144,10 @@ def run_ramcom_baseline_environment(
     accepted_task_ids: set[str] = set()
     total_revenue = 0.0
     processing_time_seconds = 0.0
+    local_assignment_count = 0
+    cross_assignment_count = 0
+    partner_cross_assignment_counts: dict[str, int] = defaultdict(int)
+    partner_cross_revenues: dict[str, float] = defaultdict(float)
     progress_stride = max(1, total_tasks // 100)
 
     for task_index, task in enumerate(tasks, start=1):
@@ -177,6 +187,7 @@ def run_ramcom_baseline_environment(
                     local_payment_ratio=local_payment_ratio,
                 )
                 accepted_assignments += 1
+                local_assignment_count += 1
                 accepted_task_ids.add(str(getattr(task, "num")))
                 assigned = True
 
@@ -222,7 +233,10 @@ def run_ramcom_baseline_environment(
                         platform_payment=outer_payment,
                     )
                     accepted_assignments += 1
+                    cross_assignment_count += 1
                     accepted_task_ids.add(str(getattr(task, "num")))
+                    partner_cross_assignment_counts[selected_platform] += 1
+                    partner_cross_revenues[selected_platform] += float(outer_payment)
 
         processing_time_seconds += max(
             0.0,
@@ -259,4 +273,9 @@ def run_ramcom_baseline_environment(
         "BPT": processing_time_seconds,
         "delivered_parcels": delivered_parcels,
         "accepted_assignments": accepted_assignments,
+        "local_assignment_count": local_assignment_count,
+        "cross_assignment_count": cross_assignment_count,
+        "unresolved_parcel_count": max(0, total_tasks - local_assignment_count - cross_assignment_count),
+        "partner_cross_assignment_counts": dict(partner_cross_assignment_counts),
+        "partner_cross_revenues": dict(partner_cross_revenues),
     }

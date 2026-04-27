@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass
 import random
 from statistics import fmean
@@ -554,7 +555,7 @@ def _run_gta_environment(
     local_payment_ratio: float = DEFAULT_LOCAL_PAYMENT_RATIO,
     cross_platform_sharing_rate_mu2: float = DEFAULT_CROSS_PLATFORM_SHARING_RATE_MU2,
     progress_callback: Callable[[Mapping[str, Any]], None] | None = None,
-) -> dict[str, float]:
+) -> dict[str, Any]:
     """Run one GTA-style baseline over the shared Chengdu environment."""
     tasks = sort_legacy_tasks(list(environment.tasks))
     total_task_count = len(tasks)
@@ -565,6 +566,11 @@ def _run_gta_environment(
             "BPT": 0.0,
             "delivered_parcels": 0,
             "accepted_assignments": 0,
+            "local_assignment_count": 0,
+            "cross_assignment_count": 0,
+            "unresolved_parcel_count": 0,
+            "partner_cross_assignment_counts": {},
+            "partner_cross_revenues": {},
         }
 
     local_couriers = list(environment.local_couriers)
@@ -614,6 +620,10 @@ def _run_gta_environment(
     accepted_assignments = 0
     accepted_task_ids: set[str] = set()
     processing_time_seconds = 0.0
+    local_assignment_count = 0
+    cross_assignment_count = 0
+    partner_cross_assignment_counts: dict[str, int] = defaultdict(int)
+    partner_cross_revenues: dict[str, float] = defaultdict(float)
 
     while task_index < total_task_count:
         next_arrival_time = int(float(getattr(tasks[task_index], "s_time")))
@@ -668,6 +678,7 @@ def _run_gta_environment(
                 ):
                     apply_assignment_to_legacy_courier(task, local_bid.courier, local_bid.insertion_index)
                     accepted_assignments += 1
+                    local_assignment_count += 1
                     accepted_task_ids.add(str(getattr(task, "num")))
                     total_profit += compute_local_platform_revenue_for_local_completion(
                         parcel_fare=float(getattr(task, "fare")),
@@ -764,11 +775,14 @@ def _run_gta_environment(
             if outcome is not None:
                 apply_assignment_to_legacy_courier(task, outcome.courier, outcome.insertion_index)
                 accepted_assignments += 1
+                cross_assignment_count += 1
                 accepted_task_ids.add(str(getattr(task, "num")))
                 total_profit += compute_local_platform_revenue_for_cross_completion(
                     parcel_fare=float(getattr(task, "fare")),
                     platform_payment=outcome.payment,
                 )
+                partner_cross_assignment_counts[outcome.platform_id] += 1
+                partner_cross_revenues[outcome.platform_id] += float(outcome.payment)
             processing_time_seconds += max(
                 0.0,
                 perf_counter() - started - (timing.routing_time_seconds - routing_before) - (timing.insertion_time_seconds - insertion_before),
@@ -805,6 +819,11 @@ def _run_gta_environment(
         "BPT": processing_time_seconds,
         "delivered_parcels": delivered_parcels,
         "accepted_assignments": accepted_assignments,
+        "local_assignment_count": local_assignment_count,
+        "cross_assignment_count": cross_assignment_count,
+        "unresolved_parcel_count": max(0, total_task_count - local_assignment_count - cross_assignment_count),
+        "partner_cross_assignment_counts": dict(partner_cross_assignment_counts),
+        "partner_cross_revenues": dict(partner_cross_revenues),
     }
 
 
@@ -814,7 +833,7 @@ def run_basegta_baseline_environment(
     local_payment_ratio: float = DEFAULT_LOCAL_PAYMENT_RATIO,
     cross_platform_sharing_rate_mu2: float = DEFAULT_CROSS_PLATFORM_SHARING_RATE_MU2,
     progress_callback: Callable[[Mapping[str, Any]], None] | None = None,
-) -> dict[str, float]:
+) -> dict[str, Any]:
     """Run BaseGTA on the shared Chengdu environment."""
     return _run_gta_environment(
         environment=environment,
@@ -836,7 +855,7 @@ def run_impgta_baseline_environment(
     local_payment_ratio: float = DEFAULT_LOCAL_PAYMENT_RATIO,
     cross_platform_sharing_rate_mu2: float = DEFAULT_CROSS_PLATFORM_SHARING_RATE_MU2,
     progress_callback: Callable[[Mapping[str, Any]], None] | None = None,
-) -> dict[str, float]:
+) -> dict[str, Any]:
     """Run ImpGTA on the shared Chengdu environment with a fixed future window."""
     return _run_gta_environment(
         environment=environment,
