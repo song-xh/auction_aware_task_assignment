@@ -58,6 +58,26 @@ class RLCAPARunnerUXTests(unittest.TestCase):
 
         self.assertEqual(kwargs["batch_actions"], [10, 15, 20])
 
+    def test_runner_parses_partner_history_task_controls(self) -> None:
+        """Runner should expose explicit partner-history task controls for dense windows."""
+
+        args = parse_args(
+            [
+                "run",
+                "--algorithm",
+                "rl-capa",
+                "--data-dir",
+                "Data",
+                "--partner-history-task-count-start",
+                "200",
+                "--partner-history-task-count-step",
+                "0",
+            ]
+        )
+
+        self.assertEqual(args.partner_history_task_count_start, 200)
+        self.assertEqual(args.partner_history_task_count_step, 0)
+
     def test_readme_documents_dense_smoke_window_for_rl_capa(self) -> None:
         """README should document the dense 0-30s RL-CAPA smoke recipe."""
 

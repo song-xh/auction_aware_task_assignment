@@ -69,6 +69,8 @@ def run_comparison_sweep(
         task_window_start_seconds=fixed_config.get("task_window_start_seconds"),
         task_window_end_seconds=fixed_config.get("task_window_end_seconds"),
         task_sampling_seed=fixed_config.get("task_sampling_seed", 1),
+        partner_history_task_count_start=fixed_config.get("partner_history_task_count_start", 0),
+        partner_history_task_count_step=fixed_config.get("partner_history_task_count_step", 0),
         courier_alpha=fixed_config.get("courier_alpha", DEFAULT_COURIER_ALPHA),
         courier_beta=fixed_config.get("courier_beta"),
         courier_service_score=fixed_config.get("courier_service_score", DEFAULT_COURIER_SERVICE_SCORE),

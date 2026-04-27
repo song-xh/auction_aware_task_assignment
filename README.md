@@ -30,6 +30,8 @@ python3 runner.py run \
   --couriers-per-platform 5 \
   --task-window-start-seconds 0 \
   --task-window-end-seconds 30 \
+  --partner-history-task-count-start 200 \
+  --partner-history-task-count-step 0 \
   --rl-batch-actions 10 15 20 \
   --step-seconds 60 \
   --episodes 500 \
@@ -53,8 +55,10 @@ RL-CAPA 相关参数含义：
 - `--rl-entropy-coeff`：policy entropy 正则系数。
 - `--rl-max-grad-norm`：梯度裁剪阈值。
 - `--rl-device`：可选 torch device 覆盖，例如 `cpu` 或 `cuda`；默认自动选择可用 CUDA，否则 CPU。
+- `--partner-history-task-count-start`：第一个合作平台自有任务流的显式规模，适合在小时间窗 smoke 下压低合作平台背景流量。
+- `--partner-history-task-count-step`：后续合作平台自有任务流规模的增量，`0` 表示所有合作平台使用同样的自有任务量。
 
-上面的 RL-CAPA 命令是一个 `smoke` 导向的稠密时间窗配方：`0-30s` 时间窗会把 100 个包裹压进更短的到达范围，配合 `--rl-batch-actions 10 15 20` 更容易把到达批次数控制在 2-3 个量级，从而显著缩短联调时间。它是推荐联调命令，不是全局默认数据分布。
+上面的 RL-CAPA 命令是一个 `smoke` 导向的稠密时间窗配方：`0-30s` 时间窗会把 100 个包裹压进更短的到达范围，配合 `--rl-batch-actions 10 15 20` 更容易把到达批次数控制在 2-3 个量级，从而显著缩短联调时间。`--partner-history-task-count-start 200 --partner-history-task-count-step 0` 用来避免合作平台背景任务流在小时间窗下仍然沿用默认的大规模历史值。它是推荐联调命令，不是全局默认数据分布。
 
 兼容旧写法：
 

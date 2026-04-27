@@ -74,6 +74,8 @@ def _add_common_environment_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--task-window-start-seconds", type=float, default=None, help="Optional lower bound of the parcel sampling time window.")
     parser.add_argument("--task-window-end-seconds", type=float, default=None, help="Optional upper bound of the parcel sampling time window.")
     parser.add_argument("--task-sampling-seed", type=int, default=1, help="Deterministic random seed used when sampling parcels inside the time window.")
+    parser.add_argument("--partner-history-task-count-start", type=int, default=None, help="Optional per-partner own-task stream size for the first cooperating platform.")
+    parser.add_argument("--partner-history-task-count-step", type=int, default=None, help="Optional increment applied to each subsequent cooperating platform own-task stream size.")
     parser.add_argument("--courier-alpha", type=float, default=DEFAULT_COURIER_ALPHA, help="Courier detour-preference weight alpha used by CAPA/DAPA bids.")
     parser.add_argument("--courier-beta", type=float, default=None, help="Optional courier service-score weight beta; defaults to 1-alpha.")
     parser.add_argument("--courier-service-score", type=float, default=DEFAULT_COURIER_SERVICE_SCORE, help="Courier service-score proxy used by CAPA/DAPA bids.")
@@ -167,6 +169,8 @@ def _run_single_experiment(args: argparse.Namespace) -> int:
         task_window_start_seconds=args.task_window_start_seconds,
         task_window_end_seconds=args.task_window_end_seconds,
         task_sampling_seed=args.task_sampling_seed,
+        partner_history_task_count_start=args.partner_history_task_count_start,
+        partner_history_task_count_step=args.partner_history_task_count_step,
         courier_alpha=args.courier_alpha,
         courier_beta=args.courier_beta,
         courier_service_score=args.courier_service_score,
@@ -252,6 +256,8 @@ def _build_fixed_config(args: argparse.Namespace) -> dict[str, Any]:
         "task_window_start_seconds": args.task_window_start_seconds,
         "task_window_end_seconds": args.task_window_end_seconds,
         "task_sampling_seed": args.task_sampling_seed,
+        "partner_history_task_count_start": args.partner_history_task_count_start,
+        "partner_history_task_count_step": args.partner_history_task_count_step,
         "courier_alpha": args.courier_alpha,
         "courier_beta": args.courier_beta,
         "courier_service_score": args.courier_service_score,
