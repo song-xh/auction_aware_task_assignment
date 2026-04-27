@@ -28,8 +28,9 @@ python3 runner.py run \
   --local-couriers 10 \
   --platforms 2 \
   --couriers-per-platform 5 \
-  --min-batch-size 10 \
-  --max-batch-size 20 \
+  --task-window-start-seconds 0 \
+  --task-window-end-seconds 30 \
+  --rl-batch-actions 10 15 20 \
   --step-seconds 60 \
   --episodes 500 \
   --rl-lr-actor 0.001 \
@@ -42,6 +43,7 @@ python3 runner.py run \
 
 RL-CAPA 相关参数含义：
 
+- `--rl-batch-actions`：第一阶段显式 batch-duration 动作集合，单位秒，例如 `10 15 20`。
 - `--min-batch-size` / `--max-batch-size`：第一阶段 batch-size 动作空间 `A_b` 的上下界。
 - `--step-seconds`：episode 结束后 drain legacy 路线时使用的环境推进步长。
 - `--episodes`：actor-critic 训练轮数。
@@ -51,6 +53,8 @@ RL-CAPA 相关参数含义：
 - `--rl-entropy-coeff`：policy entropy 正则系数。
 - `--rl-max-grad-norm`：梯度裁剪阈值。
 - `--rl-device`：可选 torch device 覆盖，例如 `cpu` 或 `cuda`；默认自动选择可用 CUDA，否则 CPU。
+
+上面的 RL-CAPA 命令是一个 `smoke` 导向的稠密时间窗配方：`0-30s` 时间窗会把 100 个包裹压进更短的到达范围，配合 `--rl-batch-actions 10 15 20` 更容易把到达批次数控制在 2-3 个量级，从而显著缩短联调时间。它是推荐联调命令，不是全局默认数据分布。
 
 兼容旧写法：
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
 
 from rl_capa.config import RLCAPAConfig
 from runner import build_algorithm_kwargs, parse_args
@@ -56,6 +57,15 @@ class RLCAPARunnerUXTests(unittest.TestCase):
         kwargs = build_algorithm_kwargs(args)
 
         self.assertEqual(kwargs["batch_actions"], [10, 15, 20])
+
+    def test_readme_documents_dense_smoke_window_for_rl_capa(self) -> None:
+        """README should document the dense 0-30s RL-CAPA smoke recipe."""
+
+        readme = Path("README.md").read_text(encoding="utf-8")
+
+        self.assertIn("--task-window-start-seconds 0", readme)
+        self.assertIn("--task-window-end-seconds 30", readme)
+        self.assertIn("--rl-batch-actions 10 15 20", readme)
 
 
 if __name__ == "__main__":
