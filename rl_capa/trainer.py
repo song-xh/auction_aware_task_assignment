@@ -97,6 +97,9 @@ class EpisodeLog:
         loss_v2: Critic 2 value loss.
         steps: Number of environment steps.
         assignments: Number of accepted assignments.
+        entropy_pi1: Mean first-stage policy entropy across episode steps.
+        entropy_pi2: Parcel-normalized second-stage policy entropy across the episode.
+        mean_batch_size: Mean selected batch duration in seconds.
     """
 
     episode: int
@@ -109,6 +112,9 @@ class EpisodeLog:
     assignments: int
     batch_sizes: List[int] = field(default_factory=list)
     cross_rate: float = 0.0
+    entropy_pi1: float = 0.0
+    entropy_pi2: float = 0.0
+    mean_batch_size: float = 0.0
     truncated: bool = False
 
 
@@ -238,6 +244,12 @@ class RLCAPATrainer:
         total_cross = sum(r.num_cross for r in episode_buffer)
         total_unassigned = sum(r.num_unassigned for r in episode_buffer)
         cross_rate = total_cross / max(total_unassigned, 1)
+        entropy_pi1 = float(np.mean([r.entropy_1.detach().item() for r in episode_buffer]))
+        entropy_pi2 = float(
+            sum(r.entropy_2.detach().item() for r in episode_buffer)
+            / max(total_unassigned, 1)
+        )
+        mean_batch_size = float(np.mean(batch_sizes)) if batch_sizes else 0.0
         truncated = not self.env.is_done()
         return EpisodeLog(
             episode=episode_idx,
@@ -250,6 +262,9 @@ class RLCAPATrainer:
             assignments=len(self.env.delivered_parcels()),
             batch_sizes=batch_sizes,
             cross_rate=cross_rate,
+            entropy_pi1=entropy_pi1,
+            entropy_pi2=entropy_pi2,
+            mean_batch_size=mean_batch_size,
             truncated=truncated,
         )
 
@@ -260,19 +275,16 @@ class RLCAPATrainer:
     ) -> dict[str, float | int | bool]:
         """Serialize one episode log into a compact structured progress payload."""
 
-        avg_batch_size = (
-            sum(episode_log.batch_sizes) / len(episode_log.batch_sizes)
-            if episode_log.batch_sizes
-            else 0.0
-        )
         return {
             "episode": episode_log.episode + 1,
             "total_episodes": total_episodes,
             "total_reward": episode_log.total_reward,
             "steps": episode_log.steps,
             "assignments": episode_log.assignments,
-            "avg_batch_size": avg_batch_size,
+            "avg_batch_size": episode_log.mean_batch_size,
             "cross_rate": episode_log.cross_rate,
+            "entropy_pi1": episode_log.entropy_pi1,
+            "entropy_pi2": episode_log.entropy_pi2,
             "truncated": episode_log.truncated,
         }
 

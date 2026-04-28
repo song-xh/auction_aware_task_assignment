@@ -84,11 +84,10 @@ def plot_training_curves(
     loss_v2 = [h.loss_v2 for h in history]
     loss_pi1 = [h.loss_pi1 for h in history]
     loss_pi2 = [h.loss_pi2 for h in history]
-    mean_batch = [
-        float(np.mean(h.batch_sizes)) if h.batch_sizes else 0.0
-        for h in history
-    ]
+    mean_batch = [h.mean_batch_size for h in history]
     cross_rates = [h.cross_rate for h in history]
+    entropy_pi1 = [h.entropy_pi1 for h in history]
+    entropy_pi2 = [h.entropy_pi2 for h in history]
 
     fig, axes = plt.subplots(4, 2, figsize=(14, 16))
     fig.suptitle("RL-CAPA Training Curves", fontsize=14, fontweight="bold")
@@ -101,20 +100,27 @@ def plot_training_curves(
         (axes[2, 0], loss_pi2, "Policy Loss π2", "Loss"),
         (axes[2, 1], mean_batch, "Mean Batch Size", "Seconds"),
         (axes[3, 0], cross_rates, "Cross Rate", "Rate"),
+        (axes[3, 1], entropy_pi2, "Policy Entropy π2", "Entropy"),
     ]
 
     for ax, data, title, ylabel in curves:
         raw = np.array(data)
         smoothed = smooth(data, window=window)
-        ax.plot(episodes, raw, alpha=0.3, color="tab:blue", linewidth=0.5)
+        ax.plot(episodes, raw, alpha=0.45, color="tab:blue", linewidth=0.6, label="raw")
         ax.plot(episodes, smoothed, color="tab:blue", linewidth=1.5)
         ax.set_title(title)
         ax.set_xlabel("Episode")
         ax.set_ylabel(ylabel)
         ax.grid(True, alpha=0.3)
 
-    # Hide unused subplot
-    axes[3, 1].set_visible(False)
+    axes[3, 1].plot(
+        episodes,
+        smooth(entropy_pi1, window=window),
+        color="tab:orange",
+        linewidth=1.2,
+        label="π1 smoothed",
+    )
+    axes[3, 1].legend(loc="best", fontsize=8)
 
     plt.tight_layout()
     fig.savefig(str(output_path), dpi=150)

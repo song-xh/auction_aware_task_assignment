@@ -40,6 +40,8 @@ class RLCAPATrainingProgressTests(unittest.TestCase):
         self.assertIn("total_reward", events[0])
         self.assertIn("steps", events[0])
         self.assertIn("avg_batch_size", events[0])
+        self.assertIn("entropy_pi1", events[0])
+        self.assertIn("entropy_pi2", events[0])
         self.assertIn("truncated", events[0])
 
 

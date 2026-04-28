@@ -41,6 +41,7 @@ class RLCAPAOutputArtifactTests(unittest.TestCase):
                 assignments=4,
                 batch_sizes=[10, 15],
                 cross_rate=0.5,
+                mean_batch_size=12.5,
             )
         ]
 
@@ -63,6 +64,9 @@ class RLCAPAOutputArtifactTests(unittest.TestCase):
 
         self.assertIn("plots", summary)
         self.assertEqual(summary["plots"]["training_curves"], str(self.temp_root / "training_curves.png"))
+        self.assertEqual(summary["entropy_pi1"], [0.0])
+        self.assertEqual(summary["entropy_pi2"], [0.0])
+        self.assertEqual(summary["mean_batch_size"], [12.5])
         plot_curves.assert_called_once()
 
     def test_evaluate_rl_capa_includes_batch_plot_paths(self) -> None:
