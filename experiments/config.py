@@ -25,6 +25,7 @@ SUPPORTED_SWEEP_AXES = frozenset({
     "courier_capacity",
     "courier_alpha",
     "deadline_delay",
+    "deadline_noise",
 })
 
 
@@ -202,7 +203,7 @@ def apply_sweep_axis(config: ExperimentConfig, axis: str, value: int | float) ->
         return config.with_update(courier_capacity=float(value))
     if axis == "courier_alpha":
         return config.with_update(courier_alpha=float(value), courier_beta=None)
-    if axis == "deadline_delay":
+    if axis in {"deadline_delay", "deadline_noise"}:
         return config
     if axis in {"num_parcels", "local_couriers", "platforms", "batch_size"}:
         return config.with_update(**{axis: int(value)})

@@ -23,6 +23,7 @@ PAPER_SUITE_PRESETS: dict[str, dict[str, dict[str, list[float]]]] = {
             "courier_capacity": [25, 50],
             "courier_alpha": [0.3, 0.7],
             "deadline_delay": [5, 10],
+            "deadline_noise": [-20, 0, 20],
         },
         "formal": {
             "num_parcels": [1000, 2000, 5000, 10000, 20000],
@@ -32,6 +33,7 @@ PAPER_SUITE_PRESETS: dict[str, dict[str, dict[str, list[float]]]] = {
             "courier_capacity": [25, 50, 75, 100, 125],
             "courier_alpha": [0.1, 0.3, 0.5, 0.7, 0.9],
             "deadline_delay": [5, 10, 15, 20, 30, 60],
+            "deadline_noise": [-20, -15, -10, -5, 0, 5, 10, 15, 20],
         },
     }
 }

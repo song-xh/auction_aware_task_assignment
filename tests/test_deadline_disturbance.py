@@ -15,7 +15,12 @@ from env.chengdu import (
     legacy_task_to_parcel,
     prepare_chengdu_batch,
 )
-from experiments.deadline_disturbance import apply_processing_delay, derive_deadline_delay_environment
+from experiments.deadline_disturbance import (
+    apply_deadline_noise,
+    apply_processing_delay,
+    derive_deadline_delay_environment,
+    derive_deadline_noise_environment,
+)
 from experiments.seeding import build_environment_seed
 
 
@@ -119,6 +124,52 @@ def test_derive_deadline_delay_environment_mutates_only_clone() -> None:
     assert not hasattr(task, "observed_s_time")
     assert derived.tasks[0].observed_s_time == 15.0
     assert derived.tasks[0].d_time == 100.0
+
+
+def test_apply_deadline_noise_uses_slack_and_preserves_true_deadline() -> None:
+    """Exp-8 positive noise should extend only the model-facing deadline."""
+
+    task = SimpleNamespace(num="t1", s_time=10.0, d_time=110.0)
+
+    apply_deadline_noise([task], noise_percent=20)
+
+    assert task.d_time == 110.0
+    assert task.observed_d_time == 130.0
+
+
+def test_apply_deadline_noise_supports_early_observed_deadline() -> None:
+    """Exp-8 negative noise should tighten only the model-facing deadline."""
+
+    task = SimpleNamespace(num="t1", s_time=10.0, d_time=110.0)
+
+    apply_deadline_noise([task], noise_percent=-20)
+
+    assert task.d_time == 110.0
+    assert task.observed_d_time == 90.0
+
+
+def test_derive_deadline_noise_environment_mutates_only_clone() -> None:
+    """Exp-8 environment derivation should keep canonical seeds reusable."""
+
+    task = SimpleNamespace(num="t1", s_time=10.0, d_time=110.0)
+    seed = build_environment_seed(
+        ChengduEnvironment(
+            tasks=[task],
+            local_couriers=[],
+            partner_couriers_by_platform={},
+            station_set=[],
+            travel_model=None,
+            platform_base_prices={},
+            platform_sharing_rates={},
+            platform_qualities={},
+        )
+    )
+
+    derived = derive_deadline_noise_environment(seed, noise_percent=10)
+
+    assert not hasattr(task, "observed_d_time")
+    assert derived.tasks[0].observed_d_time == 120.0
+    assert derived.tasks[0].d_time == 110.0
 
 
 def _runtime(tasks: Sequence[Any]) -> ChengduBatchRuntime:

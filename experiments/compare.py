@@ -19,7 +19,12 @@ from capa.config import (
 from env.chengdu import ChengduEnvironment
 
 from .config import ExperimentConfig, apply_sweep_axis
-from .deadline_disturbance import DEADLINE_DELAY_AXIS, derive_deadline_delay_environment
+from .deadline_disturbance import (
+    DEADLINE_DELAY_AXIS,
+    DEADLINE_NOISE_AXIS,
+    derive_deadline_delay_environment,
+    derive_deadline_noise_environment,
+)
 from .plotting import save_comparison_plots
 from .seeding import build_environment_seed, clone_environment_from_seed
 
@@ -218,6 +223,8 @@ def _run_comparison_point(
     environment = builder(**point_config.as_environment_kwargs())
     if sweep_parameter == DEADLINE_DELAY_AXIS:
         environment = derive_deadline_delay_environment(build_environment_seed(environment), value)
+    elif sweep_parameter == DEADLINE_NOISE_AXIS:
+        environment = derive_deadline_noise_environment(build_environment_seed(environment), value)
     seed = build_environment_seed(environment)
     run_summary: dict[str, Any] = {sweep_parameter: value}
     for algorithm_name in algorithms:
