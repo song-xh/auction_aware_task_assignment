@@ -57,6 +57,25 @@ class RLCAPARunnerUXTests(unittest.TestCase):
         kwargs = build_algorithm_kwargs(args)
 
         self.assertEqual(kwargs["batch_actions"], [10, 15, 20])
+        self.assertTrue(kwargs["normalize_advantages"])
+
+    def test_runner_can_disable_rl_advantage_normalization(self) -> None:
+        """Runner should expose an ablation switch for actor advantage scaling."""
+
+        args = parse_args(
+            [
+                "run",
+                "--algorithm",
+                "rl-capa",
+                "--data-dir",
+                "Data",
+                "--rl-disable-advantage-normalization",
+            ]
+        )
+
+        kwargs = build_algorithm_kwargs(args)
+
+        self.assertFalse(kwargs["normalize_advantages"])
 
     def test_runner_parses_partner_history_task_controls(self) -> None:
         """Runner should expose explicit partner-history task controls for dense windows."""

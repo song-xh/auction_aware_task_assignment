@@ -59,6 +59,7 @@ def train_rl_capa(
             entropy_coeff=training_config.entropy_coeff,
             max_grad_norm=training_config.max_grad_norm,
             max_steps_per_episode=training_config.max_steps_per_episode,
+            normalize_advantages=training_config.normalize_advantages,
             device=training_config.device,
         ),
         num_batch_actions=len(rl_config.batch_action_values()),

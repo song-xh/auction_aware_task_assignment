@@ -41,6 +41,7 @@ class TrainingConfig:
         entropy_coeff: Entropy bonus coefficient (prevents premature convergence).
         max_grad_norm: Gradient clipping threshold.
         max_steps_per_episode: Safety limit on steps per episode.
+        normalize_advantages: Whether to standardize detached advantages before actor updates.
     """
 
     num_episodes: int = 500
@@ -50,6 +51,7 @@ class TrainingConfig:
     entropy_coeff: float = 0.01
     max_grad_norm: float = 0.5
     max_steps_per_episode: int = 500
+    normalize_advantages: bool = True
     device: str | None = None
 
 
@@ -427,6 +429,9 @@ class RLCAPATrainer:
             v2_detached = self.v2(s2_agg_batch)
             adv_1 = v2_detached - v1_detached       # A1 = V2 - V1
             adv_2 = returns_tensor - v2_detached     # A2 = R_hat - V2
+            if self.config.normalize_advantages:
+                adv_1 = self._normalize_advantages(adv_1)
+                adv_2 = self._normalize_advantages(adv_2)
 
         # --- Actor 1 update ---
         loss_pi1 = -(log_probs_1 * adv_1).mean() - self.config.entropy_coeff * entropies_1.mean()
@@ -448,6 +453,25 @@ class RLCAPATrainer:
             loss_v1.item(),
             loss_v2.item(),
         )
+
+    @staticmethod
+    def _normalize_advantages(advantages: torch.Tensor, epsilon: float = 1e-8) -> torch.Tensor:
+        """Standardize one detached advantage vector for stable actor updates.
+
+        Args:
+            advantages: One-dimensional tensor of detached advantage values.
+            epsilon: Minimum standard deviation used for numerical stability.
+
+        Returns:
+            Tensor with zero mean and unit population standard deviation when
+            variance is present; all zeros for a constant vector.
+        """
+
+        centered = advantages - advantages.mean()
+        std = centered.std(unbiased=False)
+        if std <= epsilon:
+            return torch.zeros_like(advantages)
+        return centered / (std + epsilon)
 
     def save_checkpoint(self, output_dir: Path) -> None:
         """Persist model weights and normalizer state for later evaluation.

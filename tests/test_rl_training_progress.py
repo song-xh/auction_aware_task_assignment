@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import unittest
 
+import torch
+
 from capa.models import CAPAConfig
 from rl_capa.config import RLCAPAConfig
 from rl_capa.env import RLCAPAEnv
@@ -43,6 +45,20 @@ class RLCAPATrainingProgressTests(unittest.TestCase):
         self.assertIn("entropy_pi1", events[0])
         self.assertIn("entropy_pi2", events[0])
         self.assertIn("truncated", events[0])
+
+    def test_advantage_normalization_centers_and_scales_values(self) -> None:
+        """Advantage normalization should stabilize actor loss scale without NaNs."""
+
+        normalized = RLCAPATrainer._normalize_advantages(
+            torch.tensor([1.0, 2.0, 3.0], dtype=torch.float32)
+        )
+        constant = RLCAPATrainer._normalize_advantages(
+            torch.tensor([5.0, 5.0], dtype=torch.float32)
+        )
+
+        self.assertAlmostEqual(float(normalized.mean().item()), 0.0, places=6)
+        self.assertAlmostEqual(float(normalized.std(unbiased=False).item()), 1.0, places=6)
+        self.assertTrue(torch.all(torch.isfinite(constant)))
 
 
 if __name__ == "__main__":

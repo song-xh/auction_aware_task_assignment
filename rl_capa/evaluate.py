@@ -54,6 +54,7 @@ def evaluate_rl_capa(
             entropy_coeff=restored_training.entropy_coeff,
             max_grad_norm=restored_training.max_grad_norm,
             max_steps_per_episode=restored_training.max_steps_per_episode,
+            normalize_advantages=restored_training.normalize_advantages,
             device=restored_training.device,
         ),
         num_batch_actions=len(rl_config.batch_action_values()),

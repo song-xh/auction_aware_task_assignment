@@ -30,6 +30,7 @@ class RLCAPAAlgorithmRunner(AlgorithmRunner):
         discount_factor: float = 0.9,
         entropy_coeff: float = 0.01,
         max_grad_norm: float = 0.5,
+        normalize_advantages: bool = True,
         future_feature_window_seconds: int = 300,
         device: str | None = None,
     ) -> None:
@@ -46,6 +47,7 @@ class RLCAPAAlgorithmRunner(AlgorithmRunner):
             discount_factor: Gamma used for discounted returns.
             entropy_coeff: Entropy regularization coefficient.
             max_grad_norm: Gradient clipping threshold.
+            normalize_advantages: Whether actor advantages are standardized during training.
             future_feature_window_seconds: True future window used by stage-1 features.
             device: Optional torch device override.
         """
@@ -60,6 +62,7 @@ class RLCAPAAlgorithmRunner(AlgorithmRunner):
         self._discount_factor = discount_factor
         self._entropy_coeff = entropy_coeff
         self._max_grad_norm = max_grad_norm
+        self._normalize_advantages = normalize_advantages
         self._future_feature_window_seconds = future_feature_window_seconds
         self._device = device
 
@@ -102,6 +105,7 @@ class RLCAPAAlgorithmRunner(AlgorithmRunner):
             lr_critic=self._lr_critic,
             entropy_coeff=self._entropy_coeff,
             max_grad_norm=self._max_grad_norm,
+            normalize_advantages=self._normalize_advantages,
             device=self._device,
         )
         training_summary = train_rl_capa(
@@ -146,6 +150,7 @@ def build_rl_capa_runner(
     discount_factor: float = 0.9,
     entropy_coeff: float = 0.01,
     max_grad_norm: float = 0.5,
+    normalize_advantages: bool = True,
     future_feature_window_seconds: int = 300,
     device: str | None = None,
 ) -> RLCAPAAlgorithmRunner:
@@ -162,6 +167,7 @@ def build_rl_capa_runner(
         discount_factor=discount_factor,
         entropy_coeff=entropy_coeff,
         max_grad_norm=max_grad_norm,
+        normalize_advantages=normalize_advantages,
         future_feature_window_seconds=future_feature_window_seconds,
         device=device,
     )

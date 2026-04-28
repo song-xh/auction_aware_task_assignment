@@ -60,4 +60,5 @@ class RLTrainingConfig:
     entropy_coeff: float = 0.01
     max_grad_norm: float = 0.5
     max_steps_per_episode: int = 500
+    normalize_advantages: bool = True
     device: str | None = None
