@@ -1,0 +1,15 @@
+{
+  "algorithm": "rl-capa",
+  "metrics": {
+    "TR": 3516.032,
+    "CR": 0.996,
+    "BPT": 0.20005269904140732,
+    "delivered_parcels": 498,
+    "accepted_assignments": 498
+  },
+  "plots": {
+    "TR": "outputs/plots/rl_capa_run/eval/tr_over_batches.png",
+    "CR": "outputs/plots/rl_capa_run/eval/cr_over_batches.png",
+    "BPT": "outputs/plots/rl_capa_run/eval/bpt_over_batches.png"
+  }
+}

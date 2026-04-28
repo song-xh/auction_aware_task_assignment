@@ -13,300 +13,1648 @@
       "num_parcels": 1000,
       "capa": {
         "algorithm": "capa",
+        "metrics": {
+          "TR": 5824.49292615725,
+          "CR": 0.999,
+          "BPT": 1.0715271109365858,
+          "delivered_parcels": 999,
+          "accepted_assignments": 999
+        },
+        "assignment_stats": {
+          "local_platform": {
+            "local_matches": 759,
+            "cross_platform_matches": 240,
+            "unresolved_parcels": 1
+          },
+          "cooperating_platforms": {
+            "P1": {
+              "own_task_count": 985,
+              "accepted_cross_platform_tasks": 33,
+              "cooperative_revenue": 165.42731061833078
+            },
+            "P2": {
+              "own_task_count": 1109,
+              "accepted_cross_platform_tasks": 39,
+              "cooperative_revenue": 184.3966357200352
+            },
+            "P3": {
+              "own_task_count": 1233,
+              "accepted_cross_platform_tasks": 68,
+              "cooperative_revenue": 292.9452720448952
+            },
+            "P4": {
+              "own_task_count": 1357,
+              "accepted_cross_platform_tasks": 100,
+              "cooperative_revenue": 421.0437828987323
+            }
+          }
+        },
+        "timing": {
+          "started_at": "2026-04-28T12:36:34+08:00",
+          "finished_at": "2026-04-28T12:36:44+08:00",
+          "duration_seconds": 9.868565
+        },
         "batch_size": 30,
         "config": {
           "utility_balance_gamma": 0.5,
           "threshold_omega": 1.0,
           "local_payment_ratio_zeta": 0.2,
           "local_sharing_rate_mu1": 0.5,
-          "cross_platform_sharing_rate_mu2": 0.4
-        },
-        "metrics": {
-          "TR": 6331.126922684479,
-          "CR": 1.0,
-          "BPT": 0.08908798398852014,
-          "delivered_parcels": 1000,
-          "accepted_assignments": 1000
+          "cross_platform_sharing_rate_mu2": 0.5
         }
       },
       "greedy": {
         "algorithm": "greedy",
-        "batch_size": 30,
         "metrics": {
-          "TR": 4274.272000000017,
-          "CR": 0.623,
-          "BPT": 0.5402175700342013,
-          "delivered_parcels": 623,
-          "accepted_assignments": 623
-        }
+          "TR": 4687.168000000005,
+          "CR": 0.691,
+          "BPT": 0.6832661080370599,
+          "delivered_parcels": 691,
+          "accepted_assignments": 692,
+          "local_assignment_count": 692,
+          "cross_assignment_count": 0,
+          "unresolved_parcel_count": 308,
+          "partner_cross_assignment_counts": {},
+          "partner_cross_revenues": {}
+        },
+        "assignment_stats": {
+          "local_platform": {
+            "local_matches": 692,
+            "cross_platform_matches": 0,
+            "unresolved_parcels": 308
+          },
+          "cooperating_platforms": {
+            "P1": {
+              "own_task_count": 985,
+              "accepted_cross_platform_tasks": 0,
+              "cooperative_revenue": 0.0
+            },
+            "P2": {
+              "own_task_count": 1109,
+              "accepted_cross_platform_tasks": 0,
+              "cooperative_revenue": 0.0
+            },
+            "P3": {
+              "own_task_count": 1233,
+              "accepted_cross_platform_tasks": 0,
+              "cooperative_revenue": 0.0
+            },
+            "P4": {
+              "own_task_count": 1357,
+              "accepted_cross_platform_tasks": 0,
+              "cooperative_revenue": 0.0
+            }
+          }
+        },
+        "timing": {
+          "started_at": "2026-04-28T12:36:46+08:00",
+          "finished_at": "2026-04-28T12:38:06+08:00",
+          "duration_seconds": 79.248777
+        },
+        "batch_size": 30
       },
       "basegta": {
         "algorithm": "basegta",
         "metrics": {
-          "TR": 7018.290319999947,
-          "CR": 0.986,
-          "BPT": 0.33063388095615664,
-          "delivered_parcels": 986,
-          "accepted_assignments": 986
+          "TR": 6410.339759999959,
+          "CR": 0.997,
+          "BPT": 4.281607973638529,
+          "delivered_parcels": 997,
+          "accepted_assignments": 998,
+          "local_assignment_count": 801,
+          "cross_assignment_count": 197,
+          "unresolved_parcel_count": 2,
+          "partner_cross_assignment_counts": {
+            "P1": 59,
+            "P3": 47,
+            "P2": 44,
+            "P4": 47
+          },
+          "partner_cross_revenues": {
+            "P1": 294.91584,
+            "P3": 229.02228999999997,
+            "P2": 222.44394000000003,
+            "P4": 240.63417000000007
+          }
+        },
+        "assignment_stats": {
+          "local_platform": {
+            "local_matches": 801,
+            "cross_platform_matches": 197,
+            "unresolved_parcels": 2
+          },
+          "cooperating_platforms": {
+            "P1": {
+              "own_task_count": 985,
+              "accepted_cross_platform_tasks": 59,
+              "cooperative_revenue": 294.91584
+            },
+            "P2": {
+              "own_task_count": 1109,
+              "accepted_cross_platform_tasks": 44,
+              "cooperative_revenue": 222.44394000000003
+            },
+            "P3": {
+              "own_task_count": 1233,
+              "accepted_cross_platform_tasks": 47,
+              "cooperative_revenue": 229.02228999999997
+            },
+            "P4": {
+              "own_task_count": 1357,
+              "accepted_cross_platform_tasks": 47,
+              "cooperative_revenue": 240.63417000000007
+            }
+          }
+        },
+        "timing": {
+          "started_at": "2026-04-28T12:38:08+08:00",
+          "finished_at": "2026-04-28T12:38:20+08:00",
+          "duration_seconds": 11.634016
         }
       },
       "impgta": {
         "algorithm": "impgta",
-        "prediction_window_seconds": 180,
         "metrics": {
-          "TR": 7731.739889999981,
-          "CR": 0.979,
-          "BPT": 0.5796211829924687,
-          "delivered_parcels": 979,
-          "accepted_assignments": 979
-        }
+          "TR": 2282.079999999998,
+          "CR": 0.287,
+          "BPT": 11.981618841131422,
+          "delivered_parcels": 287,
+          "accepted_assignments": 287,
+          "local_assignment_count": 287,
+          "cross_assignment_count": 0,
+          "unresolved_parcel_count": 713,
+          "partner_cross_assignment_counts": {},
+          "partner_cross_revenues": {}
+        },
+        "assignment_stats": {
+          "local_platform": {
+            "local_matches": 287,
+            "cross_platform_matches": 0,
+            "unresolved_parcels": 713
+          },
+          "cooperating_platforms": {
+            "P1": {
+              "own_task_count": 985,
+              "accepted_cross_platform_tasks": 0,
+              "cooperative_revenue": 0.0
+            },
+            "P2": {
+              "own_task_count": 1109,
+              "accepted_cross_platform_tasks": 0,
+              "cooperative_revenue": 0.0
+            },
+            "P3": {
+              "own_task_count": 1233,
+              "accepted_cross_platform_tasks": 0,
+              "cooperative_revenue": 0.0
+            },
+            "P4": {
+              "own_task_count": 1357,
+              "accepted_cross_platform_tasks": 0,
+              "cooperative_revenue": 0.0
+            }
+          }
+        },
+        "timing": {
+          "started_at": "2026-04-28T12:38:23+08:00",
+          "finished_at": "2026-04-28T12:38:46+08:00",
+          "duration_seconds": 23.35838
+        },
+        "prediction_window_seconds": 30,
+        "prediction_success_rate": 0.8,
+        "prediction_sampling_seed": 1
       },
       "mra": {
         "algorithm": "mra",
-        "batch_size": 30,
         "metrics": {
-          "TR": 4062.8160000000275,
-          "CR": 0.589,
-          "BPT": 4.260539244004576,
-          "delivered_parcels": 589,
-          "accepted_assignments": 589
-        }
+          "TR": 4534.096000000012,
+          "CR": 0.666,
+          "BPT": 3.88994148481288,
+          "delivered_parcels": 666,
+          "accepted_assignments": 666,
+          "local_assignment_count": 666,
+          "cross_assignment_count": 0,
+          "unresolved_parcel_count": 334,
+          "partner_cross_assignment_counts": {},
+          "partner_cross_revenues": {}
+        },
+        "assignment_stats": {
+          "local_platform": {
+            "local_matches": 666,
+            "cross_platform_matches": 0,
+            "unresolved_parcels": 334
+          },
+          "cooperating_platforms": {
+            "P1": {
+              "own_task_count": 985,
+              "accepted_cross_platform_tasks": 0,
+              "cooperative_revenue": 0.0
+            },
+            "P2": {
+              "own_task_count": 1109,
+              "accepted_cross_platform_tasks": 0,
+              "cooperative_revenue": 0.0
+            },
+            "P3": {
+              "own_task_count": 1233,
+              "accepted_cross_platform_tasks": 0,
+              "cooperative_revenue": 0.0
+            },
+            "P4": {
+              "own_task_count": 1357,
+              "accepted_cross_platform_tasks": 0,
+              "cooperative_revenue": 0.0
+            }
+          }
+        },
+        "timing": {
+          "started_at": "2026-04-28T12:38:50+08:00",
+          "finished_at": "2026-04-28T12:38:56+08:00",
+          "duration_seconds": 5.943247
+        },
+        "batch_size": 30
       },
       "ramcom": {
         "algorithm": "ramcom",
-        "random_seed": 1,
         "metrics": {
-          "TR": 4246.588000000019,
-          "CR": 0.884,
-          "BPT": 0.8721880950388368,
-          "delivered_parcels": 884,
-          "accepted_assignments": 884
-        }
+          "TR": 4362.176000000017,
+          "CR": 0.932,
+          "BPT": 1.1869952709803329,
+          "delivered_parcels": 932,
+          "accepted_assignments": 933,
+          "local_assignment_count": 635,
+          "cross_assignment_count": 298,
+          "unresolved_parcel_count": 67,
+          "partner_cross_assignment_counts": {
+            "P2": 67,
+            "P1": 95,
+            "P3": 61,
+            "P4": 75
+          },
+          "partner_cross_revenues": {
+            "P2": 601.48,
+            "P1": 853.36,
+            "P3": 544.5,
+            "P4": 671.9200000000001
+          }
+        },
+        "assignment_stats": {
+          "local_platform": {
+            "local_matches": 635,
+            "cross_platform_matches": 298,
+            "unresolved_parcels": 67
+          },
+          "cooperating_platforms": {
+            "P1": {
+              "own_task_count": 985,
+              "accepted_cross_platform_tasks": 95,
+              "cooperative_revenue": 853.36
+            },
+            "P2": {
+              "own_task_count": 1109,
+              "accepted_cross_platform_tasks": 67,
+              "cooperative_revenue": 601.48
+            },
+            "P3": {
+              "own_task_count": 1233,
+              "accepted_cross_platform_tasks": 61,
+              "cooperative_revenue": 544.5
+            },
+            "P4": {
+              "own_task_count": 1357,
+              "accepted_cross_platform_tasks": 75,
+              "cooperative_revenue": 671.9200000000001
+            }
+          }
+        },
+        "timing": {
+          "started_at": "2026-04-28T12:38:59+08:00",
+          "finished_at": "2026-04-28T12:39:09+08:00",
+          "duration_seconds": 9.985289
+        },
+        "random_seed": 1
       }
     },
     {
       "num_parcels": 2000,
       "capa": {
         "algorithm": "capa",
+        "metrics": {
+          "TR": 11189.599955867192,
+          "CR": 0.9975,
+          "BPT": 0.27045026310406683,
+          "delivered_parcels": 1995,
+          "accepted_assignments": 1995
+        },
+        "assignment_stats": {
+          "local_platform": {
+            "local_matches": 1419,
+            "cross_platform_matches": 576,
+            "unresolved_parcels": 5
+          },
+          "cooperating_platforms": {
+            "P1": {
+              "own_task_count": 985,
+              "accepted_cross_platform_tasks": 93,
+              "cooperative_revenue": 464.74527268305127
+            },
+            "P2": {
+              "own_task_count": 1109,
+              "accepted_cross_platform_tasks": 105,
+              "cooperative_revenue": 513.5804181208866
+            },
+            "P3": {
+              "own_task_count": 1233,
+              "accepted_cross_platform_tasks": 163,
+              "cooperative_revenue": 709.3549636640051
+            },
+            "P4": {
+              "own_task_count": 1357,
+              "accepted_cross_platform_tasks": 215,
+              "cooperative_revenue": 882.6850390857846
+            }
+          }
+        },
+        "timing": {
+          "started_at": "2026-04-28T12:36:34+08:00",
+          "finished_at": "2026-04-28T12:36:52+08:00",
+          "duration_seconds": 18.526267
+        },
         "batch_size": 30,
         "config": {
           "utility_balance_gamma": 0.5,
           "threshold_omega": 1.0,
           "local_payment_ratio_zeta": 0.2,
           "local_sharing_rate_mu1": 0.5,
-          "cross_platform_sharing_rate_mu2": 0.4
-        },
-        "metrics": {
-          "TR": 11890.7969175999,
-          "CR": 1.0,
-          "BPT": 0.20820180097916818,
-          "delivered_parcels": 2000,
-          "accepted_assignments": 2000
+          "cross_platform_sharing_rate_mu2": 0.5
         }
       },
       "greedy": {
         "algorithm": "greedy",
-        "batch_size": 30,
         "metrics": {
-          "TR": 6599.4239999999245,
-          "CR": 0.4865,
-          "BPT": 1.0833357770038674,
-          "delivered_parcels": 973,
-          "accepted_assignments": 973
-        }
-      },
-      "basegta": {
-        "algorithm": "basegta",
-        "metrics": {
-          "TR": 14044.074839999786,
-          "CR": 0.9905,
-          "BPT": 0.6226058070724321,
-          "delivered_parcels": 1981,
-          "accepted_assignments": 1981
-        }
-      },
-      "impgta": {
-        "algorithm": "impgta",
-        "prediction_window_seconds": 180,
-        "metrics": {
-          "TR": 15480.892909999973,
-          "CR": 0.9805,
-          "BPT": 1.2364235090090006,
-          "delivered_parcels": 1961,
-          "accepted_assignments": 1961
-        }
-      },
-      "mra": {
-        "algorithm": "mra",
-        "batch_size": 30,
-        "metrics": {
-          "TR": 6539.055999999946,
-          "CR": 0.4785,
-          "BPT": 15.397226353039514,
-          "delivered_parcels": 957,
-          "accepted_assignments": 957
-        }
-      },
-      "ramcom": {
-        "algorithm": "ramcom",
-        "random_seed": 1,
-        "metrics": {
-          "TR": 6315.77599999994,
-          "CR": 0.7435,
-          "BPT": 1.8914681770174866,
-          "delivered_parcels": 1487,
-          "accepted_assignments": 1487
-        }
-      }
-    },
-    {
-      "num_parcels": 3000,
-      "capa": {
-        "algorithm": "capa",
-        "batch_size": 30,
-        "config": {
-          "utility_balance_gamma": 0.5,
-          "threshold_omega": 1.0,
-          "local_payment_ratio_zeta": 0.2,
-          "local_sharing_rate_mu1": 0.5,
-          "cross_platform_sharing_rate_mu2": 0.4
+          "TR": 8410.783999999869,
+          "CR": 0.625,
+          "BPT": 1.2709479489785735,
+          "delivered_parcels": 1250,
+          "accepted_assignments": 1251,
+          "local_assignment_count": 1251,
+          "cross_assignment_count": 0,
+          "unresolved_parcel_count": 749,
+          "partner_cross_assignment_counts": {},
+          "partner_cross_revenues": {}
         },
-        "metrics": {
-          "TR": 17437.40405572323,
-          "CR": 0.999,
-          "BPT": 0.449177911993047,
-          "delivered_parcels": 2997,
-          "accepted_assignments": 2997
-        }
-      },
-      "greedy": {
-        "algorithm": "greedy",
-        "batch_size": 30,
-        "metrics": {
-          "TR": 8591.487999999837,
-          "CR": 0.42533333333333334,
-          "BPT": 2.654625265992763,
-          "delivered_parcels": 1276,
-          "accepted_assignments": 1276
-        }
+        "assignment_stats": {
+          "local_platform": {
+            "local_matches": 1251,
+            "cross_platform_matches": 0,
+            "unresolved_parcels": 749
+          },
+          "cooperating_platforms": {
+            "P1": {
+              "own_task_count": 985,
+              "accepted_cross_platform_tasks": 0,
+              "cooperative_revenue": 0.0
+            },
+            "P2": {
+              "own_task_count": 1109,
+              "accepted_cross_platform_tasks": 0,
+              "cooperative_revenue": 0.0
+            },
+            "P3": {
+              "own_task_count": 1233,
+              "accepted_cross_platform_tasks": 0,
+              "cooperative_revenue": 0.0
+            },
+            "P4": {
+              "own_task_count": 1357,
+              "accepted_cross_platform_tasks": 0,
+              "cooperative_revenue": 0.0
+            }
+          }
+        },
+        "timing": {
+          "started_at": "2026-04-28T12:36:55+08:00",
+          "finished_at": "2026-04-28T12:38:20+08:00",
+          "duration_seconds": 84.880246
+        },
+        "batch_size": 30
       },
       "basegta": {
         "algorithm": "basegta",
         "metrics": {
-          "TR": 21102.444000000196,
-          "CR": 0.991,
-          "BPT": 0.955834244016387,
-          "delivered_parcels": 2973,
-          "accepted_assignments": 2973
+          "TR": 11701.46443999981,
+          "CR": 0.952,
+          "BPT": 7.081289704205119,
+          "delivered_parcels": 1904,
+          "accepted_assignments": 1906,
+          "local_assignment_count": 1377,
+          "cross_assignment_count": 529,
+          "unresolved_parcel_count": 94,
+          "partner_cross_assignment_counts": {
+            "P1": 162,
+            "P3": 123,
+            "P2": 118,
+            "P4": 126
+          },
+          "partner_cross_revenues": {
+            "P1": 805.8975600000003,
+            "P3": 600.85358,
+            "P2": 589.1332600000001,
+            "P4": 629.1991600000001
+          }
+        },
+        "assignment_stats": {
+          "local_platform": {
+            "local_matches": 1377,
+            "cross_platform_matches": 529,
+            "unresolved_parcels": 94
+          },
+          "cooperating_platforms": {
+            "P1": {
+              "own_task_count": 985,
+              "accepted_cross_platform_tasks": 162,
+              "cooperative_revenue": 805.8975600000003
+            },
+            "P2": {
+              "own_task_count": 1109,
+              "accepted_cross_platform_tasks": 118,
+              "cooperative_revenue": 589.1332600000001
+            },
+            "P3": {
+              "own_task_count": 1233,
+              "accepted_cross_platform_tasks": 123,
+              "cooperative_revenue": 600.85358
+            },
+            "P4": {
+              "own_task_count": 1357,
+              "accepted_cross_platform_tasks": 126,
+              "cooperative_revenue": 629.1991600000001
+            }
+          }
+        },
+        "timing": {
+          "started_at": "2026-04-28T12:38:23+08:00",
+          "finished_at": "2026-04-28T12:38:45+08:00",
+          "duration_seconds": 22.4858
         }
       },
       "impgta": {
         "algorithm": "impgta",
-        "prediction_window_seconds": 180,
         "metrics": {
-          "TR": 23283.886470000103,
-          "CR": 0.9806666666666667,
-          "BPT": 1.9164527880043352,
-          "delivered_parcels": 2942,
-          "accepted_assignments": 2942
-        }
+          "TR": 4180.719999999994,
+          "CR": 0.2645,
+          "BPT": 22.29043385165096,
+          "delivered_parcels": 529,
+          "accepted_assignments": 529,
+          "local_assignment_count": 529,
+          "cross_assignment_count": 0,
+          "unresolved_parcel_count": 1471,
+          "partner_cross_assignment_counts": {},
+          "partner_cross_revenues": {}
+        },
+        "assignment_stats": {
+          "local_platform": {
+            "local_matches": 529,
+            "cross_platform_matches": 0,
+            "unresolved_parcels": 1471
+          },
+          "cooperating_platforms": {
+            "P1": {
+              "own_task_count": 985,
+              "accepted_cross_platform_tasks": 0,
+              "cooperative_revenue": 0.0
+            },
+            "P2": {
+              "own_task_count": 1109,
+              "accepted_cross_platform_tasks": 0,
+              "cooperative_revenue": 0.0
+            },
+            "P3": {
+              "own_task_count": 1233,
+              "accepted_cross_platform_tasks": 0,
+              "cooperative_revenue": 0.0
+            },
+            "P4": {
+              "own_task_count": 1357,
+              "accepted_cross_platform_tasks": 0,
+              "cooperative_revenue": 0.0
+            }
+          }
+        },
+        "timing": {
+          "started_at": "2026-04-28T12:38:49+08:00",
+          "finished_at": "2026-04-28T12:39:29+08:00",
+          "duration_seconds": 39.055823
+        },
+        "prediction_window_seconds": 30,
+        "prediction_success_rate": 0.8,
+        "prediction_sampling_seed": 1
       },
       "mra": {
         "algorithm": "mra",
-        "batch_size": 30,
         "metrics": {
-          "TR": 8243.663999999875,
-          "CR": 0.4046666666666667,
-          "BPT": 28.574852139027826,
-          "delivered_parcels": 1214,
-          "accepted_assignments": 1214
-        }
+          "TR": 8615.343999999879,
+          "CR": 0.6365,
+          "BPT": 11.82566883987056,
+          "delivered_parcels": 1273,
+          "accepted_assignments": 1273,
+          "local_assignment_count": 1273,
+          "cross_assignment_count": 0,
+          "unresolved_parcel_count": 727,
+          "partner_cross_assignment_counts": {},
+          "partner_cross_revenues": {}
+        },
+        "assignment_stats": {
+          "local_platform": {
+            "local_matches": 1273,
+            "cross_platform_matches": 0,
+            "unresolved_parcels": 727
+          },
+          "cooperating_platforms": {
+            "P1": {
+              "own_task_count": 985,
+              "accepted_cross_platform_tasks": 0,
+              "cooperative_revenue": 0.0
+            },
+            "P2": {
+              "own_task_count": 1109,
+              "accepted_cross_platform_tasks": 0,
+              "cooperative_revenue": 0.0
+            },
+            "P3": {
+              "own_task_count": 1233,
+              "accepted_cross_platform_tasks": 0,
+              "cooperative_revenue": 0.0
+            },
+            "P4": {
+              "own_task_count": 1357,
+              "accepted_cross_platform_tasks": 0,
+              "cooperative_revenue": 0.0
+            }
+          }
+        },
+        "timing": {
+          "started_at": "2026-04-28T12:39:31+08:00",
+          "finished_at": "2026-04-28T12:39:50+08:00",
+          "duration_seconds": 18.661009
+        },
+        "batch_size": 30
       },
       "ramcom": {
         "algorithm": "ramcom",
-        "random_seed": 1,
         "metrics": {
-          "TR": 7989.071999999867,
-          "CR": 0.6596666666666666,
-          "BPT": 2.4388961659542474,
-          "delivered_parcels": 1979,
-          "accepted_assignments": 1979
-        }
+          "TR": 7802.747999999891,
+          "CR": 0.909,
+          "BPT": 2.3122944999795436,
+          "delivered_parcels": 1818,
+          "accepted_assignments": 1819,
+          "local_assignment_count": 1121,
+          "cross_assignment_count": 698,
+          "unresolved_parcel_count": 181,
+          "partner_cross_assignment_counts": {
+            "P2": 168,
+            "P1": 196,
+            "P3": 156,
+            "P4": 178
+          },
+          "partner_cross_revenues": {
+            "P2": 1465.4999999999998,
+            "P1": 1703.3200000000004,
+            "P3": 1385.1800000000003,
+            "P4": 1558.2599999999995
+          }
+        },
+        "assignment_stats": {
+          "local_platform": {
+            "local_matches": 1121,
+            "cross_platform_matches": 698,
+            "unresolved_parcels": 181
+          },
+          "cooperating_platforms": {
+            "P1": {
+              "own_task_count": 985,
+              "accepted_cross_platform_tasks": 196,
+              "cooperative_revenue": 1703.3200000000004
+            },
+            "P2": {
+              "own_task_count": 1109,
+              "accepted_cross_platform_tasks": 168,
+              "cooperative_revenue": 1465.4999999999998
+            },
+            "P3": {
+              "own_task_count": 1233,
+              "accepted_cross_platform_tasks": 156,
+              "cooperative_revenue": 1385.1800000000003
+            },
+            "P4": {
+              "own_task_count": 1357,
+              "accepted_cross_platform_tasks": 178,
+              "cooperative_revenue": 1558.2599999999995
+            }
+          }
+        },
+        "timing": {
+          "started_at": "2026-04-28T12:39:53+08:00",
+          "finished_at": "2026-04-28T12:40:05+08:00",
+          "duration_seconds": 12.166021
+        },
+        "random_seed": 1
       }
     },
     {
       "num_parcels": 5000,
       "capa": {
         "algorithm": "capa",
+        "metrics": {
+          "TR": 27859.42221644711,
+          "CR": 0.9972,
+          "BPT": 0.6780699609571457,
+          "delivered_parcels": 4986,
+          "accepted_assignments": 4986
+        },
+        "assignment_stats": {
+          "local_platform": {
+            "local_matches": 3521,
+            "cross_platform_matches": 1465,
+            "unresolved_parcels": 12
+          },
+          "cooperating_platforms": {
+            "P1": {
+              "own_task_count": 985,
+              "accepted_cross_platform_tasks": 290,
+              "cooperative_revenue": 1461.5681744852884
+            },
+            "P2": {
+              "own_task_count": 1109,
+              "accepted_cross_platform_tasks": 345,
+              "cooperative_revenue": 1697.1858385781723
+            },
+            "P3": {
+              "own_task_count": 1233,
+              "accepted_cross_platform_tasks": 377,
+              "cooperative_revenue": 1648.0327651774003
+            },
+            "P4": {
+              "own_task_count": 1357,
+              "accepted_cross_platform_tasks": 453,
+              "cooperative_revenue": 1819.7000448979236
+            }
+          }
+        },
+        "timing": {
+          "started_at": "2026-04-28T12:36:35+08:00",
+          "finished_at": "2026-04-28T12:37:07+08:00",
+          "duration_seconds": 32.157365
+        },
         "batch_size": 30,
         "config": {
           "utility_balance_gamma": 0.5,
           "threshold_omega": 1.0,
           "local_payment_ratio_zeta": 0.2,
           "local_sharing_rate_mu1": 0.5,
-          "cross_platform_sharing_rate_mu2": 0.4
-        },
-        "metrics": {
-          "TR": 28866.81957335119,
-          "CR": 0.9978,
-          "BPT": 0.7956898360184823,
-          "delivered_parcels": 4989,
-          "accepted_assignments": 4989
+          "cross_platform_sharing_rate_mu2": 0.5
         }
       },
       "greedy": {
         "algorithm": "greedy",
-        "batch_size": 30,
         "metrics": {
-          "TR": 12133.023999999667,
-          "CR": 0.363,
-          "BPT": 2.703701168030875,
-          "delivered_parcels": 1815,
-          "accepted_assignments": 1815
-        }
+          "TR": 19092.335999999963,
+          "CR": 0.5718,
+          "BPT": 3.585671289178208,
+          "delivered_parcels": 2859,
+          "accepted_assignments": 2868,
+          "local_assignment_count": 2868,
+          "cross_assignment_count": 0,
+          "unresolved_parcel_count": 2132,
+          "partner_cross_assignment_counts": {},
+          "partner_cross_revenues": {}
+        },
+        "assignment_stats": {
+          "local_platform": {
+            "local_matches": 2868,
+            "cross_platform_matches": 0,
+            "unresolved_parcels": 2132
+          },
+          "cooperating_platforms": {
+            "P1": {
+              "own_task_count": 985,
+              "accepted_cross_platform_tasks": 0,
+              "cooperative_revenue": 0.0
+            },
+            "P2": {
+              "own_task_count": 1109,
+              "accepted_cross_platform_tasks": 0,
+              "cooperative_revenue": 0.0
+            },
+            "P3": {
+              "own_task_count": 1233,
+              "accepted_cross_platform_tasks": 0,
+              "cooperative_revenue": 0.0
+            },
+            "P4": {
+              "own_task_count": 1357,
+              "accepted_cross_platform_tasks": 0,
+              "cooperative_revenue": 0.0
+            }
+          }
+        },
+        "timing": {
+          "started_at": "2026-04-28T12:37:11+08:00",
+          "finished_at": "2026-04-28T12:38:56+08:00",
+          "duration_seconds": 105.786078
+        },
+        "batch_size": 30
       },
       "basegta": {
         "algorithm": "basegta",
         "metrics": {
-          "TR": 35160.73903000152,
-          "CR": 0.991,
-          "BPT": 1.6141364470327062,
-          "delivered_parcels": 4955,
-          "accepted_assignments": 4955
+          "TR": 28040.446980001085,
+          "CR": 0.9246,
+          "BPT": 14.713027784709993,
+          "delivered_parcels": 4623,
+          "accepted_assignments": 4641,
+          "local_assignment_count": 3271,
+          "cross_assignment_count": 1370,
+          "unresolved_parcel_count": 359,
+          "partner_cross_assignment_counts": {
+            "P1": 386,
+            "P3": 315,
+            "P2": 336,
+            "P4": 333
+          },
+          "partner_cross_revenues": {
+            "P1": 1911.4565400000004,
+            "P3": 1553.0301999999997,
+            "P2": 1673.73024,
+            "P4": 1671.516040000001
+          }
+        },
+        "assignment_stats": {
+          "local_platform": {
+            "local_matches": 3271,
+            "cross_platform_matches": 1370,
+            "unresolved_parcels": 359
+          },
+          "cooperating_platforms": {
+            "P1": {
+              "own_task_count": 985,
+              "accepted_cross_platform_tasks": 386,
+              "cooperative_revenue": 1911.4565400000004
+            },
+            "P2": {
+              "own_task_count": 1109,
+              "accepted_cross_platform_tasks": 336,
+              "cooperative_revenue": 1673.73024
+            },
+            "P3": {
+              "own_task_count": 1233,
+              "accepted_cross_platform_tasks": 315,
+              "cooperative_revenue": 1553.0301999999997
+            },
+            "P4": {
+              "own_task_count": 1357,
+              "accepted_cross_platform_tasks": 333,
+              "cooperative_revenue": 1671.516040000001
+            }
+          }
+        },
+        "timing": {
+          "started_at": "2026-04-28T12:39:01+08:00",
+          "finished_at": "2026-04-28T12:39:54+08:00",
+          "duration_seconds": 52.835996
         }
       },
       "impgta": {
         "algorithm": "impgta",
-        "prediction_window_seconds": 180,
         "metrics": {
-          "TR": 38995.67251999998,
-          "CR": 0.982,
-          "BPT": 3.615343392933937,
-          "delivered_parcels": 4910,
-          "accepted_assignments": 4910
-        }
+          "TR": 10275.215999999988,
+          "CR": 0.2596,
+          "BPT": 55.36894440818469,
+          "delivered_parcels": 1298,
+          "accepted_assignments": 1299,
+          "local_assignment_count": 1299,
+          "cross_assignment_count": 0,
+          "unresolved_parcel_count": 3701,
+          "partner_cross_assignment_counts": {},
+          "partner_cross_revenues": {}
+        },
+        "assignment_stats": {
+          "local_platform": {
+            "local_matches": 1299,
+            "cross_platform_matches": 0,
+            "unresolved_parcels": 3701
+          },
+          "cooperating_platforms": {
+            "P1": {
+              "own_task_count": 985,
+              "accepted_cross_platform_tasks": 0,
+              "cooperative_revenue": 0.0
+            },
+            "P2": {
+              "own_task_count": 1109,
+              "accepted_cross_platform_tasks": 0,
+              "cooperative_revenue": 0.0
+            },
+            "P3": {
+              "own_task_count": 1233,
+              "accepted_cross_platform_tasks": 0,
+              "cooperative_revenue": 0.0
+            },
+            "P4": {
+              "own_task_count": 1357,
+              "accepted_cross_platform_tasks": 0,
+              "cooperative_revenue": 0.0
+            }
+          }
+        },
+        "timing": {
+          "started_at": "2026-04-28T12:39:57+08:00",
+          "finished_at": "2026-04-28T12:41:40+08:00",
+          "duration_seconds": 103.003979
+        },
+        "prediction_window_seconds": 30,
+        "prediction_success_rate": 0.8,
+        "prediction_sampling_seed": 1
       },
       "mra": {
         "algorithm": "mra",
-        "batch_size": 30,
         "metrics": {
-          "TR": 13180.287999999655,
-          "CR": 0.3916,
-          "BPT": 74.26660485988668,
-          "delivered_parcels": 1958,
-          "accepted_assignments": 1958
-        }
+          "TR": 20507.936000000253,
+          "CR": 0.6098,
+          "BPT": 73.09284143940386,
+          "delivered_parcels": 3049,
+          "accepted_assignments": 3058,
+          "local_assignment_count": 3058,
+          "cross_assignment_count": 0,
+          "unresolved_parcel_count": 1942,
+          "partner_cross_assignment_counts": {},
+          "partner_cross_revenues": {}
+        },
+        "assignment_stats": {
+          "local_platform": {
+            "local_matches": 3058,
+            "cross_platform_matches": 0,
+            "unresolved_parcels": 1942
+          },
+          "cooperating_platforms": {
+            "P1": {
+              "own_task_count": 985,
+              "accepted_cross_platform_tasks": 0,
+              "cooperative_revenue": 0.0
+            },
+            "P2": {
+              "own_task_count": 1109,
+              "accepted_cross_platform_tasks": 0,
+              "cooperative_revenue": 0.0
+            },
+            "P3": {
+              "own_task_count": 1233,
+              "accepted_cross_platform_tasks": 0,
+              "cooperative_revenue": 0.0
+            },
+            "P4": {
+              "own_task_count": 1357,
+              "accepted_cross_platform_tasks": 0,
+              "cooperative_revenue": 0.0
+            }
+          }
+        },
+        "timing": {
+          "started_at": "2026-04-28T12:41:43+08:00",
+          "finished_at": "2026-04-28T12:43:21+08:00",
+          "duration_seconds": 98.177079
+        },
+        "batch_size": 30
       },
       "ramcom": {
         "algorithm": "ramcom",
-        "random_seed": 1,
         "metrics": {
-          "TR": 10815.327999999745,
-          "CR": 0.5716,
-          "BPT": 4.073968873003196,
-          "delivered_parcels": 2858,
-          "accepted_assignments": 2858
+          "TR": 16919.51199999965,
+          "CR": 0.8756,
+          "BPT": 6.640409181145515,
+          "delivered_parcels": 4378,
+          "accepted_assignments": 4393,
+          "local_assignment_count": 2405,
+          "cross_assignment_count": 1988,
+          "unresolved_parcel_count": 607,
+          "partner_cross_assignment_counts": {
+            "P2": 515,
+            "P1": 527,
+            "P3": 478,
+            "P4": 468
+          },
+          "partner_cross_revenues": {
+            "P2": 4391.1799999999985,
+            "P1": 4477.579999999997,
+            "P3": 4130.040000000002,
+            "P4": 4035.04
+          }
+        },
+        "assignment_stats": {
+          "local_platform": {
+            "local_matches": 2405,
+            "cross_platform_matches": 1988,
+            "unresolved_parcels": 607
+          },
+          "cooperating_platforms": {
+            "P1": {
+              "own_task_count": 985,
+              "accepted_cross_platform_tasks": 527,
+              "cooperative_revenue": 4477.579999999997
+            },
+            "P2": {
+              "own_task_count": 1109,
+              "accepted_cross_platform_tasks": 515,
+              "cooperative_revenue": 4391.1799999999985
+            },
+            "P3": {
+              "own_task_count": 1233,
+              "accepted_cross_platform_tasks": 478,
+              "cooperative_revenue": 4130.040000000002
+            },
+            "P4": {
+              "own_task_count": 1357,
+              "accepted_cross_platform_tasks": 468,
+              "cooperative_revenue": 4035.04
+            }
+          }
+        },
+        "timing": {
+          "started_at": "2026-04-28T12:43:25+08:00",
+          "finished_at": "2026-04-28T12:44:05+08:00",
+          "duration_seconds": 39.648314
+        },
+        "random_seed": 1
+      }
+    },
+    {
+      "num_parcels": 10000,
+      "capa": {
+        "algorithm": "capa",
+        "metrics": {
+          "TR": 56931.33712832269,
+          "CR": 0.9934,
+          "BPT": 1.7342479829221702,
+          "delivered_parcels": 9934,
+          "accepted_assignments": 9934
+        },
+        "assignment_stats": {
+          "local_platform": {
+            "local_matches": 7284,
+            "cross_platform_matches": 2650,
+            "unresolved_parcels": 62
+          },
+          "cooperating_platforms": {
+            "P1": {
+              "own_task_count": 985,
+              "accepted_cross_platform_tasks": 463,
+              "cooperative_revenue": 2338.7566496415097
+            },
+            "P2": {
+              "own_task_count": 1109,
+              "accepted_cross_platform_tasks": 614,
+              "cooperative_revenue": 3046.1092047074026
+            },
+            "P3": {
+              "own_task_count": 1233,
+              "accepted_cross_platform_tasks": 700,
+              "cooperative_revenue": 3070.8432201360733
+            },
+            "P4": {
+              "own_task_count": 1357,
+              "accepted_cross_platform_tasks": 873,
+              "cooperative_revenue": 3500.6119635807204
+            }
+          }
+        },
+        "timing": {
+          "started_at": "2026-04-28T12:36:36+08:00",
+          "finished_at": "2026-04-28T12:37:46+08:00",
+          "duration_seconds": 69.936028
+        },
+        "batch_size": 30,
+        "config": {
+          "utility_balance_gamma": 0.5,
+          "threshold_omega": 1.0,
+          "local_payment_ratio_zeta": 0.2,
+          "local_sharing_rate_mu1": 0.5,
+          "cross_platform_sharing_rate_mu2": 0.5
         }
+      },
+      "greedy": {
+        "algorithm": "greedy",
+        "metrics": {
+          "TR": 39098.736000003104,
+          "CR": 0.5851,
+          "BPT": 8.056818443874363,
+          "delivered_parcels": 5851,
+          "accepted_assignments": 5891,
+          "local_assignment_count": 5891,
+          "cross_assignment_count": 0,
+          "unresolved_parcel_count": 4109,
+          "partner_cross_assignment_counts": {},
+          "partner_cross_revenues": {}
+        },
+        "assignment_stats": {
+          "local_platform": {
+            "local_matches": 5891,
+            "cross_platform_matches": 0,
+            "unresolved_parcels": 4109
+          },
+          "cooperating_platforms": {
+            "P1": {
+              "own_task_count": 985,
+              "accepted_cross_platform_tasks": 0,
+              "cooperative_revenue": 0.0
+            },
+            "P2": {
+              "own_task_count": 1109,
+              "accepted_cross_platform_tasks": 0,
+              "cooperative_revenue": 0.0
+            },
+            "P3": {
+              "own_task_count": 1233,
+              "accepted_cross_platform_tasks": 0,
+              "cooperative_revenue": 0.0
+            },
+            "P4": {
+              "own_task_count": 1357,
+              "accepted_cross_platform_tasks": 0,
+              "cooperative_revenue": 0.0
+            }
+          }
+        },
+        "timing": {
+          "started_at": "2026-04-28T12:37:49+08:00",
+          "finished_at": "2026-04-28T12:40:00+08:00",
+          "duration_seconds": 131.338587
+        },
+        "batch_size": 30
+      },
+      "basegta": {
+        "algorithm": "basegta",
+        "metrics": {
+          "TR": 58586.45273000452,
+          "CR": 0.942,
+          "BPT": 33.21489259501868,
+          "delivered_parcels": 9420,
+          "accepted_assignments": 9525,
+          "local_assignment_count": 6932,
+          "cross_assignment_count": 2593,
+          "unresolved_parcel_count": 475,
+          "partner_cross_assignment_counts": {
+            "P1": 741,
+            "P3": 607,
+            "P2": 649,
+            "P4": 596
+          },
+          "partner_cross_revenues": {
+            "P1": 3709.1695699999987,
+            "P3": 3068.602919999997,
+            "P2": 3269.6791199999993,
+            "P4": 3043.2556599999984
+          }
+        },
+        "assignment_stats": {
+          "local_platform": {
+            "local_matches": 6932,
+            "cross_platform_matches": 2593,
+            "unresolved_parcels": 475
+          },
+          "cooperating_platforms": {
+            "P1": {
+              "own_task_count": 985,
+              "accepted_cross_platform_tasks": 741,
+              "cooperative_revenue": 3709.1695699999987
+            },
+            "P2": {
+              "own_task_count": 1109,
+              "accepted_cross_platform_tasks": 649,
+              "cooperative_revenue": 3269.6791199999993
+            },
+            "P3": {
+              "own_task_count": 1233,
+              "accepted_cross_platform_tasks": 607,
+              "cooperative_revenue": 3068.602919999997
+            },
+            "P4": {
+              "own_task_count": 1357,
+              "accepted_cross_platform_tasks": 596,
+              "cooperative_revenue": 3043.2556599999984
+            }
+          }
+        },
+        "timing": {
+          "started_at": "2026-04-28T12:40:04+08:00",
+          "finished_at": "2026-04-28T12:42:00+08:00",
+          "duration_seconds": 115.758696
+        }
+      },
+      "impgta": {
+        "algorithm": "impgta",
+        "metrics": {
+          "TR": 24141.997320000053,
+          "CR": 0.31,
+          "BPT": 100.17002410723944,
+          "delivered_parcels": 3100,
+          "accepted_assignments": 3112,
+          "local_assignment_count": 2911,
+          "cross_assignment_count": 201,
+          "unresolved_parcel_count": 6888,
+          "partner_cross_assignment_counts": {
+            "P1": 185,
+            "P2": 12,
+            "P4": 4
+          },
+          "partner_cross_revenues": {
+            "P1": 772.8469599999997,
+            "P2": 52.884820000000005,
+            "P4": 17.6829
+          }
+        },
+        "assignment_stats": {
+          "local_platform": {
+            "local_matches": 2911,
+            "cross_platform_matches": 201,
+            "unresolved_parcels": 6888
+          },
+          "cooperating_platforms": {
+            "P1": {
+              "own_task_count": 985,
+              "accepted_cross_platform_tasks": 185,
+              "cooperative_revenue": 772.8469599999997
+            },
+            "P2": {
+              "own_task_count": 1109,
+              "accepted_cross_platform_tasks": 12,
+              "cooperative_revenue": 52.884820000000005
+            },
+            "P3": {
+              "own_task_count": 1233,
+              "accepted_cross_platform_tasks": 0,
+              "cooperative_revenue": 0.0
+            },
+            "P4": {
+              "own_task_count": 1357,
+              "accepted_cross_platform_tasks": 4,
+              "cooperative_revenue": 17.6829
+            }
+          }
+        },
+        "timing": {
+          "started_at": "2026-04-28T12:42:07+08:00",
+          "finished_at": "2026-04-28T12:45:26+08:00",
+          "duration_seconds": 198.853832
+        },
+        "prediction_window_seconds": 30,
+        "prediction_success_rate": 0.8,
+        "prediction_sampling_seed": 1
+      },
+      "mra": {
+        "algorithm": "mra",
+        "metrics": {
+          "TR": 40710.96000000375,
+          "CR": 0.6088,
+          "BPT": 301.87422791489917,
+          "delivered_parcels": 6088,
+          "accepted_assignments": 6123,
+          "local_assignment_count": 6123,
+          "cross_assignment_count": 0,
+          "unresolved_parcel_count": 3877,
+          "partner_cross_assignment_counts": {},
+          "partner_cross_revenues": {}
+        },
+        "assignment_stats": {
+          "local_platform": {
+            "local_matches": 6123,
+            "cross_platform_matches": 0,
+            "unresolved_parcels": 3877
+          },
+          "cooperating_platforms": {
+            "P1": {
+              "own_task_count": 985,
+              "accepted_cross_platform_tasks": 0,
+              "cooperative_revenue": 0.0
+            },
+            "P2": {
+              "own_task_count": 1109,
+              "accepted_cross_platform_tasks": 0,
+              "cooperative_revenue": 0.0
+            },
+            "P3": {
+              "own_task_count": 1233,
+              "accepted_cross_platform_tasks": 0,
+              "cooperative_revenue": 0.0
+            },
+            "P4": {
+              "own_task_count": 1357,
+              "accepted_cross_platform_tasks": 0,
+              "cooperative_revenue": 0.0
+            }
+          }
+        },
+        "timing": {
+          "started_at": "2026-04-28T12:45:29+08:00",
+          "finished_at": "2026-04-28T12:52:04+08:00",
+          "duration_seconds": 394.202339
+        },
+        "batch_size": 30
+      },
+      "ramcom": {
+        "algorithm": "ramcom",
+        "metrics": {
+          "TR": 34061.616000002374,
+          "CR": 0.898,
+          "BPT": 14.80976859900693,
+          "delivered_parcels": 8980,
+          "accepted_assignments": 9074,
+          "local_assignment_count": 4636,
+          "cross_assignment_count": 4438,
+          "unresolved_parcel_count": 926,
+          "partner_cross_assignment_counts": {
+            "P2": 1077,
+            "P1": 1183,
+            "P3": 1112,
+            "P4": 1066
+          },
+          "partner_cross_revenues": {
+            "P2": 9025.32,
+            "P1": 9889.200000000003,
+            "P3": 9384.500000000007,
+            "P4": 8994.820000000003
+          }
+        },
+        "assignment_stats": {
+          "local_platform": {
+            "local_matches": 4636,
+            "cross_platform_matches": 4438,
+            "unresolved_parcels": 926
+          },
+          "cooperating_platforms": {
+            "P1": {
+              "own_task_count": 985,
+              "accepted_cross_platform_tasks": 1183,
+              "cooperative_revenue": 9889.200000000003
+            },
+            "P2": {
+              "own_task_count": 1109,
+              "accepted_cross_platform_tasks": 1077,
+              "cooperative_revenue": 9025.32
+            },
+            "P3": {
+              "own_task_count": 1233,
+              "accepted_cross_platform_tasks": 1112,
+              "cooperative_revenue": 9384.500000000007
+            },
+            "P4": {
+              "own_task_count": 1357,
+              "accepted_cross_platform_tasks": 1066,
+              "cooperative_revenue": 8994.820000000003
+            }
+          }
+        },
+        "timing": {
+          "started_at": "2026-04-28T12:52:11+08:00",
+          "finished_at": "2026-04-28T12:54:04+08:00",
+          "duration_seconds": 113.054403
+        },
+        "random_seed": 1
+      }
+    },
+    {
+      "num_parcels": 20000,
+      "capa": {
+        "algorithm": "capa",
+        "metrics": {
+          "TR": 119323.06518191237,
+          "CR": 0.97915,
+          "BPT": 3.3179962426838756,
+          "delivered_parcels": 19583,
+          "accepted_assignments": 19583
+        },
+        "assignment_stats": {
+          "local_platform": {
+            "local_matches": 15773,
+            "cross_platform_matches": 3810,
+            "unresolved_parcels": 402
+          },
+          "cooperating_platforms": {
+            "P1": {
+              "own_task_count": 985,
+              "accepted_cross_platform_tasks": 599,
+              "cooperative_revenue": 2954.902978148099
+            },
+            "P2": {
+              "own_task_count": 1109,
+              "accepted_cross_platform_tasks": 776,
+              "cooperative_revenue": 3763.0714247296783
+            },
+            "P3": {
+              "own_task_count": 1233,
+              "accepted_cross_platform_tasks": 1014,
+              "cooperative_revenue": 4484.358887327073
+            },
+            "P4": {
+              "own_task_count": 1357,
+              "accepted_cross_platform_tasks": 1421,
+              "cooperative_revenue": 5752.219520093083
+            }
+          }
+        },
+        "timing": {
+          "started_at": "2026-04-28T12:36:36+08:00",
+          "finished_at": "2026-04-28T12:38:35+08:00",
+          "duration_seconds": 118.221933
+        },
+        "batch_size": 30,
+        "config": {
+          "utility_balance_gamma": 0.5,
+          "threshold_omega": 1.0,
+          "local_payment_ratio_zeta": 0.2,
+          "local_sharing_rate_mu1": 0.5,
+          "cross_platform_sharing_rate_mu2": 0.5
+        }
+      },
+      "greedy": {
+        "algorithm": "greedy",
+        "metrics": {
+          "TR": 83289.48799999652,
+          "CR": 0.59645,
+          "BPT": 18.239767664596002,
+          "delivered_parcels": 11929,
+          "accepted_assignments": 12478,
+          "local_assignment_count": 12478,
+          "cross_assignment_count": 0,
+          "unresolved_parcel_count": 7522,
+          "partner_cross_assignment_counts": {},
+          "partner_cross_revenues": {}
+        },
+        "assignment_stats": {
+          "local_platform": {
+            "local_matches": 12478,
+            "cross_platform_matches": 0,
+            "unresolved_parcels": 7522
+          },
+          "cooperating_platforms": {
+            "P1": {
+              "own_task_count": 985,
+              "accepted_cross_platform_tasks": 0,
+              "cooperative_revenue": 0.0
+            },
+            "P2": {
+              "own_task_count": 1109,
+              "accepted_cross_platform_tasks": 0,
+              "cooperative_revenue": 0.0
+            },
+            "P3": {
+              "own_task_count": 1233,
+              "accepted_cross_platform_tasks": 0,
+              "cooperative_revenue": 0.0
+            },
+            "P4": {
+              "own_task_count": 1357,
+              "accepted_cross_platform_tasks": 0,
+              "cooperative_revenue": 0.0
+            }
+          }
+        },
+        "timing": {
+          "started_at": "2026-04-28T12:38:40+08:00",
+          "finished_at": "2026-04-28T12:42:11+08:00",
+          "duration_seconds": 211.114843
+        },
+        "batch_size": 30
+      },
+      "basegta": {
+        "algorithm": "basegta",
+        "metrics": {
+          "TR": 122459.72461998138,
+          "CR": 0.89475,
+          "BPT": 70.73181881676464,
+          "delivered_parcels": 17895,
+          "accepted_assignments": 19199,
+          "local_assignment_count": 15296,
+          "cross_assignment_count": 3903,
+          "unresolved_parcel_count": 801,
+          "partner_cross_assignment_counts": {
+            "P1": 1155,
+            "P3": 898,
+            "P2": 1017,
+            "P4": 833
+          },
+          "partner_cross_revenues": {
+            "P1": 5862.639130000006,
+            "P3": 4622.165249999998,
+            "P2": 5222.78499,
+            "P4": 4300.038009999999
+          }
+        },
+        "assignment_stats": {
+          "local_platform": {
+            "local_matches": 15296,
+            "cross_platform_matches": 3903,
+            "unresolved_parcels": 801
+          },
+          "cooperating_platforms": {
+            "P1": {
+              "own_task_count": 985,
+              "accepted_cross_platform_tasks": 1155,
+              "cooperative_revenue": 5862.639130000006
+            },
+            "P2": {
+              "own_task_count": 1109,
+              "accepted_cross_platform_tasks": 1017,
+              "cooperative_revenue": 5222.78499
+            },
+            "P3": {
+              "own_task_count": 1233,
+              "accepted_cross_platform_tasks": 898,
+              "cooperative_revenue": 4622.165249999998
+            },
+            "P4": {
+              "own_task_count": 1357,
+              "accepted_cross_platform_tasks": 833,
+              "cooperative_revenue": 4300.038009999999
+            }
+          }
+        },
+        "timing": {
+          "started_at": "2026-04-28T12:42:15+08:00",
+          "finished_at": "2026-04-28T12:46:07+08:00",
+          "duration_seconds": 231.458319
+        }
+      },
+      "impgta": {
+        "algorithm": "impgta",
+        "metrics": {
+          "TR": 74871.01795999969,
+          "CR": 0.5854,
+          "BPT": 178.5912809395577,
+          "delivered_parcels": 11708,
+          "accepted_assignments": 12442,
+          "local_assignment_count": 6280,
+          "cross_assignment_count": 6162,
+          "unresolved_parcel_count": 7558,
+          "partner_cross_assignment_counts": {
+            "P1": 4037,
+            "P2": 640,
+            "P4": 369,
+            "P3": 1116
+          },
+          "partner_cross_revenues": {
+            "P1": 16713.13734000003,
+            "P2": 2691.9760300000025,
+            "P4": 1548.8990400000005,
+            "P3": 4719.529629999997
+          }
+        },
+        "assignment_stats": {
+          "local_platform": {
+            "local_matches": 6280,
+            "cross_platform_matches": 6162,
+            "unresolved_parcels": 7558
+          },
+          "cooperating_platforms": {
+            "P1": {
+              "own_task_count": 985,
+              "accepted_cross_platform_tasks": 4037,
+              "cooperative_revenue": 16713.13734000003
+            },
+            "P2": {
+              "own_task_count": 1109,
+              "accepted_cross_platform_tasks": 640,
+              "cooperative_revenue": 2691.9760300000025
+            },
+            "P3": {
+              "own_task_count": 1233,
+              "accepted_cross_platform_tasks": 1116,
+              "cooperative_revenue": 4719.529629999997
+            },
+            "P4": {
+              "own_task_count": 1357,
+              "accepted_cross_platform_tasks": 369,
+              "cooperative_revenue": 1548.8990400000005
+            }
+          }
+        },
+        "timing": {
+          "started_at": "2026-04-28T12:46:12+08:00",
+          "finished_at": "2026-04-28T12:52:24+08:00",
+          "duration_seconds": 372.374406
+        },
+        "prediction_window_seconds": 30,
+        "prediction_success_rate": 0.8,
+        "prediction_sampling_seed": 1
+      },
+      "mra": {
+        "algorithm": "mra",
+        "metrics": {
+          "TR": 83161.91999999645,
+          "CR": 0.60405,
+          "BPT": 1056.5256187333107,
+          "delivered_parcels": 12081,
+          "accepted_assignments": 12495,
+          "local_assignment_count": 12495,
+          "cross_assignment_count": 0,
+          "unresolved_parcel_count": 7505,
+          "partner_cross_assignment_counts": {},
+          "partner_cross_revenues": {}
+        },
+        "assignment_stats": {
+          "local_platform": {
+            "local_matches": 12495,
+            "cross_platform_matches": 0,
+            "unresolved_parcels": 7505
+          },
+          "cooperating_platforms": {
+            "P1": {
+              "own_task_count": 985,
+              "accepted_cross_platform_tasks": 0,
+              "cooperative_revenue": 0.0
+            },
+            "P2": {
+              "own_task_count": 1109,
+              "accepted_cross_platform_tasks": 0,
+              "cooperative_revenue": 0.0
+            },
+            "P3": {
+              "own_task_count": 1233,
+              "accepted_cross_platform_tasks": 0,
+              "cooperative_revenue": 0.0
+            },
+            "P4": {
+              "own_task_count": 1357,
+              "accepted_cross_platform_tasks": 0,
+              "cooperative_revenue": 0.0
+            }
+          }
+        },
+        "timing": {
+          "started_at": "2026-04-28T12:52:30+08:00",
+          "finished_at": "2026-04-28T13:16:01+08:00",
+          "duration_seconds": 1410.769981
+        },
+        "batch_size": 30
+      },
+      "ramcom": {
+        "algorithm": "ramcom",
+        "metrics": {
+          "TR": 69917.42400000413,
+          "CR": 0.8602,
+          "BPT": 25.35644749066887,
+          "delivered_parcels": 17204,
+          "accepted_assignments": 18376,
+          "local_assignment_count": 9246,
+          "cross_assignment_count": 9130,
+          "unresolved_parcel_count": 1624,
+          "partner_cross_assignment_counts": {
+            "P2": 2278,
+            "P1": 2393,
+            "P3": 2253,
+            "P4": 2206
+          },
+          "partner_cross_revenues": {
+            "P2": 18868.720000000038,
+            "P1": 19782.320000000036,
+            "P3": 18738.760000000035,
+            "P4": 18320.18000000001
+          }
+        },
+        "assignment_stats": {
+          "local_platform": {
+            "local_matches": 9246,
+            "cross_platform_matches": 9130,
+            "unresolved_parcels": 1624
+          },
+          "cooperating_platforms": {
+            "P1": {
+              "own_task_count": 985,
+              "accepted_cross_platform_tasks": 2393,
+              "cooperative_revenue": 19782.320000000036
+            },
+            "P2": {
+              "own_task_count": 1109,
+              "accepted_cross_platform_tasks": 2278,
+              "cooperative_revenue": 18868.720000000038
+            },
+            "P3": {
+              "own_task_count": 1233,
+              "accepted_cross_platform_tasks": 2253,
+              "cooperative_revenue": 18738.760000000035
+            },
+            "P4": {
+              "own_task_count": 1357,
+              "accepted_cross_platform_tasks": 2206,
+              "cooperative_revenue": 18320.18000000001
+            }
+          }
+        },
+        "timing": {
+          "started_at": "2026-04-28T13:16:05+08:00",
+          "finished_at": "2026-04-28T13:20:26+08:00",
+          "duration_seconds": 261.185927
+        },
+        "random_seed": 1
       }
     }
   ]
