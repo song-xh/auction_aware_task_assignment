@@ -125,8 +125,8 @@ def build_algorithm_kwargs(args: argparse.Namespace) -> dict[str, Any]:
             "prediction_success_rate": args.prediction_success_rate,
             "prediction_sampling_seed": args.prediction_sampling_seed,
         }
-    if args.algorithm in {"rl-capa", "rl-capa-stage1"}:
-        return {
+    if args.algorithm in {"rl-capa", "rl-capa-stage1", "rl-capa-ablation"}:
+        kwargs = {
             "min_batch_size": args.min_batch_size,
             "max_batch_size": args.max_batch_size,
             "batch_actions": args.rl_batch_actions,
@@ -141,6 +141,9 @@ def build_algorithm_kwargs(args: argparse.Namespace) -> dict[str, Any]:
             "future_feature_window_seconds": args.rl_future_feature_window_seconds,
             "device": args.rl_device,
         }
+        if args.algorithm == "rl-capa-ablation":
+            kwargs["fixed_batch_size"] = args.batch_size
+        return kwargs
     if args.algorithm == "rl-capa-stage2":
         return {
             "fixed_batch_size": args.batch_size,

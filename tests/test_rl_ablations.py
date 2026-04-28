@@ -37,6 +37,51 @@ class RLCAPAAblationTests(unittest.TestCase):
 
         self.assertIn("rl-capa-stage2", get_algorithm_names())
 
+    def test_ablation_algorithm_is_registered(self) -> None:
+        """Combined ablation runner should be selectable through the registry."""
+
+        self.assertIn("rl-capa-ablation", get_algorithm_names())
+
+    def test_plot_reward_comparison_creates_file(self) -> None:
+        """Reward comparison plot should combine full and ablation histories."""
+
+        from rl_capa.ablation_compare import plot_reward_comparison
+
+        output_path = plot_reward_comparison(
+            reward_histories={
+                "rl-capa": [1.0, 2.0],
+                "rl-capa-stage1": [0.5, 1.5],
+                "rl-capa-stage2": [0.25, 1.25],
+            },
+            output_path=self.temp_root / "reward_comparison.png",
+        )
+
+        self.assertTrue(output_path.exists())
+
+    def test_combined_ablation_runner_returns_reward_plot(self) -> None:
+        """Combined runner should train all variants and expose the merged plot."""
+
+        from algorithms.rl_capa_ablation_runner import build_rl_capa_ablation_runner
+
+        runner = build_rl_capa_ablation_runner(batch_actions=[10, 15], fixed_batch_size=30, episodes=1)
+        with patch("algorithms.rl_capa_ablation_runner.build_environment_seed", return_value=SimpleNamespace()), patch(
+            "algorithms.rl_capa_ablation_runner.train_rl_capa",
+            return_value={"episode_returns": [1.0], "plots": {}},
+        ), patch(
+            "algorithms.rl_capa_ablation_runner.train_stage1_rl_capa",
+            return_value={"episode_returns": [0.8], "plots": {}},
+        ), patch(
+            "algorithms.rl_capa_ablation_runner.train_stage2_rl_capa",
+            return_value={"episode_returns": [0.6], "plots": {}},
+        ), patch(
+            "algorithms.rl_capa_ablation_runner.plot_reward_comparison",
+            return_value=self.temp_root / "reward_comparison.png",
+        ):
+            summary = runner.run(environment=SimpleNamespace(), output_dir=self.temp_root)
+
+        self.assertIn("reward_comparison", summary["plots"])
+        self.assertEqual(set(summary["training"]), {"rl-capa", "rl-capa-stage1", "rl-capa-stage2"})
+
     def test_train_stage1_summary_contains_reward_curve(self) -> None:
         """Stage-1 training summary should expose reward history and a plot."""
 

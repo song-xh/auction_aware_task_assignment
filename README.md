@@ -17,6 +17,7 @@ python3 -m unittest discover -s tests -v
 - `basegta`
 - `impgta`
 - `rl-capa`
+- `rl-capa-ablation`
 - `rl-capa-stage1`
 - `rl-capa-stage2`
 
@@ -145,6 +146,34 @@ python3 runner.py run \
   --rl-max-grad-norm 0.5 \
   --output-dir outputs/plots/rl_capa_stage2
 ```
+
+如果要在同一环境 seed 下同时训练完整 RL-CAPA、stage1 消融和 stage2 消融，并输出三条 reward-vs-episode 曲线的合并图：
+
+```bash
+python3 runner.py run \
+  --algorithm rl-capa-ablation \
+  --data-dir Data \
+  --num-parcels 500 \
+  --local-couriers 20 \
+  --platforms 4 \
+  --couriers-per-platform 5 \
+  --task-window-start-seconds 0 \
+  --task-window-end-seconds 300 \
+  --partner-history-task-count-start 200 \
+  --partner-history-task-count-step 0 \
+  --rl-batch-actions 10 15 20 \
+  --batch-size 30 \
+  --step-seconds 60 \
+  --episodes 500 \
+  --rl-lr-actor 0.0003 \
+  --rl-lr-critic 0.0005 \
+  --rl-discount-factor 0.95 \
+  --rl-entropy-coeff 0.03 \
+  --rl-max-grad-norm 0.5 \
+  --output-dir outputs/plots/rl_capa_ablation
+```
+
+合并输出中，`reward_comparison.png` 是完整 RL-CAPA、stage1-only、stage2-only 三条 episode reward 曲线，三个子目录分别保留各自 `training_summary.json` 和单独训练图。
 
 兼容旧写法：
 
