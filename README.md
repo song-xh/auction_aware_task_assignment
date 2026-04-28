@@ -54,11 +54,45 @@ RL-CAPA 相关参数含义：
 - `--rl-discount-factor`：Monte-Carlo discounted return 的折扣因子。
 - `--rl-entropy-coeff`：policy entropy 正则系数。
 - `--rl-max-grad-norm`：梯度裁剪阈值。
+- `--rl-disable-advantage-normalization`：关闭 actor advantage 标准化，仅用于消融或复现实验；默认开启以降低长训练中策略过早饱和的风险。
 - `--rl-device`：可选 torch device 覆盖，例如 `cpu` 或 `cuda`；默认自动选择可用 CUDA，否则 CPU。
 - `--partner-history-task-count-start`：第一个合作平台自有任务流的显式规模，适合在小时间窗 smoke 下压低合作平台背景流量。
 - `--partner-history-task-count-step`：后续合作平台自有任务流规模的增量，`0` 表示所有合作平台使用同样的自有任务量。
 
 上面的 RL-CAPA 命令是一个 `smoke` 导向的稠密时间窗配方：`0-30s` 时间窗会把 100 个包裹压进更短的到达范围，配合 `--rl-batch-actions 10 15 20` 更容易把到达批次数控制在 2-3 个量级，从而显著缩短联调时间。`--partner-history-task-count-start 200 --partner-history-task-count-step 0` 用来避免合作平台背景任务流在小时间窗下仍然沿用默认的大规模历史值。它是推荐联调命令，不是全局默认数据分布。
+
+RL-CAPA 稳定诊断配方：
+
+```bash
+python3 runner.py run \
+  --algorithm rl-capa \
+  --data-dir Data \
+  --num-parcels 500 \
+  --local-couriers 12 \
+  --platforms 4 \
+  --couriers-per-platform 8 \
+  --task-window-start-seconds 0 \
+  --task-window-end-seconds 600 \
+  --partner-history-task-count-start 200 \
+  --partner-history-task-count-step 0 \
+  --rl-batch-actions 10 20 30 45 \
+  --step-seconds 60 \
+  --episodes 2000 \
+  --rl-lr-actor 0.0003 \
+  --rl-lr-critic 0.0005 \
+  --rl-discount-factor 0.95 \
+  --rl-entropy-coeff 0.03 \
+  --rl-max-grad-norm 0.5 \
+  --output-dir outputs/plots/rl_capa_stable
+```
+
+如果需要复现实验中未做 advantage 标准化的旧训练行为，可在上述命令末尾追加：
+
+```bash
+  --rl-disable-advantage-normalization
+```
+
+这个诊断配方用于观察逐步收敛过程，不是为了把 cross rate 人为抬高。若本地 courier 足以几乎完成全部包裹，且跨平台完成需要扣除合作平台 payment，那么 actor-critic 后期学到 cross rate 接近 `0` 可能是收益目标下的合理确定性策略，而不是绘图平滑导致。新的 `training_summary.json` 会额外记录 `entropy_pi1`、`entropy_pi2`、`mean_batch_size`，训练图也会显示 policy entropy，用于区分真实策略坍缩和图表平滑。
 
 兼容旧写法：
 

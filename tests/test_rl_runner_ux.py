@@ -106,6 +106,16 @@ class RLCAPARunnerUXTests(unittest.TestCase):
         self.assertIn("--task-window-end-seconds 30", readme)
         self.assertIn("--rl-batch-actions 10 15 20", readme)
 
+    def test_readme_documents_stable_rl_capa_diagnostic_recipe(self) -> None:
+        """README should document a less saturated RL-CAPA training recipe."""
+
+        readme = Path("README.md").read_text(encoding="utf-8")
+
+        self.assertIn("RL-CAPA 稳定诊断配方", readme)
+        self.assertIn("--rl-lr-actor 0.0003", readme)
+        self.assertIn("--rl-entropy-coeff 0.03", readme)
+        self.assertIn("--rl-disable-advantage-normalization", readme)
+
 
 if __name__ == "__main__":
     unittest.main()
