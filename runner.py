@@ -125,7 +125,7 @@ def build_algorithm_kwargs(args: argparse.Namespace) -> dict[str, Any]:
             "prediction_success_rate": args.prediction_success_rate,
             "prediction_sampling_seed": args.prediction_sampling_seed,
         }
-    if args.algorithm == "rl-capa":
+    if args.algorithm in {"rl-capa", "rl-capa-stage1"}:
         return {
             "min_batch_size": args.min_batch_size,
             "max_batch_size": args.max_batch_size,

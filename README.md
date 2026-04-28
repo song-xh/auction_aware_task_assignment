@@ -17,6 +17,7 @@ python3 -m unittest discover -s tests -v
 - `basegta`
 - `impgta`
 - `rl-capa`
+- `rl-capa-stage1`
 
 RL-CAPA 现在走 actor-critic 主线，可直接通过统一 runner 训练并评估：
 
@@ -93,6 +94,31 @@ python3 runner.py run \
 ```
 
 这个诊断配方用于观察逐步收敛过程，不是为了把 cross rate 人为抬高。若本地 courier 足以几乎完成全部包裹，且跨平台完成需要扣除合作平台 payment，那么 actor-critic 后期学到 cross rate 接近 `0` 可能是收益目标下的合理确定性策略，而不是绘图平滑导致。新的 `training_summary.json` 会额外记录 `entropy_pi1`、`entropy_pi2`、`mean_batch_size`，训练图也会显示 policy entropy，用于区分真实策略坍缩和图表平滑。
+
+RL-CAPA stage1 消融只让 RL 决策 batch-size，batch 内任务仍完整走 CAPA 的 CAMA 动态阈值与 DAPA 双层竞价：
+
+```bash
+python3 runner.py run \
+  --algorithm rl-capa-stage1 \
+  --data-dir Data \
+  --num-parcels 500 \
+  --local-couriers 20 \
+  --platforms 4 \
+  --couriers-per-platform 5 \
+  --task-window-start-seconds 0 \
+  --task-window-end-seconds 300 \
+  --partner-history-task-count-start 200 \
+  --partner-history-task-count-step 0 \
+  --rl-batch-actions 10 15 20 \
+  --step-seconds 60 \
+  --episodes 500 \
+  --rl-lr-actor 0.0003 \
+  --rl-lr-critic 0.0005 \
+  --rl-discount-factor 0.95 \
+  --rl-entropy-coeff 0.03 \
+  --rl-max-grad-norm 0.5 \
+  --output-dir outputs/plots/rl_capa_stage1
+```
 
 兼容旧写法：
 

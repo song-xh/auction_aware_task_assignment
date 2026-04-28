@@ -13,6 +13,7 @@ SUPPORTED_ALGORITHMS = (
     "mra",
     "ramcom",
     "rl-capa",
+    "rl-capa-stage1",
 )
 
 
