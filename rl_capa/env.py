@@ -19,10 +19,13 @@ import numpy as np
 
 from capa.metrics import compute_total_revenue
 from capa.models import Assignment, CAPAConfig, Courier, Parcel
+from capa.cama import run_cama
 from env.chengdu import (
     ChengduBatchRuntime,
     ChengduEnvironment,
     PreparedChengduBatch,
+    build_chengdu_local_matching_runtime,
+    commit_chengdu_local_assignments,
     finalize_chengdu_batch,
     finalize_chengdu_runtime,
     get_model_release_time,
@@ -274,6 +277,78 @@ class RLCAPAEnv:
         """Backward-compatible alias for `apply_stage2_decisions`."""
 
         return self.apply_stage2_decisions(decisions)
+
+    def apply_capa_batch(self) -> float:
+        """Run the active batch through standard CAPA CAMA/DAPA matching.
+
+        Returns:
+            Step revenue ``R_t`` produced by the standard CAPA batch flow.
+        """
+
+        runtime = self._require_runtime()
+        prepared_batch = self._require_current_batch()
+        if not prepared_batch.input_tasks:
+            self._clear_current_batch_state()
+            return 0.0
+        if not prepared_batch.eligible_tasks:
+            finalize_chengdu_batch(
+                runtime=runtime,
+                prepared_batch=prepared_batch,
+                local_assignments=[],
+                cross_assignments=[],
+                unresolved_tasks=[],
+                processing_time_seconds=0.0,
+            )
+            self._clear_current_batch_state()
+            return 0.0
+
+        started = perf_counter()
+        matching_runtime = build_chengdu_local_matching_runtime(runtime, prepared_batch)
+        cama_result = run_cama(
+            matching_runtime.batch_parcels,
+            matching_runtime.local_snapshots,
+            matching_runtime.distance_matrix,
+            self._capa_config,
+            now=runtime.current_time,
+            service_radius_meters=runtime.service_radius_meters,
+            timing=matching_runtime.timing,
+            insertion_cache=runtime.insertion_cache,
+            geo_index=runtime.geo_index,
+            speed_m_per_s=runtime.speed_m_per_s,
+            candidate_couriers_by_parcel=matching_runtime.local_candidate_couriers_by_parcel,
+            threshold_history=runtime.threshold_history,
+        )
+        local_assignments, remaining_tasks = commit_chengdu_local_assignments(
+            runtime=runtime,
+            matching_runtime=matching_runtime,
+            cama_result=cama_result,
+        )
+        cross_assignments = run_chengdu_cross_matching(
+            runtime=runtime,
+            auction_tasks=remaining_tasks,
+            timing=prepared_batch.timing,
+        )
+        for assignment in cross_assignments:
+            if assignment.platform_payment > 0:
+                self._cross_bid_history.append(assignment.platform_payment)
+        cross_assigned_ids = {
+            str(getattr(assignment.parcel, "parcel_id")) for assignment in cross_assignments
+        }
+        unresolved_tasks = [
+            task for task in remaining_tasks if str(getattr(task, "num")) not in cross_assigned_ids
+        ]
+        processing_time_seconds = perf_counter() - started
+        finalize_chengdu_batch(
+            runtime=runtime,
+            prepared_batch=prepared_batch,
+            local_assignments=local_assignments,
+            cross_assignments=cross_assignments,
+            unresolved_tasks=unresolved_tasks,
+            processing_time_seconds=processing_time_seconds,
+        )
+        step_revenue = compute_total_revenue([*local_assignments, *cross_assignments])
+        self._clear_current_batch_state()
+        return step_revenue
 
     def finalize_episode(self) -> None:
         """Drain accepted legacy routes so evaluation uses delivered semantics."""

@@ -131,6 +131,27 @@ def test_stage2_decisions_apply_to_full_batch_without_cama() -> None:
     assert reports[0].unresolved_parcels == []
 
 
+def test_apply_capa_batch_reuses_standard_cama_dapa_flow() -> None:
+    """Stage-1 ablation should finalize a batch through standard CAPA matching."""
+
+    env = RLCAPAEnv(
+        environment_seed=_seed([
+            _task("batch-task", "batch-node"),
+        ]),
+        capa_config=CAPAConfig(),
+        rl_config=RLCAPAConfig(min_batch_size=10, max_batch_size=10),
+    )
+
+    env.reset()
+    env.apply_batch_size(10)
+    reward = env.apply_capa_batch()
+
+    assert reward > 0.0
+    assert len(env.accepted_assignments()) == 1
+    assert len(env.batch_reports()) == 1
+    assert env.batch_reports()[0].input_parcels[0].parcel_id == "batch-task"
+
+
 def test_local_stage_failure_returns_to_backlog_for_next_batch() -> None:
     """A parcel selected for local matching should retry later when local capacity fails."""
 
