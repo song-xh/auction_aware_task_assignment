@@ -83,6 +83,29 @@ class RLCAPARunnerUXTests(unittest.TestCase):
         self.assertEqual(kwargs["episodes"], 3)
         self.assertTrue(kwargs["normalize_advantages"])
 
+    def test_runner_build_kwargs_include_stage2_fixed_batch_size(self) -> None:
+        """Stage-2 ablation should receive fixed batch-size and RL hyperparameters."""
+
+        args = parse_args(
+            [
+                "run",
+                "--algorithm",
+                "rl-capa-stage2",
+                "--data-dir",
+                "Data",
+                "--batch-size",
+                "30",
+                "--episodes",
+                "3",
+            ]
+        )
+
+        kwargs = build_algorithm_kwargs(args)
+
+        self.assertEqual(kwargs["fixed_batch_size"], 30)
+        self.assertEqual(kwargs["episodes"], 3)
+        self.assertTrue(kwargs["normalize_advantages"])
+
     def test_runner_can_disable_rl_advantage_normalization(self) -> None:
         """Runner should expose an ablation switch for actor advantage scaling."""
 

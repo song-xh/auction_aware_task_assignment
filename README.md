@@ -18,6 +18,7 @@ python3 -m unittest discover -s tests -v
 - `impgta`
 - `rl-capa`
 - `rl-capa-stage1`
+- `rl-capa-stage2`
 
 RL-CAPA 现在走 actor-critic 主线，可直接通过统一 runner 训练并评估：
 
@@ -118,6 +119,31 @@ python3 runner.py run \
   --rl-entropy-coeff 0.03 \
   --rl-max-grad-norm 0.5 \
   --output-dir outputs/plots/rl_capa_stage1
+```
+
+RL-CAPA stage2 消融固定 batch-size，RL 只决策每个包裹是否跨平台；`a=0` 先尝试本地匹配，失败则进入下一 batch 重新决策，`a=1` 先尝试跨平台竞价，失败也进入下一 batch：
+
+```bash
+python3 runner.py run \
+  --algorithm rl-capa-stage2 \
+  --data-dir Data \
+  --num-parcels 500 \
+  --local-couriers 20 \
+  --platforms 4 \
+  --couriers-per-platform 5 \
+  --task-window-start-seconds 0 \
+  --task-window-end-seconds 300 \
+  --partner-history-task-count-start 200 \
+  --partner-history-task-count-step 0 \
+  --batch-size 30 \
+  --step-seconds 60 \
+  --episodes 500 \
+  --rl-lr-actor 0.0003 \
+  --rl-lr-critic 0.0005 \
+  --rl-discount-factor 0.95 \
+  --rl-entropy-coeff 0.03 \
+  --rl-max-grad-norm 0.5 \
+  --output-dir outputs/plots/rl_capa_stage2
 ```
 
 兼容旧写法：

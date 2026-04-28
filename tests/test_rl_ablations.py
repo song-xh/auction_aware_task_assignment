@@ -32,6 +32,11 @@ class RLCAPAAblationTests(unittest.TestCase):
 
         self.assertIn("rl-capa-stage1", get_algorithm_names())
 
+    def test_stage2_algorithm_is_registered(self) -> None:
+        """Stage-2-only ablation should be selectable through the registry."""
+
+        self.assertIn("rl-capa-stage2", get_algorithm_names())
+
     def test_train_stage1_summary_contains_reward_curve(self) -> None:
         """Stage-1 training summary should expose reward history and a plot."""
 
@@ -71,6 +76,50 @@ class RLCAPAAblationTests(unittest.TestCase):
 
         self.assertEqual(summary["episode_returns"], [10.0])
         self.assertEqual(summary["mean_batch_size"], [10.0])
+        self.assertIn("training_curves", summary["plots"])
+
+    def test_train_stage2_summary_contains_reward_curve(self) -> None:
+        """Stage-2 training summary should expose reward and cross-rate history."""
+
+        from rl_capa.stage2_trainer import Stage2EpisodeLog
+        from rl_capa.train_stage2 import train_stage2_rl_capa
+
+        history = [
+            Stage2EpisodeLog(
+                episode=0,
+                total_reward=8.0,
+                loss_pi2=1.0,
+                loss_v2=2.0,
+                steps=1,
+                assignments=1,
+                fixed_batch_size=30,
+                cross_rate=0.5,
+                mean_batch_size=30.0,
+            )
+        ]
+
+        with patch("rl_capa.train_stage2.RLCAPAEnv"), patch(
+            "rl_capa.train_stage2.Stage2RLCAPATrainer",
+        ) as trainer_cls, patch(
+            "rl_capa.train_stage2.plot_training_curves",
+            return_value=self.temp_root / "stage2_training.png",
+        ):
+            trainer = trainer_cls.return_value
+            trainer.train.return_value = history
+            trainer.device = "cpu"
+
+            summary = train_stage2_rl_capa(
+                environment_seed=SimpleNamespace(),
+                capa_config=CAPAConfig(),
+                rl_config=RLCAPAConfig(min_batch_size=30, max_batch_size=30),
+                training_config=RLTrainingConfig(episodes=1),
+                fixed_batch_size=30,
+                output_dir=self.temp_root,
+            )
+
+        self.assertEqual(summary["episode_returns"], [8.0])
+        self.assertEqual(summary["cross_rate"], [0.5])
+        self.assertEqual(summary["mean_batch_size"], [30.0])
         self.assertIn("training_curves", summary["plots"])
 
 

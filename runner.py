@@ -141,6 +141,20 @@ def build_algorithm_kwargs(args: argparse.Namespace) -> dict[str, Any]:
             "future_feature_window_seconds": args.rl_future_feature_window_seconds,
             "device": args.rl_device,
         }
+    if args.algorithm == "rl-capa-stage2":
+        return {
+            "fixed_batch_size": args.batch_size,
+            "step_seconds": args.step_seconds,
+            "episodes": args.episodes,
+            "lr_actor": args.rl_lr_actor,
+            "lr_critic": args.rl_lr_critic,
+            "discount_factor": args.rl_discount_factor,
+            "entropy_coeff": args.rl_entropy_coeff,
+            "max_grad_norm": args.rl_max_grad_norm,
+            "normalize_advantages": not args.rl_disable_advantage_normalization,
+            "future_feature_window_seconds": args.rl_future_feature_window_seconds,
+            "device": args.rl_device,
+        }
     return {}
 
 
