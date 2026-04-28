@@ -303,11 +303,68 @@ def iter_delivery_seed_counts(required_couriers: int, total_delivery_tasks: int)
         current = min(total_delivery_tasks, current * 2)
 
 
+def get_true_release_time(task: Any) -> float:
+    """Return the original Chengdu release time stored in ``s_time``.
+
+    Args:
+        task: Legacy Chengdu task object.
+
+    Returns:
+        The true task release timestamp in seconds.
+    """
+
+    return float(getattr(task, "s_time"))
+
+
+def get_model_release_time(task: Any) -> float:
+    """Return the algorithm-facing release time for a legacy task.
+
+    Args:
+        task: Legacy Chengdu task object. Supplemental disturbance experiments
+            may attach ``observed_s_time`` without mutating the original
+            ``s_time``.
+
+    Returns:
+        The observed release timestamp when present, otherwise the true
+        ``s_time`` value.
+    """
+
+    return float(getattr(task, "observed_s_time", get_true_release_time(task)))
+
+
+def get_true_deadline(task: Any) -> float:
+    """Return the original Chengdu deadline stored in ``d_time``.
+
+    Args:
+        task: Legacy Chengdu task object.
+
+    Returns:
+        The true task deadline timestamp in seconds.
+    """
+
+    return float(getattr(task, "d_time"))
+
+
+def get_model_deadline(task: Any) -> float:
+    """Return the algorithm-facing deadline for a legacy task.
+
+    Args:
+        task: Legacy Chengdu task object. Supplemental disturbance experiments
+            may attach ``observed_d_time`` without mutating the original
+            ``d_time``.
+
+    Returns:
+        The observed deadline when present, otherwise the true ``d_time`` value.
+    """
+
+    return float(getattr(task, "observed_d_time", get_true_deadline(task)))
+
+
 def sort_legacy_tasks(tasks: Sequence[Any]) -> list[Any]:
-    """Return legacy tasks sorted by request time, deadline, and identifier."""
+    """Return legacy tasks sorted by model-facing request time, deadline, and id."""
     return sorted(
         tasks,
-        key=lambda item: (float(getattr(item, "s_time")), float(getattr(item, "d_time")), str(getattr(item, "num"))),
+        key=lambda item: (get_model_release_time(item), get_model_deadline(item), str(getattr(item, "num"))),
     )
 
 
@@ -574,13 +631,25 @@ def generate_origin_schedule_with_retry(
     return []
 
 
-def legacy_task_to_parcel(task: Any) -> Parcel:
-    """Convert a legacy Chengdu task object into the CAPA parcel model."""
+def legacy_task_to_parcel(task: Any, use_observed_deadline: bool = True) -> Parcel:
+    """Convert a legacy Chengdu task object into the CAPA parcel model.
+
+    Args:
+        task: Legacy Chengdu task object.
+        use_observed_deadline: Whether the returned parcel should expose the
+            model-facing deadline. Set to ``False`` when true-deadline
+            accounting is required.
+
+    Returns:
+        CAPA parcel projection of the task.
+    """
+
+    deadline = get_model_deadline(task) if use_observed_deadline else get_true_deadline(task)
     return Parcel(
         parcel_id=str(getattr(task, "num")),
         location=getattr(task, "l_node"),
-        arrival_time=int(float(getattr(task, "s_time"))),
-        deadline=int(float(getattr(task, "d_time"))),
+        arrival_time=int(get_model_release_time(task)),
+        deadline=int(deadline),
         weight=float(getattr(task, "weight")),
         fare=float(getattr(task, "fare")),
     )
@@ -741,11 +810,11 @@ def group_legacy_tasks_by_batch(tasks: Sequence[Any], batch_seconds: int) -> Lis
         raise ValueError("Batch duration must be positive.")
     if not tasks:
         return []
-    tasks_sorted = sorted(tasks, key=lambda item: (float(getattr(item, "s_time")), float(getattr(item, "d_time")), str(getattr(item, "num"))))
-    start_time = float(getattr(tasks_sorted[0], "s_time"))
+    tasks_sorted = sort_legacy_tasks(tasks)
+    start_time = get_model_release_time(tasks_sorted[0])
     buckets: Dict[int, List[Any]] = defaultdict(list)
     for task in tasks_sorted:
-        bucket_index = int((float(getattr(task, "s_time")) - start_time) // batch_seconds)
+        bucket_index = int((get_model_release_time(task) - start_time) // batch_seconds)
         buckets[bucket_index].append(task)
     return [buckets[index] for index in sorted(buckets)]
 
@@ -767,10 +836,10 @@ def bucketize_legacy_tasks_by_batch(tasks: Sequence[Any], batch_seconds: int) ->
     if not tasks:
         return 0, {}
     tasks_sorted = sort_legacy_tasks(tasks)
-    first_batch_start = int(float(getattr(tasks_sorted[0], "s_time")))
+    first_batch_start = int(get_model_release_time(tasks_sorted[0]))
     bucket_lookup: Dict[int, List[Any]] = defaultdict(list)
     for task in tasks_sorted:
-        bucket_index = int((float(getattr(task, "s_time")) - first_batch_start) // batch_seconds)
+        bucket_index = int((get_model_release_time(task) - first_batch_start) // batch_seconds)
         bucket_lookup[bucket_index].append(task)
     return first_batch_start, dict(bucket_lookup)
 
@@ -1005,7 +1074,7 @@ def initialize_chengdu_batch_runtime(
     """
 
     sorted_tasks = sort_legacy_tasks(tasks)
-    current_time = int(float(getattr(sorted_tasks[0], "s_time"))) if sorted_tasks else 0
+    current_time = int(get_model_release_time(sorted_tasks[0])) if sorted_tasks else 0
     return ChengduBatchRuntime(
         sorted_tasks=sorted_tasks,
         active_local_couriers=list(local_couriers),
@@ -1063,7 +1132,7 @@ def prepare_chengdu_batch(
     arrived_tasks: list[Any] = []
     while runtime.next_task_index < len(runtime.sorted_tasks):
         task = runtime.sorted_tasks[runtime.next_task_index]
-        if int(float(getattr(task, "s_time"))) < batch_end_time:
+        if int(get_model_release_time(task)) < batch_end_time:
             arrived_tasks.append(task)
             runtime.next_task_index += 1
             continue
@@ -1071,10 +1140,10 @@ def prepare_chengdu_batch(
     runtime.current_time = batch_end_time
     input_tasks = [*runtime.backlog, *arrived_tasks]
     eligible_tasks = [
-        task for task in input_tasks if float(getattr(task, "d_time")) >= runtime.current_time
+        task for task in input_tasks if get_true_deadline(task) >= runtime.current_time
     ]
     expired_tasks = [
-        task for task in input_tasks if float(getattr(task, "d_time")) < runtime.current_time
+        task for task in input_tasks if get_true_deadline(task) < runtime.current_time
     ]
     runtime.terminal_unassigned.extend(expired_tasks)
     return PreparedChengduBatch(
@@ -1515,8 +1584,8 @@ def run_time_stepped_chengdu_batches(
             delivered_parcels=[],
         )
 
-    first_batch_start = int(float(getattr(runtime.sorted_tasks[0], "s_time")))
-    last_task_time = int(float(getattr(runtime.sorted_tasks[-1], "s_time")))
+    first_batch_start = int(get_model_release_time(runtime.sorted_tasks[0]))
+    last_task_time = int(get_model_release_time(runtime.sorted_tasks[-1]))
     total_batches = ((last_task_time - first_batch_start) // batch_seconds) + 1
 
     while has_pending_chengdu_batches(runtime):

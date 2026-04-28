@@ -25,6 +25,7 @@ from env.chengdu import (
     PreparedChengduBatch,
     finalize_chengdu_batch,
     finalize_chengdu_runtime,
+    get_model_release_time,
     initialize_chengdu_batch_runtime,
     legacy_task_to_parcel,
     prepare_chengdu_batch,
@@ -340,7 +341,7 @@ class RLCAPAEnv:
         pointer = runtime.next_task_index
         while pointer < len(runtime.sorted_tasks):
             task = runtime.sorted_tasks[pointer]
-            if int(float(getattr(task, "s_time"))) <= runtime.current_time:
+            if int(get_model_release_time(task)) <= runtime.current_time:
                 pending_tasks.append(task)
                 pointer += 1
                 continue
@@ -354,7 +355,7 @@ class RLCAPAEnv:
         count = 0
         pointer = runtime.next_task_index
         while pointer < len(runtime.sorted_tasks):
-            task_time = int(float(getattr(runtime.sorted_tasks[pointer], "s_time")))
+            task_time = int(get_model_release_time(runtime.sorted_tasks[pointer]))
             if task_time > future_window_end:
                 break
             if task_time > runtime.current_time:

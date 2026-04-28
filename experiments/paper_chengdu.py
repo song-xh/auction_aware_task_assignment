@@ -28,6 +28,7 @@ from capa.config import (
 )
 from env.chengdu import ChengduEnvironment
 from experiments.config import ExperimentConfig, apply_sweep_axis
+from experiments.deadline_disturbance import DEADLINE_DELAY_AXIS, derive_deadline_delay_environment
 from experiments.framework import ExperimentPointSpec, ExperimentSplitSpec, ManagedRoundSpec, run_environment_comparison_point, run_managed_rounds, run_seeded_comparison_point, run_seeded_split_experiment
 from experiments.progress import build_point_progress_snapshot, write_point_progress
 from .compare import run_comparison_sweep
@@ -183,7 +184,7 @@ def run_chengdu_paper_point(
         return run_seeded_comparison_point(
             seed_path=seed_path,
             point_spec=point_spec,
-            environment_deriver=lambda seed, value: derive_environment_for_axis(seed, axis, value),
+            environment_deriver=lambda seed, value: _derive_paper_environment_for_axis(seed, axis, value),
             runner_builder=partial(_build_paper_runner, runner_overrides_by_algorithm=merged_runner_overrides),
         )
     point_config = apply_sweep_axis(
@@ -214,6 +215,8 @@ def run_chengdu_paper_point(
         axis_value,
     )
     environment = ChengduEnvironment.build(**point_config.as_environment_kwargs())
+    if axis == DEADLINE_DELAY_AXIS:
+        environment = derive_deadline_delay_environment(build_environment_seed(environment), axis_value)
     point_spec = ExperimentPointSpec(
         axis_name=axis,
         axis_value=axis_value,
@@ -796,6 +799,7 @@ def _experiment_label_for_axis(axis: str) -> str:
         "platforms": "Exp-4",
         "batch_size": "Exp-5",
         "courier_capacity": "Exp-6",
+        "deadline_delay": "Exp-7",
         "courier_alpha": "Exp-Alpha",
     }
     return labels.get(axis, "Experiment")
@@ -868,9 +872,32 @@ def _canonical_environment_kwargs_for_axis(
     elif axis == "courier_alpha":
         kwargs["courier_alpha"] = float(fixed_config["courier_alpha"])
         kwargs["courier_beta"] = float(fixed_config["courier_beta"]) if fixed_config["courier_beta"] is not None else None
+    elif axis == DEADLINE_DELAY_AXIS:
+        pass
     else:
         raise ValueError(f"Unsupported canonical seed axis: {axis}")
     return kwargs
+
+
+def _derive_paper_environment_for_axis(
+    seed: Any,
+    axis: str,
+    value: int | float,
+) -> ChengduEnvironment:
+    """Derive a point environment for a standard or supplemental paper axis.
+
+    Args:
+        seed: Canonical Chengdu environment seed.
+        axis: Paper sweep axis name.
+        value: Concrete axis value.
+
+    Returns:
+        Fresh Chengdu environment for the point.
+    """
+
+    if axis == DEADLINE_DELAY_AXIS:
+        return derive_deadline_delay_environment(seed, value)
+    return derive_environment_for_axis(seed, axis, value)
 
 
 def _write_point_bootstrap_progress(

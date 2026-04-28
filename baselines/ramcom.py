@@ -24,6 +24,8 @@ from env.chengdu import (
     drain_legacy_routes,
     flatten_partner_couriers,
     framework_movement_callback,
+    get_model_release_time,
+    get_true_deadline,
     sort_legacy_tasks,
 )
 
@@ -139,7 +141,7 @@ def run_ramcom_baseline_environment(
     service_radius_meters = None if getattr(environment, "service_radius_km", None) is None else float(environment.service_radius_km) * 1000.0
     theta = max(1, math.ceil(math.log(max(float(getattr(task, "fare")) for task in tasks) + 1.0)))
     threshold = math.exp(rng.randint(1, theta))
-    current_time = int(float(getattr(tasks[0], "s_time")))
+    current_time = int(get_model_release_time(tasks[0]))
     accepted_assignments = 0
     accepted_task_ids: set[str] = set()
     total_revenue = 0.0
@@ -151,12 +153,24 @@ def run_ramcom_baseline_environment(
     progress_stride = max(1, total_tasks // 100)
 
     for task_index, task in enumerate(tasks, start=1):
-        arrival_time = int(float(getattr(task, "s_time")))
+        arrival_time = int(get_model_release_time(task))
         if arrival_time > current_time:
             movement_started = perf_counter()
             movement(local_couriers, flatten_partner_couriers(partner_couriers_by_platform), arrival_time - current_time, environment.station_set)
             timing.movement_time_seconds += perf_counter() - movement_started
             current_time = arrival_time
+        if get_true_deadline(task) < current_time:
+            if progress_callback is not None and (task_index == total_tasks or task_index % progress_stride == 0):
+                progress_callback(
+                    {
+                        "phase": "dispatch",
+                        "detail": f"task {task_index}/{total_tasks} expired at t={current_time}",
+                        "completed_units": task_index,
+                        "total_units": total_tasks,
+                        "unit_label": "tasks",
+                    }
+                )
+            continue
 
         started = perf_counter()
         routing_before = timing.routing_time_seconds

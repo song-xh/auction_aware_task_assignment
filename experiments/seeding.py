@@ -19,6 +19,8 @@ from env.chengdu import (
     ChengduEnvironment,
     build_geo_index_from_travel_model,
     framework_movement_callback,
+    get_model_deadline,
+    get_model_release_time,
     get_travel_speed_m_per_s,
 )
 
@@ -606,12 +608,12 @@ def _task_sort_key(task: Any) -> tuple[float, float, str]:
 
     if isinstance(task, dict):
         return (
-            float(task.get("s_time", 0.0)),
-            float(task.get("d_time", 0.0)),
+            float(task.get("observed_s_time", task.get("s_time", 0.0))),
+            float(task.get("observed_d_time", task.get("d_time", 0.0))),
             str(_stable_object_id(task) or ""),
         )
     return (
-        float(getattr(task, "s_time", 0.0)),
-        float(getattr(task, "d_time", 0.0)),
+        get_model_release_time(task),
+        get_model_deadline(task),
         str(_stable_object_id(task) or ""),
     )
