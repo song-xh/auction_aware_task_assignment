@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping
 
 from baselines.ramcom import run_ramcom_baseline_environment
-from capa.config import DEFAULT_RAMCOM_RANDOM_SEED
+from capa.config import DEFAULT_CAPA_BATCH_SIZE, DEFAULT_RAMCOM_RANDOM_SEED
 
 from .base import AlgorithmRunner
 from .summary_utils import build_algorithm_summary
@@ -19,10 +19,12 @@ class RamCOMAlgorithmRunner(AlgorithmRunner):
 
     def __init__(
         self,
+        batch_size: int = DEFAULT_CAPA_BATCH_SIZE,
         random_seed: int = DEFAULT_RAMCOM_RANDOM_SEED,
         baseline_runner: Callable[..., dict[str, Any]] | None = None,
     ) -> None:
-        """Store the random seed and optional injected RamCOM baseline runner."""
+        """Store the batch size, random seed, and optional injected RamCOM runner."""
+        self._batch_size = batch_size
         self._random_seed = random_seed
         self._baseline_runner = baseline_runner or run_ramcom_baseline_environment
 
@@ -37,13 +39,20 @@ class RamCOMAlgorithmRunner(AlgorithmRunner):
         metrics = self._baseline_runner(
             environment=environment,
             random_seed=self._random_seed,
+            batch_size=self._batch_size,
             progress_callback=progress_callback,
         )
         finished_at = datetime.now().astimezone()
+        decision_trace = list(metrics.get("decision_trace", []))
+        summary_metrics = {
+            key: value
+            for key, value in metrics.items()
+            if key != "decision_trace"
+        }
         summary = build_algorithm_summary(
             algorithm="ramcom",
             environment=environment,
-            metrics=metrics,
+            metrics=summary_metrics,
             local_assignment_count=int(metrics.get("local_assignment_count", metrics.get("accepted_assignments", 0))),
             cross_assignment_count=int(metrics.get("cross_assignment_count", 0)),
             unresolved_parcel_count=int(
@@ -59,7 +68,19 @@ class RamCOMAlgorithmRunner(AlgorithmRunner):
             partner_cross_revenues=metrics.get("partner_cross_revenues", {}),
             started_at=started_at,
             finished_at=finished_at,
-            extra_fields={"random_seed": self._random_seed},
+            extra_fields={
+                "random_seed": self._random_seed,
+                "batch_size": self._batch_size,
+                "ramcom_config": {
+                    "theta": metrics.get("theta"),
+                    "k": metrics.get("k"),
+                    "threshold": metrics.get("threshold"),
+                    "max_fare": metrics.get("max_fare"),
+                    "acceptance_model": metrics.get("acceptance_model"),
+                    "payment_search": metrics.get("payment_search"),
+                },
+                "decision_trace": decision_trace,
+            },
         )
         if output_dir is not None:
             output_dir.mkdir(parents=True, exist_ok=True)
@@ -69,8 +90,13 @@ class RamCOMAlgorithmRunner(AlgorithmRunner):
 
 
 def build_ramcom_runner(
+    batch_size: int = DEFAULT_CAPA_BATCH_SIZE,
     random_seed: int = DEFAULT_RAMCOM_RANDOM_SEED,
     baseline_runner: Callable[..., dict[str, Any]] | None = None,
 ) -> RamCOMAlgorithmRunner:
     """Build the unified RamCOM runner."""
-    return RamCOMAlgorithmRunner(random_seed=random_seed, baseline_runner=baseline_runner)
+    return RamCOMAlgorithmRunner(
+        batch_size=batch_size,
+        random_seed=random_seed,
+        baseline_runner=baseline_runner,
+    )

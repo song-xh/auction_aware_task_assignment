@@ -117,7 +117,7 @@ def _add_common_environment_arguments(parser: argparse.ArgumentParser) -> None:
 
 def build_algorithm_kwargs(args: argparse.Namespace) -> dict[str, Any]:
     """Translate parsed CLI arguments into algorithm-specific runner configuration."""
-    if args.algorithm in {"capa", "greedy", "mra"}:
+    if args.algorithm in {"capa", "greedy", "mra", "ramcom"}:
         return {"batch_size": args.batch_size}
     if args.algorithm == "impgta":
         return {

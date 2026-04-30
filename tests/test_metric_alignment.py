@@ -16,7 +16,8 @@ from capa.utility import DistanceMatrixTravelModel
 from baselines.greedy import run_greedy_baseline_environment
 from baselines.gta import GTABid, future_tasks_within_window, run_basegta_baseline_environment, run_impgta_baseline_environment, settle_aim_auction
 from baselines.mra import run_mra_baseline_environment
-from baselines.ramcom import run_ramcom_baseline_environment
+from baselines.ramcom import choose_outer_payment_by_expected_revenue, run_ramcom_baseline_environment, worker_acceptance_probability
+from algorithms.ramcom_runner import build_ramcom_runner
 from env.chengdu import ChengduEnvironment, select_station_pick_tasks
 from experiments.config import ExperimentConfig
 from experiments.paper_chengdu import build_fixed_config_from_args, build_paper_runner_overrides_from_fixed_config
@@ -1064,6 +1065,153 @@ class MetricAlignmentTest(unittest.TestCase):
             result = run_ramcom_baseline_environment(environment=environment)
 
         self.assertEqual(result["BPT"], 3.0)
+
+    def test_ramcom_acceptance_uses_reservation_when_history_missing(self) -> None:
+        """RamCOM should use an explicit reservation model when empirical history is absent."""
+
+        self.assertEqual(
+            worker_acceptance_probability(
+                payment=4.0,
+                history_values=[],
+                reservation_payment=8.0,
+            ),
+            0.5,
+        )
+
+    def test_ramcom_outer_payment_uses_reservation_candidates_without_history(self) -> None:
+        """RamCOM outer payment should maximize expected revenue when workers lack history."""
+
+        task = SimpleNamespace(fare=10.0)
+        payment = choose_outer_payment_by_expected_revenue(
+            task,
+            outer_worker_histories=[[], []],
+            reservation_payments=[4.0, 8.0],
+        )
+
+        self.assertEqual(payment, 4.0)
+
+    def test_ramcom_can_assign_outer_worker_without_empirical_history(self) -> None:
+        """A feasible outer courier with no history should still be evaluated by reservation acceptance."""
+
+        task = SimpleNamespace(num="t1", fare=20.0, s_time=0.0, d_time=100.0, weight=1.0, l_node="p1")
+        outer = SimpleNamespace(num=2, location="outer", re_schedule=[], re_weight=0.0, max_weight=5.0)
+        environment = SimpleNamespace(
+            tasks=[task],
+            local_couriers=[],
+            partner_couriers_by_platform={"P1": [outer]},
+            movement_callback=lambda *args, **kwargs: None,
+            station_set=[],
+            travel_model=SimpleNamespace(distance=lambda start, end: 0.0, travel_time=lambda start, end: 0.0),
+            service_radius_km=None,
+            geo_index=None,
+            travel_speed_m_per_s=0.0,
+        )
+
+        def feasible_insertions(task: object, couriers: object, **_kwargs: object) -> list[object]:
+            if couriers == [outer]:
+                return [SimpleNamespace(courier=outer, insertion_index=0, distance_meters=0.0)]
+            return []
+
+        with (
+            patch("baselines.ramcom.build_legacy_feasible_insertions", side_effect=feasible_insertions),
+            patch("baselines.ramcom.drain_legacy_routes", return_value=1),
+            patch("baselines.ramcom.compute_delivered_legacy_task_count", return_value=1),
+        ):
+            result = run_ramcom_baseline_environment(environment=environment, random_seed=1)
+
+        self.assertEqual(result["cross_assignment_count"], 1)
+        self.assertEqual(result["partner_cross_assignment_counts"], {"P1": 1})
+
+    def test_ramcom_reports_threshold_payment_and_trace_metadata(self) -> None:
+        """RamCOM should expose threshold, acceptance model, payment search, and per-parcel trace."""
+
+        task = SimpleNamespace(num="t1", fare=10.0, s_time=0.0, d_time=100.0, weight=1.0, l_node="p1")
+        environment = SimpleNamespace(
+            tasks=[task],
+            local_couriers=[],
+            partner_couriers_by_platform={},
+            movement_callback=lambda *args, **kwargs: None,
+            station_set=[],
+            travel_model=SimpleNamespace(distance=lambda start, end: 0.0, travel_time=lambda start, end: 0.0),
+            service_radius_km=None,
+            geo_index=None,
+            travel_speed_m_per_s=0.0,
+        )
+
+        with patch("baselines.ramcom.build_legacy_feasible_insertions", return_value=[]):
+            result = run_ramcom_baseline_environment(environment=environment, random_seed=1)
+
+        self.assertEqual(result["method"], "RamCOM-CPUL")
+        self.assertEqual(result["acceptance_model"], "empirical_history_or_reservation_based")
+        self.assertEqual(result["payment_search"], "history_or_reservation_candidates")
+        self.assertIn("theta", result)
+        self.assertIn("k", result)
+        self.assertIn("threshold", result)
+        self.assertEqual(len(result["decision_trace"]), 1)
+        self.assertEqual(result["decision_trace"][0]["branch"], "outer_no_candidate")
+
+    def test_runner_builds_ramcom_batch_size_kwargs(self) -> None:
+        """The root runner should pass batch-size configuration into RamCOM."""
+
+        args = SimpleNamespace(
+            algorithm="ramcom",
+            batch_size=45,
+            prediction_window_seconds=180,
+            prediction_success_rate=0.8,
+            prediction_sampling_seed=1,
+            min_batch_size=10,
+            max_batch_size=20,
+            rl_batch_actions=None,
+            step_seconds=60,
+            episodes=1,
+            rl_lr_actor=0.001,
+            rl_lr_critic=0.001,
+            rl_discount_factor=0.9,
+            rl_entropy_coeff=0.01,
+            rl_max_grad_norm=0.5,
+            rl_disable_advantage_normalization=False,
+            rl_future_feature_window_seconds=300,
+            rl_device=None,
+        )
+
+        self.assertEqual(build_algorithm_kwargs(args), {"batch_size": 45})
+
+    def test_ramcom_runner_keeps_trace_out_of_printed_metrics(self) -> None:
+        """RamCOM runner should persist trace separately from the scalar metrics surface."""
+
+        captured: dict[str, object] = {}
+
+        def baseline_runner(**kwargs: object) -> dict[str, object]:
+            captured["batch_size"] = kwargs["batch_size"]
+            return {
+                "TR": 0.0,
+                "CR": 0.0,
+                "BPT": 0.0,
+                "accepted_assignments": 0,
+                "local_assignment_count": 0,
+                "cross_assignment_count": 0,
+                "unresolved_parcel_count": 0,
+                "partner_cross_assignment_counts": {},
+                "partner_cross_revenues": {},
+                "theta": 1,
+                "k": 1,
+                "threshold": 2.718281828459045,
+                "max_fare": 1.0,
+                "acceptance_model": "empirical_history_or_reservation_based",
+                "payment_search": "history_or_reservation_candidates",
+                "decision_trace": [{"parcel_id": "p1"}],
+            }
+
+        environment = SimpleNamespace(
+            tasks=[],
+            partner_couriers_by_platform={},
+            partner_tasks_by_platform={},
+        )
+        summary = build_ramcom_runner(batch_size=45, baseline_runner=baseline_runner).run(environment=environment)
+
+        self.assertEqual(captured["batch_size"], 45)
+        self.assertNotIn("decision_trace", summary["metrics"])
+        self.assertEqual(summary["decision_trace"], [{"parcel_id": "p1"}])
 
 
 if __name__ == "__main__":
