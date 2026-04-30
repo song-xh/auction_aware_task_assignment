@@ -12,6 +12,24 @@ from capa.utility import GeoIndex, InsertionCache, TimedTravelModel, TimingAccum
 from env.chengdu import LegacyCourierSnapshotCache, legacy_courier_to_capa, legacy_task_to_parcel
 
 
+def mean_decision_time(total_seconds: float, decision_epochs: int) -> float:
+    """Return mean assignment-decision time per comparable BPT epoch.
+
+    Args:
+        total_seconds: Accumulated assignment-decision time with routing,
+            insertion, and movement excluded.
+        decision_epochs: Number of task/batch/round epochs represented by the
+            accumulated decision time.
+
+    Returns:
+        Mean decision time in seconds, or `0.0` when no decision epoch exists.
+    """
+
+    if decision_epochs <= 0:
+        return 0.0
+    return float(total_seconds) / float(decision_epochs)
+
+
 @dataclass(frozen=True)
 class LegacyFeasibleInsertion:
     """Store one feasible courier-task insertion against the current Chengdu state.

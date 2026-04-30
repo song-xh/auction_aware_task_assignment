@@ -12,13 +12,14 @@ from baselines.mra import run_mra_baseline_environment
 class MRABPTTest(unittest.TestCase):
     """Verify MRA reports the CAPA-aligned decision-time metric."""
 
-    def test_run_mra_reports_decision_time_seconds(self) -> None:
-        """BPT should come from ``timing.decision_time_seconds`` rather than a local accumulator."""
+    def test_run_mra_reports_mean_decision_time_seconds(self) -> None:
+        """BPT should be mean assignment-decision time over MRA decision epochs."""
 
         task = SimpleNamespace(num="t1", fare=10.0, s_time=0.0)
+        task_two = SimpleNamespace(num="t2", fare=10.0, s_time=30.0)
         courier = SimpleNamespace(num=1)
         environment = SimpleNamespace(
-            tasks=[task],
+            tasks=[task, task_two],
             local_couriers=[courier],
             movement_callback=lambda *args, **kwargs: None,
             station_set=[],
@@ -45,19 +46,19 @@ class MRABPTTest(unittest.TestCase):
 
         with (
             patch("baselines.mra.TimingAccumulator", FakeTimingAccumulator),
-            patch("baselines.mra.group_legacy_tasks_by_batch", return_value=[[task]]),
+            patch("baselines.mra.group_legacy_tasks_by_batch", return_value=[[task], [task_two]]),
             patch("baselines.mra.build_legacy_feasible_insertions", side_effect=fake_feasible_insertions),
             patch("baselines.mra.compute_mra_bid", return_value=1.0),
             patch("baselines.mra.compute_local_platform_revenue_for_local_completion", return_value=5.0),
             patch("baselines.mra.apply_assignment_to_legacy_courier"),
             patch("baselines.mra.drain_legacy_routes"),
-            patch("baselines.mra.perf_counter", side_effect=[0.0, 8.0, 9.0, 10.0]),
+            patch("baselines.mra.perf_counter", side_effect=[0.0, 8.0, 9.0, 10.0, 20.0, 28.0, 29.0, 30.0]),
         ):
             result = run_mra_baseline_environment(environment=environment, batch_size=30)
 
         self.assertEqual(len(timing_instances), 1)
-        self.assertEqual(timing_instances[0].decision_time_seconds, 3.0)
-        self.assertEqual(result["BPT"], timing_instances[0].decision_time_seconds)
+        self.assertEqual(timing_instances[0].decision_time_seconds, 6.0)
+        self.assertEqual(result["BPT"], 3.0)
 
 
 if __name__ == "__main__":

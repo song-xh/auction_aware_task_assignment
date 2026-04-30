@@ -35,7 +35,7 @@ from env.chengdu import (
     sort_legacy_tasks,
 )
 
-from .common import project_courier_to_capa
+from .common import mean_decision_time, project_courier_to_capa
 
 
 GREEDY_RESULT_PATTERN = re.compile(
@@ -241,7 +241,7 @@ def run_greedy_baseline_environment(
     return {
         "TR": total_revenue,
         "CR": delivered_parcels / total_tasks,
-        "BPT": processing_time_seconds,
+        "BPT": mean_decision_time(processing_time_seconds, processed_tasks),
         "delivered_parcels": delivered_parcels,
         "accepted_assignments": accepted_assignments,
         "local_assignment_count": accepted_assignments,

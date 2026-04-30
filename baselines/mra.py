@@ -31,7 +31,7 @@ from env.chengdu import (
     legacy_task_to_parcel,
 )
 
-from .common import build_legacy_feasible_insertions, project_courier_to_capa
+from .common import build_legacy_feasible_insertions, mean_decision_time, project_courier_to_capa
 
 
 
@@ -146,6 +146,7 @@ def run_mra_baseline_environment(
     total_revenue = 0.0
     batches = group_legacy_tasks_by_batch(tasks, batch_size)
     first_batch_start = int(float(getattr(min(tasks, key=lambda item: float(getattr(item, "s_time"))), "s_time")))
+    decision_epoch_count = 0
 
     total_batches = len(batches)
     for batch_index, bucket in enumerate(batches, start=1):
@@ -231,13 +232,15 @@ def run_mra_baseline_environment(
 
             remaining = [task for task in remaining if str(getattr(task, "num")) not in used_tasks]
             elapsed = perf_counter() - round_started
-            timing.decision_time_seconds += max(
+            decision_delta = max(
                 0.0,
                 elapsed
                 - (timing.routing_time_seconds - routing_before)
                 - (timing.insertion_time_seconds - insertion_before)
                 - (timing.movement_time_seconds - movement_before),
             )
+            timing.decision_time_seconds += decision_delta
+            decision_epoch_count += 1
 
         backlog = remaining
         movement_started = perf_counter()
@@ -272,7 +275,7 @@ def run_mra_baseline_environment(
     return {
         "TR": total_revenue,
         "CR": delivered_parcels / total_tasks,
-        "BPT": timing.decision_time_seconds,
+        "BPT": mean_decision_time(timing.decision_time_seconds, decision_epoch_count),
         "delivered_parcels": delivered_parcels,
         "accepted_assignments": accepted_assignments,
         "local_assignment_count": accepted_assignments,

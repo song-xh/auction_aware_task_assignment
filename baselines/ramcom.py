@@ -29,7 +29,7 @@ from env.chengdu import (
     sort_legacy_tasks,
 )
 
-from .common import build_legacy_feasible_insertions, extract_worker_history_values
+from .common import build_legacy_feasible_insertions, extract_worker_history_values, mean_decision_time
 
 
 def worker_acceptance_probability(payment: float, history_values: Sequence[float]) -> float:
@@ -284,7 +284,7 @@ def run_ramcom_baseline_environment(
     return {
         "TR": total_revenue,
         "CR": delivered_parcels / total_tasks,
-        "BPT": processing_time_seconds,
+        "BPT": mean_decision_time(processing_time_seconds, total_tasks),
         "delivered_parcels": delivered_parcels,
         "accepted_assignments": accepted_assignments,
         "local_assignment_count": local_assignment_count,

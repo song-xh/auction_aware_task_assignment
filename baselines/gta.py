@@ -34,6 +34,8 @@ from env.chengdu import (
     sort_legacy_tasks,
 )
 
+from .common import mean_decision_time
+
 DEFAULT_UNIT_PRICE_PER_KM = DEFAULT_GTA_UNIT_PRICE_PER_KM
 
 
@@ -731,7 +733,7 @@ def _run_gta_environment(
     return {
         "TR": total_profit,
         "CR": delivered_parcels / total_task_count,
-        "BPT": processing_time_seconds,
+        "BPT": mean_decision_time(processing_time_seconds, processed_tasks),
         "delivered_parcels": delivered_parcels,
         "accepted_assignments": accepted_assignments,
         "local_assignment_count": local_assignment_count,
