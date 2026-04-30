@@ -219,6 +219,54 @@ class MetricAlignmentTest(unittest.TestCase):
 
         self.assertEqual([task.num for task in predicted], ["t3", "t4", "t5"])
 
+    def test_impgta_available_supply_counts_capacity_slots(self) -> None:
+        """ImpGTA's CPUL adaptation should compare predicted tasks to residual courier capacity."""
+
+        from baselines.gta import count_available_capacity_slots
+
+        couriers = [
+            SimpleNamespace(max_weight=50.0, re_weight=10.0, re_schedule=[], location="a"),
+            SimpleNamespace(max_weight=25.0, re_weight=20.0, re_schedule=[], location="b"),
+        ]
+
+        self.assertEqual(count_available_capacity_slots(couriers, now=0), 45)
+
+    def test_impgta_inner_condition_uses_capacity_not_raw_worker_count(self) -> None:
+        """A high-capacity courier should satisfy ImpGTA supply even when one worker faces many future tasks."""
+
+        current_task = SimpleNamespace(num="t0", fare=10.0, s_time=0.0, d_time=300.0, weight=1.0, l_node="p0", reach_time=0.0)
+        future_tasks = [
+            SimpleNamespace(num=f"t{i}", fare=100.0, s_time=float(i * 10), d_time=400.0, weight=1.0, l_node=f"p{i}", reach_time=float(i * 10))
+            for i in range(1, 4)
+        ]
+        courier = SimpleNamespace(num=1, location="start", re_schedule=[], re_weight=0.0, max_weight=5.0)
+        environment = SimpleNamespace(
+            tasks=[current_task, *future_tasks],
+            local_couriers=[courier],
+            partner_couriers_by_platform={},
+            partner_tasks_by_platform={},
+            movement_callback=lambda *args, **kwargs: None,
+            station_set=[],
+            travel_model=SimpleNamespace(distance=lambda start, end: 0.0, travel_time=lambda start, end: 0.0),
+            service_radius_km=None,
+        )
+
+        with (
+            patch(
+                "baselines.gta.select_available_courier_for_task",
+                return_value=GTABid(platform_id="", courier=courier, dispatch_cost=1.0, insertion_index=0),
+            ),
+            patch("baselines.gta.drain_legacy_routes", return_value=1),
+        ):
+            result = run_impgta_baseline_environment(
+                environment=environment,
+                prediction_window_seconds=100,
+                prediction_success_rate=1.0,
+            )
+
+        self.assertEqual(result["accepted_assignments"], 4)
+        self.assertEqual(result["local_assignment_count"], 4)
+
     def test_impgta_outer_prediction_success_rate_changes_partner_bid_decision(self) -> None:
         """ImpGTA outer bidding should use partner own-task predictions, not an empty future window."""
 
@@ -236,7 +284,7 @@ class MetricAlignmentTest(unittest.TestCase):
                 location="outer",
                 re_schedule=[],
                 re_weight=0.0,
-                max_weight=5.0,
+                max_weight=1.0,
                 station=partner_station,
                 station_num=1,
                 w=0.5,

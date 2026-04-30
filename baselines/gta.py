@@ -351,6 +351,29 @@ def count_available_couriers(couriers: Sequence[Any], now: int, window_seconds: 
     return count
 
 
+def count_available_capacity_slots(couriers: Sequence[Any], now: int, window_seconds: int = 0) -> float:
+    """Count residual CPUL parcel-capacity supply available inside the prediction window.
+
+    Args:
+        couriers: Legacy courier objects with `max_weight`, `re_weight`, and route state.
+        now: Current simulation time in seconds.
+        window_seconds: Prediction horizon used by ImpGTA.
+
+    Returns:
+        Total residual parcel capacity of couriers that are idle now or become
+        ready inside the prediction window.
+    """
+
+    window_end = float(now + max(0, window_seconds))
+    capacity_slots = 0.0
+    for courier in couriers:
+        ready_time, _ = legacy_courier_ready_state(courier, now)
+        if ready_time > window_end:
+            continue
+        capacity_slots += max(0.0, float(getattr(courier, "max_weight")) - float(getattr(courier, "re_weight")))
+    return capacity_slots
+
+
 def expected_future_reward(future_tasks: Sequence[Any]) -> float:
     """Compute the expected future task reward used by ImpGTA's threshold conditions."""
     if not future_tasks:
@@ -555,7 +578,7 @@ def _run_gta_environment(
             if local_bid is not None:
                 if algorithm == "basegta" or should_dispatch_inner_task_impgta(
                     task=task,
-                    idle_worker_count=count_available_couriers(
+                    idle_worker_count=count_available_capacity_slots(
                         local_couriers,
                         current_time,
                         prediction_window_seconds or 0,
@@ -616,7 +639,7 @@ def _run_gta_environment(
                 if algorithm == "impgta":
                     if not should_bid_outer_platform_impgta(
                         dispatch_cost=partner_bid.dispatch_cost,
-                        idle_worker_count=count_available_couriers(
+                        idle_worker_count=count_available_capacity_slots(
                             partner_couriers,
                             current_time,
                             prediction_window_seconds or 0,
