@@ -388,11 +388,33 @@ def should_dispatch_inner_task_impgta(task: Any, idle_worker_count: int, future_
     return float(getattr(task, "fare")) >= expected_future_reward(future_tasks)
 
 
-def should_bid_outer_platform_impgta(dispatch_cost: float, idle_worker_count: int, future_tasks: Sequence[Any]) -> bool:
+def estimate_impgta_outer_task_value(
+    task: Any,
+    dispatch_cost: float,
+    cross_platform_sharing_rate_mu2: float = DEFAULT_CROSS_PLATFORM_SHARING_RATE_MU2,
+) -> float:
+    """Estimate the current cooperative reward used by ImpGTA's outer threshold.
+
+    Args:
+        task: Current local-platform task offered to the outer platform.
+        dispatch_cost: The platform's minimum acceptable dispatching payment.
+        cross_platform_sharing_rate_mu2: AIM platform-sharing surcharge.
+
+    Returns:
+        Estimated cooperative payment capped by the task fare.
+    """
+
+    return min(
+        float(getattr(task, "fare")),
+        float(dispatch_cost) + float(cross_platform_sharing_rate_mu2) * float(getattr(task, "fare")),
+    )
+
+
+def should_bid_outer_platform_impgta(current_task_value: float, idle_worker_count: int, future_tasks: Sequence[Any]) -> bool:
     """Evaluate ImpGTA's outer conditions for one cooperating platform."""
     if idle_worker_count > len(future_tasks):
         return True
-    return dispatch_cost >= expected_future_reward(future_tasks)
+    return float(current_task_value) >= expected_future_reward(future_tasks)
 
 
 def settle_aim_auction(
@@ -638,7 +660,11 @@ def _run_gta_environment(
                     continue
                 if algorithm == "impgta":
                     if not should_bid_outer_platform_impgta(
-                        dispatch_cost=partner_bid.dispatch_cost,
+                        current_task_value=estimate_impgta_outer_task_value(
+                            task=task,
+                            dispatch_cost=partner_bid.dispatch_cost,
+                            cross_platform_sharing_rate_mu2=cross_platform_sharing_rate_mu2,
+                        ),
                         idle_worker_count=count_available_capacity_slots(
                             partner_couriers,
                             current_time,
