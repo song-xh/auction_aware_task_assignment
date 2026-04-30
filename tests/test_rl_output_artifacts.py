@@ -69,6 +69,51 @@ class RLCAPAOutputArtifactTests(unittest.TestCase):
         self.assertEqual(summary["mean_batch_size"], [12.5])
         plot_curves.assert_called_once()
 
+    def test_training_curves_use_smoothed_bands_instead_of_raw_lines(self) -> None:
+        """Training curves should render one smoothed line and one band per plotted series."""
+
+        from rl_capa.visualize import _configure_matplotlib_cache, plot_training_curves
+
+        _configure_matplotlib_cache()
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot
+
+        history = [
+            EpisodeLog(
+                episode=index,
+                total_reward=float(value),
+                loss_pi1=float(index + 1),
+                loss_pi2=float(index + 2),
+                loss_v1=float(index + 3),
+                loss_v2=float(index + 4),
+                steps=5,
+                assignments=4,
+                batch_sizes=[10, 15],
+                cross_rate=0.25 + index * 0.05,
+                mean_batch_size=12.5 + index,
+                entropy_pi1=0.1 + index * 0.01,
+                entropy_pi2=0.2 + index * 0.01,
+            )
+            for index, value in enumerate([10.0, 30.0, 12.0, 28.0])
+        ]
+
+        with patch("matplotlib.axes.Axes.plot") as plot_line, patch(
+            "matplotlib.axes.Axes.fill_between",
+        ) as fill_between:
+            plot_training_curves(
+                history=history,
+                output_path=self.temp_root / "training_curves.png",
+                window=3,
+            )
+
+        self.assertEqual(plot_line.call_count, 9)
+        self.assertEqual(fill_between.call_count, 9)
+        for call in fill_between.call_args_list:
+            self.assertGreaterEqual(call.kwargs["alpha"], 0.15)
+            self.assertLessEqual(call.kwargs["alpha"], 0.25)
+
     def test_evaluate_rl_capa_includes_batch_plot_paths(self) -> None:
         """Evaluation summary should expose TR/CR/BPT plot artifacts."""
 

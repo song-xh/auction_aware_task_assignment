@@ -58,6 +58,37 @@ class RLCAPAAblationTests(unittest.TestCase):
 
         self.assertTrue(output_path.exists())
 
+    def test_plot_reward_comparison_uses_smoothed_band_instead_of_raw_lines(self) -> None:
+        """Reward comparison plot should render one mean line and one band per variant."""
+
+        from rl_capa.visualize import _configure_matplotlib_cache
+        from rl_capa.ablation_compare import plot_reward_comparison
+
+        _configure_matplotlib_cache()
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot
+
+        with patch("matplotlib.axes.Axes.plot") as plot_line, patch(
+            "matplotlib.axes.Axes.fill_between",
+        ) as fill_between:
+            plot_reward_comparison(
+                reward_histories={
+                    "rl-capa": [1.0, 8.0, 2.0, 9.0],
+                    "rl-capa-stage1": [0.5, 5.0, 1.5, 6.0],
+                    "rl-capa-stage2": [0.25, 3.0, 1.25, 4.0],
+                },
+                output_path=self.temp_root / "reward_comparison.png",
+                window=3,
+            )
+
+        self.assertEqual(plot_line.call_count, 3)
+        self.assertEqual(fill_between.call_count, 3)
+        for call in fill_between.call_args_list:
+            self.assertGreaterEqual(call.kwargs["alpha"], 0.15)
+            self.assertLessEqual(call.kwargs["alpha"], 0.25)
+
     def test_combined_ablation_runner_returns_reward_plot(self) -> None:
         """Combined runner should train all variants and expose the merged plot."""
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Mapping, Sequence
 
-from rl_capa.visualize import _configure_matplotlib_cache, smooth
+from rl_capa.visualize import _configure_matplotlib_cache, add_legend_if_present, plot_smoothed_band
 
 
 def plot_reward_comparison(
@@ -42,19 +42,21 @@ def plot_reward_comparison(
         reward_values = [float(value) for value in rewards]
         episodes = list(range(1, len(reward_values) + 1))
         color = colors.get(name)
-        ax.plot(episodes, reward_values, color=color, alpha=0.25, linewidth=0.8)
-        ax.plot(
+        plot_smoothed_band(
+            ax,
             episodes,
-            smooth(reward_values, window=window),
+            reward_values,
             color=color,
-            linewidth=1.8,
             label=name,
+            window=window,
+            alpha=0.2,
+            linewidth=1.8,
         )
     ax.set_title("RL-CAPA Ablation Reward Curves")
     ax.set_xlabel("Episode")
     ax.set_ylabel("Episode Reward")
     ax.grid(True, alpha=0.3)
-    ax.legend(loc="best")
+    add_legend_if_present(ax, loc="best")
     fig.tight_layout()
     fig.savefig(str(normalized_output_path), dpi=150)
     plt.close(fig)

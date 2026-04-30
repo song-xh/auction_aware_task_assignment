@@ -1,6 +1,6 @@
 """Training curve visualization for RL-CAPA (spec Section 11).
 
-Plots 7 curves with sliding-window smoothing (window=50):
+Plots 7 smoothed curves with rolling volatility bands (window=50):
   1. Episode Reward
   2. L_V1 (Critic 1 loss)
   3. L_V2 (Critic 2 loss)
@@ -55,6 +55,73 @@ def smooth(values: Sequence[float], window: int = 50) -> np.ndarray:
     return result
 
 
+def smooth_with_band(values: Sequence[float], window: int = 50) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Return rolling mean and one-standard-deviation band for a signal.
+
+    Args:
+        values: Raw signal values ordered by episode.
+        window: Centered rolling window size.
+
+    Returns:
+        Tuple of `(mean, lower, upper)` arrays with the same length as `values`.
+    """
+
+    arr = np.array(values, dtype=np.float64)
+    if len(arr) == 0:
+        return arr, arr, arr
+    effective_window = max(1, min(int(window), len(arr)))
+    means = np.empty_like(arr)
+    lower = np.empty_like(arr)
+    upper = np.empty_like(arr)
+    for index in range(len(arr)):
+        lo = max(0, index - effective_window // 2)
+        hi = min(len(arr), index + effective_window // 2 + 1)
+        segment = arr[lo:hi]
+        mean = float(segment.mean())
+        std = float(segment.std(ddof=0))
+        means[index] = mean
+        lower[index] = mean - std
+        upper[index] = mean + std
+    return means, lower, upper
+
+
+def plot_smoothed_band(
+    ax: object,
+    episodes: Sequence[int],
+    values: Sequence[float],
+    *,
+    color: str,
+    label: str | None = None,
+    window: int = 50,
+    alpha: float = 0.2,
+    linewidth: float = 1.6,
+) -> None:
+    """Plot one rolling mean curve with a translucent rolling-std band.
+
+    Args:
+        ax: Matplotlib axes receiving the plot.
+        episodes: Episode indices for the x-axis.
+        values: Raw signal values ordered by episode.
+        color: Matplotlib color for both mean and band.
+        label: Optional legend label for the mean line.
+        window: Centered rolling window size.
+        alpha: Transparency for the shaded volatility band.
+        linewidth: Mean line width.
+    """
+
+    mean, lower, upper = smooth_with_band(values, window=window)
+    ax.fill_between(episodes, lower, upper, color=color, alpha=alpha, linewidth=0)
+    ax.plot(episodes, mean, color=color, linewidth=linewidth, label=label)
+
+
+def add_legend_if_present(ax: object, **kwargs: object) -> None:
+    """Add a legend only when Matplotlib has labeled artists to display."""
+
+    handles, _labels = ax.get_legend_handles_labels()
+    if handles:
+        ax.legend(**kwargs)
+
+
 def plot_training_curves(
     history: List,
     output_path: str | Path = "outputs/rl_capa_training.png",
@@ -104,23 +171,31 @@ def plot_training_curves(
     ]
 
     for ax, data, title, ylabel in curves:
-        raw = np.array(data)
-        smoothed = smooth(data, window=window)
-        ax.plot(episodes, raw, alpha=0.45, color="tab:blue", linewidth=0.6, label="raw")
-        ax.plot(episodes, smoothed, color="tab:blue", linewidth=1.5)
+        plot_smoothed_band(
+            ax,
+            episodes,
+            data,
+            color="tab:blue",
+            window=window,
+            alpha=0.2,
+            linewidth=1.5,
+        )
         ax.set_title(title)
         ax.set_xlabel("Episode")
         ax.set_ylabel(ylabel)
         ax.grid(True, alpha=0.3)
 
-    axes[3, 1].plot(
+    plot_smoothed_band(
+        axes[3, 1],
         episodes,
-        smooth(entropy_pi1, window=window),
+        entropy_pi1,
         color="tab:orange",
-        linewidth=1.2,
         label="π1 smoothed",
+        window=window,
+        alpha=0.18,
+        linewidth=1.2,
     )
-    axes[3, 1].legend(loc="best", fontsize=8)
+    add_legend_if_present(axes[3, 1], loc="best", fontsize=8)
 
     plt.tight_layout()
     fig.savefig(str(output_path), dpi=150)
