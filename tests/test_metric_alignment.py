@@ -12,9 +12,17 @@ from unittest.mock import patch
 from capa.config import DEFAULT_CROSS_PLATFORM_SHARING_RATE_MU2
 from capa.metrics import compute_batch_processing_time
 from capa.models import BatchReport, BatchTimingBreakdown
-from capa.utility import DistanceMatrixTravelModel
+from capa.utility import DistanceMatrixTravelModel, compute_local_platform_revenue_for_local_completion
 from baselines.greedy import run_greedy_baseline_environment
-from baselines.gta import GTABid, future_tasks_within_window, run_basegta_baseline_environment, run_impgta_baseline_environment, settle_aim_auction
+from baselines.gta import (
+    GTABid,
+    estimate_impgta_outer_task_value,
+    future_tasks_within_window,
+    run_basegta_baseline_environment,
+    run_impgta_baseline_environment,
+    settle_aim_auction,
+    should_bid_outer_platform_impgta,
+)
 from baselines.mra import run_mra_baseline_environment
 from baselines.ramcom import choose_outer_payment_by_expected_revenue, run_ramcom_baseline_environment, worker_acceptance_probability
 from algorithms.ramcom_runner import build_ramcom_runner
@@ -411,6 +419,35 @@ class MetricAlignmentTest(unittest.TestCase):
 
         self.assertEqual(result["accepted_assignments"], 1)
         self.assertEqual(result["cross_assignment_count"], 1)
+
+    def test_impgta_outer_condition_compares_net_revenue_scales(self) -> None:
+        """Outer ImpGTA should compare current and future opportunities as platform net revenue."""
+
+        task = SimpleNamespace(num="t1", fare=20.0, s_time=0.0, d_time=300.0, weight=1.0, l_node="p1")
+        future_tasks = [
+            SimpleNamespace(num="p-f1", fare=11.0, s_time=10.0),
+            SimpleNamespace(num="p-f2", fare=12.0, s_time=20.0),
+        ]
+
+        current_revenue = estimate_impgta_outer_task_value(
+            task=task,
+            dispatch_cost=1.0,
+            cross_platform_sharing_rate_mu2=0.5,
+        )
+
+        self.assertEqual(current_revenue, 19.0)
+        future_revenue = sum(
+            compute_local_platform_revenue_for_local_completion(float(task.fare), local_payment_ratio=0.2)
+            for task in future_tasks
+        ) / len(future_tasks)
+        self.assertEqual(future_revenue, 9.2)
+        self.assertTrue(
+            should_bid_outer_platform_impgta(
+                current_task_value=current_revenue,
+                idle_worker_count=0,
+                future_tasks=future_tasks,
+            )
+        )
 
     def test_impgta_cross_payment_matches_aim_critical_payment(self) -> None:
         """ImpGTA cross completions should settle with AIM critical payment."""

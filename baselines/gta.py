@@ -383,6 +383,35 @@ def expected_future_reward(future_tasks: Sequence[Any]) -> float:
     return float(fmean(float(getattr(task, "fare")) for task in future_tasks))
 
 
+def expected_future_local_platform_revenue(
+    future_tasks: Sequence[Any],
+    local_payment_ratio: float = DEFAULT_LOCAL_PAYMENT_RATIO,
+) -> float:
+    """Compute ImpGTA's expected future own-task opportunity as platform net revenue.
+
+    Args:
+        future_tasks: Predicted own-task stream inside the ImpGTA future window.
+        local_payment_ratio: Fixed courier payment ratio used by the shared CPUL
+            revenue definition for local completions.
+
+    Returns:
+        Mean net revenue that the platform would obtain by serving its own
+        predicted future tasks locally.
+    """
+
+    if not future_tasks:
+        return 0.0
+    return float(
+        fmean(
+            compute_local_platform_revenue_for_local_completion(
+                parcel_fare=float(getattr(task, "fare")),
+                local_payment_ratio=local_payment_ratio,
+            )
+            for task in future_tasks
+        )
+    )
+
+
 def should_dispatch_inner_task_impgta(task: Any, idle_worker_count: int, future_tasks: Sequence[Any]) -> bool:
     """Evaluate ImpGTA's inner conditions for the local platform."""
     if idle_worker_count > len(future_tasks):
@@ -395,28 +424,52 @@ def estimate_impgta_outer_task_value(
     dispatch_cost: float,
     cross_platform_sharing_rate_mu2: float = DEFAULT_CROSS_PLATFORM_SHARING_RATE_MU2,
 ) -> float:
-    """Estimate the current cooperative reward used by ImpGTA's outer threshold.
+    """Estimate the current cooperative net revenue used by ImpGTA's outer threshold.
 
     Args:
         task: Current local-platform task offered to the outer platform.
         dispatch_cost: The platform's minimum acceptable dispatching payment.
-        cross_platform_sharing_rate_mu2: AIM platform-sharing surcharge.
+        cross_platform_sharing_rate_mu2: Deprecated compatibility argument. The
+            ImpGTA bid gate follows ref. [17] and evaluates the task reward
+            against the dispatch cost; CAPA's `mu2` sharing term is applied
+            only during cross-platform payment settlement.
 
     Returns:
-        Estimated cooperative payment capped by the task fare.
+        Estimated cooperating-platform net revenue, i.e. the predicted payment
+        from the local platform minus the courier dispatch cost.
     """
 
-    return min(
-        float(getattr(task, "fare")),
-        float(dispatch_cost) + float(cross_platform_sharing_rate_mu2) * float(getattr(task, "fare")),
-    )
+    return max(0.0, float(getattr(task, "fare")) - float(dispatch_cost))
 
 
-def should_bid_outer_platform_impgta(current_task_value: float, idle_worker_count: int, future_tasks: Sequence[Any]) -> bool:
-    """Evaluate ImpGTA's outer conditions for one cooperating platform."""
+def should_bid_outer_platform_impgta(
+    current_task_value: float,
+    idle_worker_count: int,
+    future_tasks: Sequence[Any],
+    local_payment_ratio: float = DEFAULT_LOCAL_PAYMENT_RATIO,
+) -> bool:
+    """Evaluate ImpGTA's outer conditions for one cooperating platform.
+
+    Args:
+        current_task_value: Net revenue expected from accepting the current
+            cross-platform task.
+        idle_worker_count: Available residual courier capacity in the prediction
+            window.
+        future_tasks: Predicted own-task stream for the cooperating platform.
+        local_payment_ratio: Fixed courier payment ratio for own-task net
+            revenue.
+
+    Returns:
+        True when supply is sufficient or the current cross-platform net revenue
+        is no worse than the predicted own-task net revenue.
+    """
+
     if idle_worker_count > len(future_tasks):
         return True
-    return float(current_task_value) >= expected_future_reward(future_tasks)
+    return float(current_task_value) >= expected_future_local_platform_revenue(
+        future_tasks,
+        local_payment_ratio=local_payment_ratio,
+    )
 
 
 def settle_aim_auction(
@@ -673,6 +726,7 @@ def _run_gta_environment(
                             prediction_window_seconds or 0,
                         ),
                         future_tasks=partner_future_tasks,
+                        local_payment_ratio=local_payment_ratio,
                     ):
                         continue
                 outer_bids.append(
