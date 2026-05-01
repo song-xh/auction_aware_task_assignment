@@ -353,10 +353,12 @@ python3 -u experiments/run_chengdu_exp1_num_parcels.py \
   --courier-capacity 50 \
   --service-radius-km 1.0 \
   --batch-size 30 \
-  --prediction-window-seconds 180 \
+  --prediction-window-seconds 30 \
   --prediction-success-rate 0.8 \
   --prediction-sampling-seed 1 \
-  --poll-seconds 10
+  --poll-seconds 10 \
+  --task-window-start-seconds 0 \
+  --task-window-end-seconds 3600
 ```
   - 若需在指定时间窗内抽样包裹，可追加：
 ```bash
