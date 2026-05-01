@@ -195805,6 +195805,6 @@
   "checkpoint_dir": "outputs/plots/rl_capa_ablation_1500episodes/rl-capa/checkpoints",
   "device": "cpu",
   "plots": {
-    "training_curves": "output/rl_capa_ablation_1500episode/rl-capa/training_curves.png"
+    "training_curves": "result/rl_capa_ablation_1500episodes/rl-capa/training_curves.png"
   }
 }
