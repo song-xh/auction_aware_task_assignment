@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from io import StringIO
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -50,6 +51,25 @@ def test_read_task_loads_every_row_from_third_order_split() -> None:
 
     assert {"p1", "p2", "p3a", "p3b", "p4", "p5", "p6", "p7", "p8"} <= pick_ids
     assert "d3" in delivery_ids
+
+
+def test_generated_chengdu_splits_are_pickup_majority() -> None:
+    """Generated supplemental splits should contain more pick-up than delivery tasks."""
+
+    for split_index in range(5, 9):
+        rows = [
+            line.split(",")
+            for line in Path(f"Data/order_20161101_deal{split_index}")
+            .read_text(encoding="utf-8")
+            .replace("\r", "\n")
+            .strip()
+            .splitlines()
+        ]
+        pick_count = sum(float(row[7]) != 0.0 for row in rows)
+        delivery_count = len(rows) - pick_count
+
+        assert pick_count > delivery_count
+        assert pick_count / len(rows) >= 0.8
 
 
 def _legacy_pick_task(task_id: str, request_time: int) -> SimpleNamespace:
