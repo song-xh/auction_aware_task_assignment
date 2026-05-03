@@ -9,7 +9,7 @@ if TYPE_CHECKING:
 
 
 # 论文 CAPA 默认参数
-DEFAULT_CAPA_BATCH_SIZE = 20
+DEFAULT_CAPA_BATCH_SIZE = 30
 # 算法 1 中的批大小阈值 Δb，表示将到达包裹流累积成一个 batch 的时间窗口。
 
 DEFAULT_UTILITY_BALANCE_GAMMA = 0.5
@@ -88,10 +88,10 @@ DEFAULT_GREEDY_REALTIME = 1
 DEFAULT_GREEDY_BASE_BID = 2.0
 # Greedy 基线的基础报价偏移项；非 CAPA 论文主参数。
 
-DEFAULT_GTA_UNIT_PRICE_PER_KM = 3.0
+DEFAULT_GTA_UNIT_PRICE_PER_KM = 2.0
 # GTA / BaseGTA / ImpGTA 中单位公里派单成本；对应参考文献 [17] 的 dispatch cost 设定，不属于 CAPA 主参数。
 
-DEFAULT_IMPGTA_WINDOW_SECONDS = 180
+DEFAULT_IMPGTA_WINDOW_SECONDS = 30
 # ImpGTA 的预测窗口大小（秒）；属于 baseline 私有配置，不属于 CAPA 主参数。
 
 DEFAULT_IMPGTA_PREDICTION_SUCCESS_RATE = 0.8
