@@ -5,6 +5,9 @@ from itertools import islice
 
 # pick_task_set = []
 # delivery_task_set = []
+ORDER_SPLIT_FILES = tuple(f"Data/order_20161101_deal{index}" for index in range(1, 9))
+
+
 class Task:
     """
     所在地，发出时间，截止时间，任务质量，费用
@@ -45,52 +48,21 @@ def parse_task_line(line: str) -> Task:
     )
 
 # 平时运行开启
-def readTask():
+def readTask() -> tuple[list[Task], list[Task]]:
+    """Read every Chengdu order split into pick-up and delivery task streams."""
+
     pick_task_set = []
     delivery_task_set = []
-    with open("Data/order_20161101_deal1") as f:
-        count = 0
-        for line in f:
-            temp_task = parse_task_line(line)
-
-            count += 1
-            if temp_task.fare != 0:
-                pick_task_set.append(temp_task)
-            else:
-                delivery_task_set.append(temp_task)
-    with open("Data/order_20161101_deal2") as f:
-        count = 0
-        for line in f:
-            temp_task = parse_task_line(line)
-
-            count += 1
-            if temp_task.fare != 0:
-                pick_task_set.append(temp_task)
-            else:
-                delivery_task_set.append(temp_task)
-    with open("Data/order_20161101_deal3") as f:
-        count = 0
-        for line in f:
-            temp_task = parse_task_line(line)
-            count += 1
-            if temp_task.fare != 0:
-                pick_task_set.append(temp_task)
-                # print("picpup+1, 总数为%s" % count)
-            else:
-                delivery_task_set.append(temp_task)
-                # print(f"delivery+1, 总数为{count}")
-    with open("Data/order_20161101_deal4") as f:
-        count = 0
-        for line in f:
-            temp_task = parse_task_line(line)
-
-            count += 1
-            if temp_task.fare != 0:
-                pick_task_set.append(temp_task)
-                # print("picpup+1, 总数为%s" % count)
-            else:
-                delivery_task_set.append(temp_task)
-                # print(f"delivery+1, 总数为{count}")
+    for split_path in ORDER_SPLIT_FILES:
+        with open(split_path) as f:
+            for line in f:
+                if not line.strip():
+                    continue
+                temp_task = parse_task_line(line)
+                if temp_task.fare != 0:
+                    pick_task_set.append(temp_task)
+                else:
+                    delivery_task_set.append(temp_task)
     return pick_task_set, delivery_task_set
 
 

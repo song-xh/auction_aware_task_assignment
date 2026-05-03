@@ -30,6 +30,10 @@ def test_read_task_loads_every_row_from_third_order_split() -> None:
             ]
         ),
         "Data/order_20161101_deal4": _task_line("p4", 8.0),
+        "Data/order_20161101_deal5": _task_line("p5", 8.0),
+        "Data/order_20161101_deal6": _task_line("p6", 8.0),
+        "Data/order_20161101_deal7": _task_line("p7", 8.0),
+        "Data/order_20161101_deal8": _task_line("p8", 8.0),
     }
 
     def fake_open(path: str, *args: object, **kwargs: object) -> StringIO:
@@ -44,7 +48,7 @@ def test_read_task_loads_every_row_from_third_order_split() -> None:
     pick_ids = {task.num for task in pick_tasks}
     delivery_ids = {task.num for task in delivery_tasks}
 
-    assert {"p1", "p2", "p3a", "p3b", "p4"} <= pick_ids
+    assert {"p1", "p2", "p3a", "p3b", "p4", "p5", "p6", "p7", "p8"} <= pick_ids
     assert "d3" in delivery_ids
 
 
