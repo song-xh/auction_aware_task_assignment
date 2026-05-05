@@ -28,6 +28,7 @@ class Stage1StepRecord:
     log_prob_1: torch.Tensor
     entropy_1: torch.Tensor
     reward: float
+    raw_revenue: float = 0.0
     batch_duration: int = 0
 
 
@@ -138,7 +139,7 @@ class Stage1RLCAPATrainer:
         batch_sizes = [record.batch_duration for record in buffer]
         return Stage1EpisodeLog(
             episode=episode_idx,
-            total_reward=sum(record.reward for record in buffer),
+            total_reward=sum(record.raw_revenue for record in buffer),
             loss_pi1=loss_pi1,
             loss_v1=loss_v1,
             steps=step,
@@ -159,13 +160,18 @@ class Stage1RLCAPATrainer:
         a1_index = dist1.sample()
         batch_duration = self._batch_action_values[a1_index.item()]
         self.env.apply_batch_size(batch_duration)
-        reward = self.env.apply_capa_batch()
+        raw_revenue = self.env.apply_capa_batch()
+        # Normalize reward by batch duration to remove systematic bias:
+        # larger batches accumulate more parcels → higher raw revenue per step,
+        # which with γ<1 creates a spurious preference for large batches.
+        reward = raw_revenue / batch_duration
         return Stage1StepRecord(
             s1=s1_tensor,
             a1_index=a1_index.item(),
             log_prob_1=dist1.log_prob(a1_index),
             entropy_1=dist1.entropy(),
             reward=reward,
+            raw_revenue=raw_revenue,
             batch_duration=batch_duration,
         )
 
@@ -181,6 +187,14 @@ class Stage1RLCAPATrainer:
         log_probs_1 = torch.stack([record.log_prob_1 for record in buffer])
         entropies_1 = torch.stack([record.entropy_1 for record in buffer])
 
+        # Compute advantages BEFORE updating critic (spec Section 8):
+        # Using post-update V1 collapses adv to near-zero fitting residual.
+        with torch.no_grad():
+            adv_1 = returns_tensor - self.v1(s1_batch)
+            if self.config.normalize_advantages:
+                adv_1 = RLCAPATrainer._normalize_advantages(adv_1)
+
+        # Update critic
         v1_values = self.v1(s1_batch)
         loss_v1 = ((v1_values - returns_tensor.detach()) ** 2).mean()
         self.opt_v1.zero_grad()
@@ -188,11 +202,7 @@ class Stage1RLCAPATrainer:
         nn.utils.clip_grad_norm_(self.v1.parameters(), self.config.max_grad_norm)
         self.opt_v1.step()
 
-        with torch.no_grad():
-            adv_1 = returns_tensor - self.v1(s1_batch)
-            if self.config.normalize_advantages:
-                adv_1 = RLCAPATrainer._normalize_advantages(adv_1)
-
+        # Update actor with pre-update advantages
         loss_pi1 = -(log_probs_1 * adv_1).mean() - self.config.entropy_coeff * entropies_1.mean()
         self.opt_pi1.zero_grad()
         loss_pi1.backward()

@@ -897,7 +897,27 @@ def compute_delivered_legacy_task_count(
         Number of accepted tasks no longer present in any active courier route.
     """
 
-    return len(set(accepted_task_ids) - current_legacy_route_task_ids(local_couriers, partner_couriers_by_platform))
+    return len(compute_delivered_legacy_task_ids(accepted_task_ids, local_couriers, partner_couriers_by_platform))
+
+
+def compute_delivered_legacy_task_ids(
+    accepted_task_ids: Sequence[str] | set[str],
+    local_couriers: Sequence[Any],
+    partner_couriers_by_platform: Mapping[str, Sequence[Any]],
+) -> set[str]:
+    """Return accepted task identifiers that are no longer pending in legacy routes.
+
+    Args:
+        accepted_task_ids: Stable identifiers for tasks accepted by the policy.
+        local_couriers: Active local legacy couriers.
+        partner_couriers_by_platform: Active partner legacy couriers grouped by platform.
+
+    Returns:
+        Set of accepted task identifiers that have physically left all active
+        courier routes after route progression.
+    """
+
+    return set(accepted_task_ids) - current_legacy_route_task_ids(local_couriers, partner_couriers_by_platform)
 
 
 def partition_terminal_backlog(

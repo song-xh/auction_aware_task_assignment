@@ -24,14 +24,14 @@ from capa.utility import (
 from env.chengdu import (
     LegacyCourierSnapshotCache,
     apply_assignment_to_legacy_courier,
-    compute_delivered_legacy_task_count,
+    compute_delivered_legacy_task_ids,
     drain_legacy_routes,
     framework_movement_callback,
     group_legacy_tasks_by_batch,
     legacy_task_to_parcel,
 )
 
-from .common import build_legacy_feasible_insertions, mean_decision_time, project_courier_to_capa
+from .common import build_legacy_feasible_insertions, mean_decision_time, project_courier_to_capa, sum_delivered_assignment_revenue
 
 
 
@@ -143,7 +143,7 @@ def run_mra_baseline_environment(
     backlog: list[Any] = []
     accepted_assignments = 0
     accepted_task_ids: set[str] = set()
-    total_revenue = 0.0
+    accepted_revenues_by_task_id: dict[str, float] = {}
     batches = group_legacy_tasks_by_batch(tasks, batch_size)
     first_batch_start = int(float(getattr(min(tasks, key=lambda item: float(getattr(item, "s_time"))), "s_time")))
     decision_epoch_count = 0
@@ -223,12 +223,13 @@ def run_mra_baseline_environment(
                 courier_cache_id = f"mra-{getattr(edge.courier, 'num')}"
                 snapshot_cache.invalidate(courier_cache_id)
                 insertion_cache.invalidate_courier(courier_cache_id)
-                total_revenue += compute_local_platform_revenue_for_local_completion(
+                task_id = str(getattr(edge.task, "num"))
+                accepted_revenues_by_task_id[task_id] = compute_local_platform_revenue_for_local_completion(
                     parcel_fare=float(getattr(edge.task, "fare")),
                     local_payment_ratio=local_payment_ratio,
                 )
                 accepted_assignments += 1
-                accepted_task_ids.add(str(getattr(edge.task, "num")))
+                accepted_task_ids.add(task_id)
 
             remaining = [task for task in remaining if str(getattr(task, "num")) not in used_tasks]
             elapsed = perf_counter() - round_started
@@ -266,11 +267,13 @@ def run_mra_baseline_environment(
             step_seconds=60,
             movement_callback=movement,
         )
-    delivered_parcels = compute_delivered_legacy_task_count(
+    delivered_task_ids = compute_delivered_legacy_task_ids(
         accepted_task_ids,
         local_couriers,
         {},
     )
+    delivered_parcels = len(delivered_task_ids)
+    total_revenue = sum_delivered_assignment_revenue(accepted_revenues_by_task_id, delivered_task_ids)
 
     return {
         "TR": total_revenue,

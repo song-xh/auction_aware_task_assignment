@@ -1,0 +1,25 @@
+{
+  "axis": "num_parcels",
+  "preset": "formal_CD",
+  "algorithms": [
+    "capa",
+    "greedy",
+    "basegta",
+    "impgta",
+    "mra",
+    "ramcom"
+  ],
+  "summary": "result/exp1_formal_CD/summary.json",
+  "tmp_root": "/home/sxh/exp1_formal",
+  "seed_path": "/home/sxh/exp1_formal/canonical_seed.pkl",
+  "execution_mode": "postprocessed_from_partial_split",
+  "estimated_algorithms_at_200000": [
+    "mra",
+    "ramcom"
+  ],
+  "plots": {
+    "TR": "result/exp1_formal_CD/tr_vs_num_parcels.png",
+    "CR": "result/exp1_formal_CD/cr_vs_num_parcels.png",
+    "BPT": "result/exp1_formal_CD/bpt_vs_num_parcels.png"
+  }
+}

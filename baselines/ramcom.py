@@ -21,7 +21,7 @@ from capa.utility import (
 from env.chengdu import (
     LegacyCourierSnapshotCache,
     apply_assignment_to_legacy_courier,
-    compute_delivered_legacy_task_count,
+    compute_delivered_legacy_task_ids,
     drain_legacy_routes,
     flatten_partner_couriers,
     framework_movement_callback,
@@ -31,7 +31,7 @@ from env.chengdu import (
     sort_legacy_tasks,
 )
 
-from .common import build_legacy_feasible_insertions, extract_worker_history_values, mean_decision_time
+from .common import build_legacy_feasible_insertions, extract_worker_history_values, mean_decision_time, sum_delivered_assignment_revenue
 
 
 @dataclass(frozen=True)
@@ -257,7 +257,7 @@ def run_ramcom_baseline_environment(
     current_time = int(get_model_release_time(tasks[0]))
     accepted_assignments = 0
     accepted_task_ids: set[str] = set()
-    total_revenue = 0.0
+    accepted_revenues_by_task_id: dict[str, float] = {}
     processing_time_seconds = 0.0
     local_assignment_count = 0
     cross_assignment_count = 0
@@ -336,13 +336,14 @@ def run_ramcom_baseline_environment(
                     courier_cache_id = f"ramcom-inner-{getattr(chosen.courier, 'num')}"
                     snapshot_cache.invalidate(courier_cache_id)
                     insertion_cache.invalidate_courier(courier_cache_id)
-                    total_revenue += compute_local_platform_revenue_for_local_completion(
+                    task_id = str(getattr(task, "num"))
+                    accepted_revenues_by_task_id[task_id] = compute_local_platform_revenue_for_local_completion(
                         parcel_fare=float(getattr(task, "fare")),
                         local_payment_ratio=local_payment_ratio,
                     )
                     accepted_assignments += 1
                     local_assignment_count += 1
-                    accepted_task_ids.add(str(getattr(task, "num")))
+                    accepted_task_ids.add(task_id)
                     trace_entry["branch"] = "high_value_local"
                     trace_entry["selected_courier"] = str(getattr(chosen.courier, "num", ""))
                     assigned = True
@@ -416,13 +417,14 @@ def run_ramcom_baseline_environment(
                             courier_cache_id = f"ramcom-{selected_platform}-{getattr(selected_insertion.courier, 'num')}"
                             snapshot_cache.invalidate(courier_cache_id)
                             insertion_cache.invalidate_courier(courier_cache_id)
-                            total_revenue += compute_local_platform_revenue_for_cross_completion(
+                            task_id = str(getattr(task, "num"))
+                            accepted_revenues_by_task_id[task_id] = compute_local_platform_revenue_for_cross_completion(
                                 parcel_fare=float(getattr(task, "fare")),
                                 platform_payment=outer_payment,
                             )
                             accepted_assignments += 1
                             cross_assignment_count += 1
-                            accepted_task_ids.add(str(getattr(task, "num")))
+                            accepted_task_ids.add(task_id)
                             partner_cross_assignment_counts[selected_platform] += 1
                             partner_cross_revenues[selected_platform] += float(outer_payment)
                             trace_entry["branch"] = "outer_success"
@@ -459,11 +461,13 @@ def run_ramcom_baseline_environment(
             step_seconds=60,
             movement_callback=movement,
         )
-    delivered_parcels = compute_delivered_legacy_task_count(
+    delivered_task_ids = compute_delivered_legacy_task_ids(
         accepted_task_ids,
         local_couriers,
         partner_couriers_by_platform,
     )
+    delivered_parcels = len(delivered_task_ids)
+    total_revenue = sum_delivered_assignment_revenue(accepted_revenues_by_task_id, delivered_task_ids)
 
     return {
         "method": "RamCOM-CPUL",

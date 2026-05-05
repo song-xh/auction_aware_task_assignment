@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Sequence
+from typing import Any, Iterable, Mapping, Sequence
 
 from capa.cama import is_feasible_local_match
 from capa.config import DEFAULT_COURIER_ALPHA, DEFAULT_COURIER_BETA, DEFAULT_COURIER_SERVICE_SCORE
@@ -28,6 +28,30 @@ def mean_decision_time(total_seconds: float, decision_epochs: int) -> float:
     if decision_epochs <= 0:
         return 0.0
     return float(total_seconds) / float(decision_epochs)
+
+
+def sum_delivered_assignment_revenue(
+    accepted_revenues_by_task_id: Mapping[str, float],
+    delivered_task_ids: Iterable[str],
+) -> float:
+    """Sum local-platform revenue only for accepted tasks that were delivered.
+
+    Args:
+        accepted_revenues_by_task_id: Revenue that would be realized for each
+            accepted task if it leaves the courier route before the terminal
+            deadline check.
+        delivered_task_ids: Accepted task identifiers that were physically
+            delivered after route progression.
+
+    Returns:
+        Total realized local-platform revenue for delivered tasks only.
+    """
+
+    return sum(
+        float(accepted_revenues_by_task_id[task_id])
+        for task_id in delivered_task_ids
+        if task_id in accepted_revenues_by_task_id
+    )
 
 
 @dataclass(frozen=True)

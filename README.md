@@ -154,17 +154,17 @@ python3 runner.py run \
   --algorithm rl-capa-ablation \
   --data-dir Data \
   --num-parcels 500 \
-  --local-couriers 20 \
-  --platforms 4 \
+  --local-couriers 10 \
+  --platforms 2 \
   --couriers-per-platform 5 \
   --task-window-start-seconds 0 \
-  --task-window-end-seconds 300 \
+  --task-window-end-seconds 180 \
   --partner-history-task-count-start 200 \
   --partner-history-task-count-step 0 \
-  --rl-batch-actions 10 15 20 \
+  --rl-batch-actions 10 15 20 25 30 \
   --batch-size 30 \
   --step-seconds 60 \
-  --episodes 500 \
+  --episodes 1500 \
   --rl-lr-actor 0.0003 \
   --rl-lr-critic 0.0005 \
   --rl-discount-factor 0.95 \

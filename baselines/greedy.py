@@ -28,14 +28,14 @@ from capa.utility import (
 from env.chengdu import (
     LegacyCourierSnapshotCache,
     apply_assignment_to_legacy_courier,
-    compute_delivered_legacy_task_count,
+    compute_delivered_legacy_task_ids,
     drain_legacy_routes,
     framework_movement_callback,
     legacy_task_to_parcel,
     sort_legacy_tasks,
 )
 
-from .common import mean_decision_time, project_courier_to_capa
+from .common import mean_decision_time, project_courier_to_capa, sum_delivered_assignment_revenue
 
 
 GREEDY_RESULT_PATTERN = re.compile(
@@ -163,7 +163,7 @@ def run_greedy_baseline_environment(
     progress_stride = max(1, total_tasks // 100)
     accepted_assignments = 0
     accepted_task_ids: set[str] = set()
-    total_revenue = 0.0
+    accepted_revenues_by_task_id: dict[str, float] = {}
     processing_time_seconds = 0.0
 
     while task_index < total_tasks:
@@ -203,8 +203,9 @@ def run_greedy_baseline_environment(
                 snapshot_cache.invalidate(courier_cache_id)
                 insertion_cache.invalidate_courier(courier_cache_id)
                 accepted_assignments += 1
-                accepted_task_ids.add(str(getattr(task, "num")))
-                total_revenue += compute_local_platform_revenue_for_local_completion(
+                task_id = str(getattr(task, "num"))
+                accepted_task_ids.add(task_id)
+                accepted_revenues_by_task_id[task_id] = compute_local_platform_revenue_for_local_completion(
                     parcel_fare=float(getattr(task, "fare")),
                     local_payment_ratio=local_payment_ratio,
                 )
@@ -232,11 +233,13 @@ def run_greedy_baseline_environment(
             step_seconds=max(1, realtime),
             movement_callback=movement,
         )
-    delivered_parcels = compute_delivered_legacy_task_count(
+    delivered_task_ids = compute_delivered_legacy_task_ids(
         accepted_task_ids,
         local_couriers,
         {},
     )
+    delivered_parcels = len(delivered_task_ids)
+    total_revenue = sum_delivered_assignment_revenue(accepted_revenues_by_task_id, delivered_task_ids)
 
     return {
         "TR": total_revenue,

@@ -27,14 +27,14 @@ from capa.utility import (
 )
 from env.chengdu import (
     apply_assignment_to_legacy_courier,
-    compute_delivered_legacy_task_count,
+    compute_delivered_legacy_task_ids,
     drain_legacy_routes,
     flatten_partner_couriers,
     framework_movement_callback,
     sort_legacy_tasks,
 )
 
-from .common import mean_decision_time
+from .common import mean_decision_time, sum_delivered_assignment_revenue
 
 DEFAULT_UNIT_PRICE_PER_KM = DEFAULT_GTA_UNIT_PRICE_PER_KM
 
@@ -602,9 +602,9 @@ def _run_gta_environment(
     task_index = 0
     processed_tasks = 0
     progress_stride = max(1, total_task_count // 100)
-    total_profit = 0.0
     accepted_assignments = 0
     accepted_task_ids: set[str] = set()
+    accepted_revenues_by_task_id: dict[str, float] = {}
     processing_time_seconds = 0.0
     local_assignment_count = 0
     cross_assignment_count = 0
@@ -665,8 +665,9 @@ def _run_gta_environment(
                     apply_assignment_to_legacy_courier(task, local_bid.courier, local_bid.insertion_index)
                     accepted_assignments += 1
                     local_assignment_count += 1
-                    accepted_task_ids.add(str(getattr(task, "num")))
-                    total_profit += compute_local_platform_revenue_for_local_completion(
+                    task_id = str(getattr(task, "num"))
+                    accepted_task_ids.add(task_id)
+                    accepted_revenues_by_task_id[task_id] = compute_local_platform_revenue_for_local_completion(
                         parcel_fare=float(getattr(task, "fare")),
                         local_payment_ratio=local_payment_ratio,
                     )
@@ -747,8 +748,9 @@ def _run_gta_environment(
                 apply_assignment_to_legacy_courier(task, outcome.courier, outcome.insertion_index)
                 accepted_assignments += 1
                 cross_assignment_count += 1
-                accepted_task_ids.add(str(getattr(task, "num")))
-                total_profit += compute_local_platform_revenue_for_cross_completion(
+                task_id = str(getattr(task, "num"))
+                accepted_task_ids.add(task_id)
+                accepted_revenues_by_task_id[task_id] = compute_local_platform_revenue_for_cross_completion(
                     parcel_fare=float(getattr(task, "fare")),
                     platform_payment=outcome.payment,
                 )
@@ -778,11 +780,13 @@ def _run_gta_environment(
             step_seconds=60,
             movement_callback=movement,
         )
-    delivered_parcels = compute_delivered_legacy_task_count(
+    delivered_task_ids = compute_delivered_legacy_task_ids(
         accepted_task_ids,
         local_couriers,
         partner_couriers_by_platform,
     )
+    delivered_parcels = len(delivered_task_ids)
+    total_profit = sum_delivered_assignment_revenue(accepted_revenues_by_task_id, delivered_task_ids)
 
     return {
         "TR": total_profit,
