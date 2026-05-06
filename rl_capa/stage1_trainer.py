@@ -28,7 +28,6 @@ class Stage1StepRecord:
     log_prob_1: torch.Tensor
     entropy_1: torch.Tensor
     reward: float
-    raw_revenue: float = 0.0
     batch_duration: int = 0
 
 
@@ -130,16 +129,26 @@ class Stage1RLCAPATrainer:
                 assignments=0,
             )
 
+        # Stage-1 ablation uses undiscounted return (gamma=1) instead of the
+        # paper's discounted gamma=0.9. Reason: paper trains pi1 jointly with
+        # pi2 via A1 = V2 - V1, which isolates the batch-size contribution from
+        # the per-step reward magnitude. The ablation must use REINFORCE-style
+        # A1 = R_hat - V1, but with gamma<1 the discounted return G_t systematically
+        # depends on the number of remaining steps (smaller batch -> more steps
+        # -> larger sum even when total raw revenue is identical). That induces
+        # a spurious preference for the smallest batch size and degrades total
+        # platform revenue. gamma=1 makes G_t = sum of remaining raw revenue,
+        # which equals the true platform-level objective.
         returns = compute_discounted_returns(
             rewards=[record.reward for record in buffer],
-            discount_factor=self.config.discount_factor,
+            discount_factor=1.0,
         )
         loss_pi1, loss_v1 = self._update_networks(buffer, returns)
         self.env.finalize_episode()
         batch_sizes = [record.batch_duration for record in buffer]
         return Stage1EpisodeLog(
             episode=episode_idx,
-            total_reward=sum(record.raw_revenue for record in buffer),
+            total_reward=sum(record.reward for record in buffer),
             loss_pi1=loss_pi1,
             loss_v1=loss_v1,
             steps=step,
@@ -160,18 +169,13 @@ class Stage1RLCAPATrainer:
         a1_index = dist1.sample()
         batch_duration = self._batch_action_values[a1_index.item()]
         self.env.apply_batch_size(batch_duration)
-        raw_revenue = self.env.apply_capa_batch()
-        # Normalize reward by batch duration to remove systematic bias:
-        # larger batches accumulate more parcels → higher raw revenue per step,
-        # which with γ<1 creates a spurious preference for large batches.
-        reward = raw_revenue / batch_duration
+        reward = self.env.apply_capa_batch()
         return Stage1StepRecord(
             s1=s1_tensor,
             a1_index=a1_index.item(),
             log_prob_1=dist1.log_prob(a1_index),
             entropy_1=dist1.entropy(),
             reward=reward,
-            raw_revenue=raw_revenue,
             batch_duration=batch_duration,
         )
 
