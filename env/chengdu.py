@@ -1041,6 +1041,141 @@ def compute_delivered_legacy_task_ids(
     return set(accepted_task_ids) - current_legacy_route_task_ids(local_couriers, partner_couriers_by_platform)
 
 
+def advance_legacy_routes_with_deadline_accounting(
+    local_couriers: MutableSequence[Any],
+    partner_couriers_by_platform: Mapping[str, MutableSequence[Any]],
+    station_set: Sequence[Any],
+    movement_callback: Callable[..., None],
+    step_seconds: int,
+    current_time: int,
+    accepted_task_ids: set[str],
+    delivered_task_ids: set[str],
+    timed_out_task_ids: set[str],
+) -> list[DeliveryOutcome]:
+    """Advance legacy routes and classify completed accepted tasks by deadline.
+
+    Args:
+        local_couriers: Active local couriers.
+        partner_couriers_by_platform: Active partner couriers grouped by platform.
+        station_set: Legacy station objects.
+        movement_callback: Shared simulator advancement callback.
+        step_seconds: Duration advanced by this movement step.
+        current_time: Absolute movement start time.
+        accepted_task_ids: Accepted legacy task identifiers.
+        delivered_task_ids: Mutable set of on-time delivered accepted tasks.
+        timed_out_task_ids: Mutable set of accepted tasks completed after the true deadline.
+
+    Returns:
+        Newly observed delivery outcomes emitted during this movement step.
+    """
+
+    if step_seconds <= 0:
+        return []
+    pending_before = current_legacy_route_tasks(
+        local_couriers,
+        partner_couriers_by_platform,
+    )
+    delivery_events: list[dict[str, float | str]] = []
+    invoke_legacy_movement_callback(
+        movement_callback,
+        local_couriers,
+        flatten_partner_couriers(partner_couriers_by_platform),
+        step_seconds,
+        station_set,
+        delivery_events=delivery_events,
+        absolute_start_time=current_time,
+    )
+    if not pending_before:
+        return []
+    step_end_time = current_time + step_seconds
+    pending_after_ids = current_legacy_route_task_ids(
+        local_couriers,
+        partner_couriers_by_platform,
+    )
+    removed_task_ids = [
+        task_id for task_id in pending_before
+        if task_id not in pending_after_ids
+    ]
+    event_lookup = {
+        str(event["task_id"]): event
+        for event in delivery_events
+    }
+    outcomes: list[DeliveryOutcome] = []
+    for task_id in removed_task_ids:
+        if task_id not in accepted_task_ids:
+            continue
+        if task_id in delivered_task_ids or task_id in timed_out_task_ids:
+            continue
+        task = pending_before.get(task_id)
+        if task is None:
+            continue
+        event = event_lookup.get(task_id)
+        completed_at = float(step_end_time if event is None else event["completed_at"])
+        deadline = float(get_true_deadline(task))
+        outcome = DeliveryOutcome(
+            task_id=task_id,
+            completed_at=completed_at,
+            deadline=deadline,
+            on_time=completed_at <= deadline,
+        )
+        outcomes.append(outcome)
+        if outcome.on_time:
+            delivered_task_ids.add(task_id)
+        else:
+            timed_out_task_ids.add(task_id)
+    return outcomes
+
+
+def drain_legacy_routes_with_deadline_accounting(
+    local_couriers: MutableSequence[Any],
+    partner_couriers_by_platform: Mapping[str, MutableSequence[Any]],
+    station_set: Sequence[Any],
+    movement_callback: Callable[..., None],
+    step_seconds: int,
+    current_time: int,
+    accepted_task_ids: set[str],
+    delivered_task_ids: set[str],
+    timed_out_task_ids: set[str],
+) -> tuple[list[DeliveryOutcome], int]:
+    """Drain all active routes while tracking on-time deliveries and timeouts.
+
+    Args:
+        local_couriers: Active local couriers.
+        partner_couriers_by_platform: Active partner couriers grouped by platform.
+        station_set: Legacy station objects.
+        movement_callback: Shared simulator advancement callback.
+        step_seconds: Drain step size in seconds.
+        current_time: Absolute drain start time.
+        accepted_task_ids: Accepted legacy task identifiers.
+        delivered_task_ids: Mutable set of on-time delivered accepted tasks.
+        timed_out_task_ids: Mutable set of accepted tasks completed after the true deadline.
+
+    Returns:
+        Tuple of ``(new_outcomes, drain_steps)`` accumulated during draining.
+    """
+
+    outcomes: list[DeliveryOutcome] = []
+    drain_steps = 0
+    clock = int(current_time)
+    while has_pending_legacy_routes(local_couriers, partner_couriers_by_platform):
+        outcomes.extend(
+            advance_legacy_routes_with_deadline_accounting(
+                local_couriers=local_couriers,
+                partner_couriers_by_platform=partner_couriers_by_platform,
+                station_set=station_set,
+                movement_callback=movement_callback,
+                step_seconds=step_seconds,
+                current_time=clock,
+                accepted_task_ids=accepted_task_ids,
+                delivered_task_ids=delivered_task_ids,
+                timed_out_task_ids=timed_out_task_ids,
+            )
+        )
+        clock += step_seconds
+        drain_steps += 1
+    return outcomes, drain_steps
+
+
 def advance_routes_with_deadline_accounting(
     runtime: ChengduBatchRuntime,
     step_seconds: int,
@@ -1055,68 +1190,18 @@ def advance_routes_with_deadline_accounting(
         Newly observed delivery outcomes emitted during this movement step.
     """
 
-    if step_seconds <= 0:
-        return []
-    pending_before = current_legacy_route_tasks(
+    outcomes = advance_legacy_routes_with_deadline_accounting(
         runtime.active_local_couriers,
         runtime.active_partner_by_platform,
-    )
-    if not pending_before:
-        invoke_legacy_movement_callback(
-            runtime.movement,
-            runtime.active_local_couriers,
-            flatten_partner_couriers(runtime.active_partner_by_platform),
-            step_seconds,
-            runtime.station_set,
-            absolute_start_time=runtime.current_time,
-        )
-        return []
-    delivery_events: list[dict[str, float | str]] = []
-    step_end_time = runtime.current_time + step_seconds
-    invoke_legacy_movement_callback(
-        runtime.movement,
-        runtime.active_local_couriers,
-        flatten_partner_couriers(runtime.active_partner_by_platform),
-        step_seconds,
         runtime.station_set,
-        delivery_events=delivery_events,
-        absolute_start_time=runtime.current_time,
+        runtime.movement,
+        step_seconds,
+        runtime.current_time,
+        runtime.accepted_assignment_ids,
+        runtime.delivered_assignment_ids,
+        runtime.timed_out_assignment_ids,
     )
-    pending_after_ids = current_legacy_route_task_ids(
-        runtime.active_local_couriers,
-        runtime.active_partner_by_platform,
-    )
-    removed_task_ids = [
-        task_id for task_id in pending_before
-        if task_id not in pending_after_ids
-    ]
-    event_lookup = {
-        str(event["task_id"]): event
-        for event in delivery_events
-    }
-    outcomes: list[DeliveryOutcome] = []
-    for task_id in removed_task_ids:
-        if task_id in runtime.delivered_assignment_ids or task_id in runtime.timed_out_assignment_ids:
-            continue
-        assignment = runtime.accepted_assignments_by_id.get(task_id)
-        task = pending_before.get(task_id)
-        if assignment is None or task is None:
-            continue
-        event = event_lookup.get(task_id)
-        completed_at = float(step_end_time if event is None else event["completed_at"])
-        deadline = float(get_true_deadline(task))
-        outcome = DeliveryOutcome(
-            task_id=task_id,
-            completed_at=completed_at,
-            deadline=deadline,
-            on_time=completed_at <= deadline,
-        )
-        runtime.delivery_outcomes.append(outcome)
-        outcomes.append(outcome)
-        if outcome.on_time:
-            runtime.delivered_assignment_ids.add(task_id)
-        else:
-            runtime.timed_out_assignment_ids.add(task_id)
+    runtime.delivery_outcomes.extend(outcomes)
     return outcomes
 
 
@@ -1781,12 +1866,19 @@ def finalize_chengdu_batch(
 def finalize_chengdu_runtime(runtime: ChengduBatchRuntime) -> list[Parcel]:
     """Drain accepted routes after the last batch and return on-time parcels."""
 
-    while has_pending_legacy_routes(
-        runtime.active_local_couriers,
-        runtime.active_partner_by_platform,
-    ):
-        advance_routes_with_deadline_accounting(runtime, runtime.step_seconds)
-        runtime.current_time += runtime.step_seconds
+    outcomes, drain_steps = drain_legacy_routes_with_deadline_accounting(
+        local_couriers=runtime.active_local_couriers,
+        partner_couriers_by_platform=runtime.active_partner_by_platform,
+        station_set=runtime.station_set,
+        movement_callback=runtime.movement,
+        step_seconds=runtime.step_seconds,
+        current_time=runtime.current_time,
+        accepted_task_ids=runtime.accepted_assignment_ids,
+        delivered_task_ids=runtime.delivered_assignment_ids,
+        timed_out_task_ids=runtime.timed_out_assignment_ids,
+    )
+    runtime.delivery_outcomes.extend(outcomes)
+    runtime.current_time += drain_steps * runtime.step_seconds
     return [assignment.parcel for assignment in delivered_assignments_from_runtime(runtime)]
 
 

@@ -26,15 +26,16 @@ from capa.utility import (
     compute_local_platform_revenue_for_local_completion,
 )
 from env.chengdu import (
+    advance_legacy_routes_with_deadline_accounting,
     apply_assignment_to_legacy_courier,
-    compute_delivered_legacy_task_ids,
     drain_legacy_routes,
+    drain_legacy_routes_with_deadline_accounting,
     flatten_partner_couriers,
     framework_movement_callback,
     sort_legacy_tasks,
 )
 
-from .common import mean_decision_time, sum_delivered_assignment_revenue
+from .common import mean_decision_time, sum_delivered_assignment_revenue, summarize_realized_assignment_breakdown
 
 DEFAULT_UNIT_PRICE_PER_KM = DEFAULT_GTA_UNIT_PRICE_PER_KM
 
@@ -539,13 +540,27 @@ def advance_simulation(
     local_couriers: MutableSequence[Any],
     partner_couriers_by_platform: Mapping[str, MutableSequence[Any]],
     station_set: Sequence[Any],
-    movement_callback: Callable[[MutableSequence[Any], MutableSequence[Any], int, Sequence[Any]], None],
+    movement_callback: Callable[..., None],
     seconds: int,
-) -> None:
+    current_time: int,
+    accepted_task_ids: set[str],
+    delivered_task_ids: set[str],
+    timed_out_task_ids: set[str],
+) -> list[Any]:
     """Advance the legacy simulator by a positive number of seconds."""
     if seconds <= 0:
-        return
-    movement_callback(local_couriers, flatten_partner_couriers(partner_couriers_by_platform), seconds, station_set)
+        return []
+    return advance_legacy_routes_with_deadline_accounting(
+        local_couriers=local_couriers,
+        partner_couriers_by_platform=partner_couriers_by_platform,
+        station_set=station_set,
+        movement_callback=movement_callback,
+        step_seconds=seconds,
+        current_time=current_time,
+        accepted_task_ids=accepted_task_ids,
+        delivered_task_ids=delivered_task_ids,
+        timed_out_task_ids=timed_out_task_ids,
+    )
 
 
 def _run_gta_environment(
@@ -604,12 +619,13 @@ def _run_gta_environment(
     progress_stride = max(1, total_task_count // 100)
     accepted_assignments = 0
     accepted_task_ids: set[str] = set()
+    delivered_task_ids: set[str] = set()
+    timed_out_task_ids: set[str] = set()
     accepted_revenues_by_task_id: dict[str, float] = {}
+    assignment_modes_by_task_id: dict[str, str] = {}
+    partner_platform_by_task_id: dict[str, str] = {}
+    partner_revenue_by_task_id: dict[str, float] = {}
     processing_time_seconds = 0.0
-    local_assignment_count = 0
-    cross_assignment_count = 0
-    partner_cross_assignment_counts: dict[str, int] = defaultdict(int)
-    partner_cross_revenues: dict[str, float] = defaultdict(float)
 
     while task_index < total_task_count:
         next_arrival_time = int(float(getattr(tasks[task_index], "s_time")))
@@ -619,6 +635,10 @@ def _run_gta_environment(
             environment.station_set,
             movement,
             next_arrival_time - current_time,
+            current_time,
+            accepted_task_ids,
+            delivered_task_ids,
+            timed_out_task_ids,
         )
         current_time = next_arrival_time
         arrivals: list[Any] = []
@@ -664,13 +684,13 @@ def _run_gta_environment(
                 ):
                     apply_assignment_to_legacy_courier(task, local_bid.courier, local_bid.insertion_index)
                     accepted_assignments += 1
-                    local_assignment_count += 1
                     task_id = str(getattr(task, "num"))
                     accepted_task_ids.add(task_id)
                     accepted_revenues_by_task_id[task_id] = compute_local_platform_revenue_for_local_completion(
                         parcel_fare=float(getattr(task, "fare")),
                         local_payment_ratio=local_payment_ratio,
                     )
+                    assignment_modes_by_task_id[task_id] = "local"
                     processing_time_seconds += max(
                         0.0,
                         perf_counter() - started - (timing.routing_time_seconds - routing_before) - (timing.insertion_time_seconds - insertion_before),
@@ -747,15 +767,15 @@ def _run_gta_environment(
             if outcome is not None:
                 apply_assignment_to_legacy_courier(task, outcome.courier, outcome.insertion_index)
                 accepted_assignments += 1
-                cross_assignment_count += 1
                 task_id = str(getattr(task, "num"))
                 accepted_task_ids.add(task_id)
                 accepted_revenues_by_task_id[task_id] = compute_local_platform_revenue_for_cross_completion(
                     parcel_fare=float(getattr(task, "fare")),
                     platform_payment=outcome.payment,
                 )
-                partner_cross_assignment_counts[outcome.platform_id] += 1
-                partner_cross_revenues[outcome.platform_id] += float(outcome.payment)
+                assignment_modes_by_task_id[task_id] = "cross"
+                partner_platform_by_task_id[task_id] = outcome.platform_id
+                partner_revenue_by_task_id[task_id] = float(outcome.payment)
             processing_time_seconds += max(
                 0.0,
                 perf_counter() - started - (timing.routing_time_seconds - routing_before) - (timing.insertion_time_seconds - insertion_before),
@@ -773,20 +793,25 @@ def _run_gta_environment(
                 )
 
     if accepted_assignments > 0:
-        drain_legacy_routes(
+        drain_legacy_routes_with_deadline_accounting(
             local_couriers=local_couriers,
             partner_couriers_by_platform=partner_couriers_by_platform,
             station_set=environment.station_set,
-            step_seconds=60,
             movement_callback=movement,
+            step_seconds=60,
+            current_time=current_time,
+            accepted_task_ids=accepted_task_ids,
+            delivered_task_ids=delivered_task_ids,
+            timed_out_task_ids=timed_out_task_ids,
         )
-    delivered_task_ids = compute_delivered_legacy_task_ids(
-        accepted_task_ids,
-        local_couriers,
-        partner_couriers_by_platform,
-    )
     delivered_parcels = len(delivered_task_ids)
     total_profit = sum_delivered_assignment_revenue(accepted_revenues_by_task_id, delivered_task_ids)
+    local_assignment_count, cross_assignment_count, partner_cross_assignment_counts, partner_cross_revenues = summarize_realized_assignment_breakdown(
+        delivered_task_ids,
+        assignment_modes_by_task_id,
+        partner_platform_by_task_id=partner_platform_by_task_id,
+        partner_revenue_by_task_id=partner_revenue_by_task_id,
+    )
 
     return {
         "TR": total_profit,
@@ -794,11 +819,12 @@ def _run_gta_environment(
         "BPT": mean_decision_time(processing_time_seconds, processed_tasks),
         "delivered_parcels": delivered_parcels,
         "accepted_assignments": accepted_assignments,
+        "timed_out_parcels": len(timed_out_task_ids),
         "local_assignment_count": local_assignment_count,
         "cross_assignment_count": cross_assignment_count,
-        "unresolved_parcel_count": max(0, total_task_count - local_assignment_count - cross_assignment_count),
-        "partner_cross_assignment_counts": dict(partner_cross_assignment_counts),
-        "partner_cross_revenues": dict(partner_cross_revenues),
+        "unresolved_parcel_count": max(0, total_task_count - delivered_parcels - len(timed_out_task_ids)),
+        "partner_cross_assignment_counts": partner_cross_assignment_counts,
+        "partner_cross_revenues": partner_cross_revenues,
     }
 
 

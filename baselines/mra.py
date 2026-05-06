@@ -22,10 +22,11 @@ from capa.utility import (
     find_best_local_insertion,
 )
 from env.chengdu import (
+    advance_legacy_routes_with_deadline_accounting,
     LegacyCourierSnapshotCache,
     apply_assignment_to_legacy_courier,
-    compute_delivered_legacy_task_ids,
     drain_legacy_routes,
+    drain_legacy_routes_with_deadline_accounting,
     framework_movement_callback,
     group_legacy_tasks_by_batch,
     legacy_task_to_parcel,
@@ -143,6 +144,8 @@ def run_mra_baseline_environment(
     backlog: list[Any] = []
     accepted_assignments = 0
     accepted_task_ids: set[str] = set()
+    delivered_task_ids: set[str] = set()
+    timed_out_task_ids: set[str] = set()
     accepted_revenues_by_task_id: dict[str, float] = {}
     batches = group_legacy_tasks_by_batch(tasks, batch_size)
     first_batch_start = int(float(getattr(min(tasks, key=lambda item: float(getattr(item, "s_time"))), "s_time")))
@@ -245,7 +248,17 @@ def run_mra_baseline_environment(
 
         backlog = remaining
         movement_started = perf_counter()
-        movement(local_couriers, [], batch_size, environment.station_set)
+        advance_legacy_routes_with_deadline_accounting(
+            local_couriers=local_couriers,
+            partner_couriers_by_platform={},
+            station_set=environment.station_set,
+            movement_callback=movement,
+            step_seconds=batch_size,
+            current_time=now,
+            accepted_task_ids=accepted_task_ids,
+            delivered_task_ids=delivered_task_ids,
+            timed_out_task_ids=timed_out_task_ids,
+        )
         timing.movement_time_seconds += perf_counter() - movement_started
         if progress_callback is not None:
             progress_callback(
@@ -260,18 +273,17 @@ def run_mra_baseline_environment(
             )
 
     if accepted_assignments > 0:
-        drain_legacy_routes(
+        drain_legacy_routes_with_deadline_accounting(
             local_couriers=local_couriers,
             partner_couriers_by_platform={},
             station_set=environment.station_set,
             step_seconds=60,
             movement_callback=movement,
+            current_time=first_batch_start + len(batches) * batch_size,
+            accepted_task_ids=accepted_task_ids,
+            delivered_task_ids=delivered_task_ids,
+            timed_out_task_ids=timed_out_task_ids,
         )
-    delivered_task_ids = compute_delivered_legacy_task_ids(
-        accepted_task_ids,
-        local_couriers,
-        {},
-    )
     delivered_parcels = len(delivered_task_ids)
     total_revenue = sum_delivered_assignment_revenue(accepted_revenues_by_task_id, delivered_task_ids)
 
@@ -281,9 +293,10 @@ def run_mra_baseline_environment(
         "BPT": mean_decision_time(timing.decision_time_seconds, decision_epoch_count),
         "delivered_parcels": delivered_parcels,
         "accepted_assignments": accepted_assignments,
-        "local_assignment_count": accepted_assignments,
+        "timed_out_parcels": len(timed_out_task_ids),
+        "local_assignment_count": delivered_parcels,
         "cross_assignment_count": 0,
-        "unresolved_parcel_count": max(0, total_tasks - accepted_assignments),
+        "unresolved_parcel_count": max(0, total_tasks - delivered_parcels - len(timed_out_task_ids)),
         "partner_cross_assignment_counts": {},
         "partner_cross_revenues": {},
     }

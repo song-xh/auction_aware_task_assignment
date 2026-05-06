@@ -33,6 +33,21 @@ from experiments.seeding import build_environment_seed, clone_environment_from_s
 from runner import build_algorithm_kwargs
 
 
+def _complete_routes(
+    local_couriers: list[SimpleNamespace],
+    partner_couriers: list[SimpleNamespace],
+    *_args: object,
+    **_kwargs: object,
+) -> None:
+    """Simulate one movement step by completing every queued legacy route."""
+
+    for courier in [*local_couriers, *partner_couriers]:
+        if getattr(courier, "re_schedule", []):
+            courier.location = courier.re_schedule[-1].l_node
+        courier.re_schedule.clear()
+        courier.re_weight = 0.0
+
+
 class MetricAlignmentTest(unittest.TestCase):
     """Lock down the shared environment and metric-surface invariants."""
 
@@ -284,7 +299,7 @@ class MetricAlignmentTest(unittest.TestCase):
             local_couriers=[courier],
             partner_couriers_by_platform={},
             partner_tasks_by_platform={},
-            movement_callback=lambda *args, **kwargs: None,
+            movement_callback=_complete_routes,
             station_set=[],
             travel_model=SimpleNamespace(distance=lambda start, end: 0.0, travel_time=lambda start, end: 0.0),
             service_radius_km=None,
@@ -335,7 +350,7 @@ class MetricAlignmentTest(unittest.TestCase):
                 local_couriers=[local_courier],
                 partner_couriers_by_platform={"P1": [partner_courier]},
                 partner_tasks_by_platform={"P1": list(future_tasks)},
-                movement_callback=lambda *args, **kwargs: None,
+                movement_callback=_complete_routes,
                 station_set=[],
                 travel_model=SimpleNamespace(distance=lambda start, end: 0.0, travel_time=lambda start, end: 0.0),
                 service_radius_km=None,
@@ -393,7 +408,7 @@ class MetricAlignmentTest(unittest.TestCase):
             local_couriers=[local_courier],
             partner_couriers_by_platform={"P1": [outer]},
             partner_tasks_by_platform={"P1": partner_future_tasks},
-            movement_callback=lambda *args, **kwargs: None,
+            movement_callback=_complete_routes,
             station_set=[],
             travel_model=SimpleNamespace(distance=lambda start, end: 0.0, travel_time=lambda start, end: 0.0),
             service_radius_km=None,
@@ -496,7 +511,7 @@ class MetricAlignmentTest(unittest.TestCase):
             local_couriers=[local_courier],
             partner_couriers_by_platform={"P1": [outer_one], "P2": [outer_two]},
             partner_tasks_by_platform={"P1": [], "P2": []},
-            movement_callback=lambda *args, **kwargs: None,
+            movement_callback=_complete_routes,
             station_set=[],
             travel_model=travel_model,
             service_radius_km=None,
@@ -507,8 +522,8 @@ class MetricAlignmentTest(unittest.TestCase):
         expected = settle_aim_auction(
             task,
             [
-                GTABid(platform_id="P1", courier=outer_one, dispatch_cost=3.0, insertion_index=0),
-                GTABid(platform_id="P2", courier=outer_two, dispatch_cost=3.0, insertion_index=0),
+                GTABid(platform_id="P1", courier=outer_one, dispatch_cost=2.0, insertion_index=0),
+                GTABid(platform_id="P2", courier=outer_two, dispatch_cost=2.0, insertion_index=0),
             ],
         )
 
@@ -564,7 +579,7 @@ class MetricAlignmentTest(unittest.TestCase):
                 local_couriers=[fresh_local],
                 partner_couriers_by_platform={"P1": [fresh_outer]},
                 partner_tasks_by_platform={"P1": []},
-                movement_callback=lambda *args, **kwargs: None,
+                movement_callback=_complete_routes,
                 station_set=[],
                 travel_model=travel_model,
                 service_radius_km=None,
@@ -641,7 +656,7 @@ class MetricAlignmentTest(unittest.TestCase):
             local_couriers=[local_courier],
             partner_couriers_by_platform={"P1": [outer]},
             partner_tasks_by_platform={"P1": []},
-            movement_callback=lambda *args, **kwargs: None,
+            movement_callback=_complete_routes,
             station_set=[],
             travel_model=travel_model,
             service_radius_km=None,
@@ -697,7 +712,7 @@ class MetricAlignmentTest(unittest.TestCase):
             tasks=[task],
             local_couriers=[courier],
             partner_couriers_by_platform={},
-            movement_callback=lambda *args, **kwargs: None,
+            movement_callback=_complete_routes,
             station_set=[],
             travel_model=SimpleNamespace(distance=lambda start, end: 0.0, travel_time=lambda start, end: 0.0),
             service_radius_km=None,
@@ -718,13 +733,13 @@ class MetricAlignmentTest(unittest.TestCase):
     def test_basegta_local_tr_uses_capa_local_revenue(self) -> None:
         """BaseGTA local revenue should equal fare minus the local courier payment."""
 
-        task = SimpleNamespace(num="t1", fare=10.0, s_time=0.0, d_time=10.0, weight=1.0, l_node="p1")
+        task = SimpleNamespace(num="t1", fare=10.0, s_time=0.0, d_time=300.0, weight=1.0, l_node="p1")
         courier = SimpleNamespace(num=1, location="start", re_schedule=[], re_weight=0.0, max_weight=5.0)
         environment = SimpleNamespace(
             tasks=[task],
             local_couriers=[courier],
             partner_couriers_by_platform={},
-            movement_callback=lambda *args, **kwargs: None,
+            movement_callback=_complete_routes,
             station_set=[],
             travel_model=SimpleNamespace(distance=lambda start, end: 0.0, travel_time=lambda start, end: 0.0),
             service_radius_km=None,
@@ -753,7 +768,7 @@ class MetricAlignmentTest(unittest.TestCase):
             tasks=tasks,
             local_couriers=[courier],
             partner_couriers_by_platform={},
-            movement_callback=lambda *args, **kwargs: None,
+            movement_callback=_complete_routes,
             station_set=[],
             travel_model=SimpleNamespace(distance=lambda start, end: 0.0, travel_time=lambda start, end: 0.0),
             service_radius_km=None,
@@ -780,7 +795,7 @@ class MetricAlignmentTest(unittest.TestCase):
             tasks=[task],
             local_couriers=[courier],
             partner_couriers_by_platform={},
-            movement_callback=lambda *args, **kwargs: None,
+            movement_callback=_complete_routes,
             station_set=[],
             travel_model=SimpleNamespace(distance=lambda start, end: 0.0, travel_time=lambda start, end: 0.0),
             service_radius_km=None,
@@ -801,13 +816,13 @@ class MetricAlignmentTest(unittest.TestCase):
     def test_impgta_local_tr_uses_capa_local_revenue(self) -> None:
         """ImpGTA local revenue should equal fare minus the local courier payment."""
 
-        task = SimpleNamespace(num="t1", fare=10.0, s_time=0.0, d_time=10.0, weight=1.0, l_node="p1")
+        task = SimpleNamespace(num="t1", fare=10.0, s_time=0.0, d_time=300.0, weight=1.0, l_node="p1")
         courier = SimpleNamespace(num=1, location="start", re_schedule=[], re_weight=0.0, max_weight=5.0)
         environment = SimpleNamespace(
             tasks=[task],
             local_couriers=[courier],
             partner_couriers_by_platform={},
-            movement_callback=lambda *args, **kwargs: None,
+            movement_callback=_complete_routes,
             station_set=[],
             travel_model=SimpleNamespace(distance=lambda start, end: 0.0, travel_time=lambda start, end: 0.0),
             service_radius_km=None,
@@ -827,7 +842,7 @@ class MetricAlignmentTest(unittest.TestCase):
     def test_impgta_cross_tr_uses_aim_platform_payment_with_partner_sharing(self) -> None:
         """ImpGTA should deduct AIM platform payment when reporting CAPA-aligned cross TR."""
 
-        task = SimpleNamespace(num="t1", fare=20.0, s_time=0.0, d_time=10.0, weight=1.0, l_node="p1")
+        task = SimpleNamespace(num="t1", fare=20.0, s_time=0.0, d_time=300.0, weight=1.0, l_node="p1")
         local_courier = SimpleNamespace(num=1, location="local", re_schedule=[], re_weight=0.0, max_weight=5.0)
         outer_one = SimpleNamespace(
             num=11,
@@ -859,7 +874,7 @@ class MetricAlignmentTest(unittest.TestCase):
             local_couriers=[local_courier],
             partner_couriers_by_platform={"p1": [outer_one], "p2": [outer_two]},
             partner_tasks_by_platform={"p1": [], "p2": []},
-            movement_callback=lambda *args, **kwargs: None,
+            movement_callback=_complete_routes,
             station_set=[],
             travel_model=travel_model,
             service_radius_km=None,
@@ -896,7 +911,7 @@ class MetricAlignmentTest(unittest.TestCase):
     def test_basegta_cross_tr_uses_platform_payment_with_partner_sharing(self) -> None:
         """BaseGTA should report cross revenue after deducting partner-platform sharing payment."""
 
-        task = SimpleNamespace(num="t1", fare=20.0, s_time=0.0, d_time=10.0, weight=1.0, l_node="p1")
+        task = SimpleNamespace(num="t1", fare=20.0, s_time=0.0, d_time=300.0, weight=1.0, l_node="p1")
         local_courier = SimpleNamespace(num=1, location="local", re_schedule=[], re_weight=0.0, max_weight=5.0)
         outer_one = SimpleNamespace(num=11, location="o1", re_schedule=[], re_weight=0.0, max_weight=5.0)
         outer_two = SimpleNamespace(num=12, location="o2", re_schedule=[], re_weight=0.0, max_weight=5.0)
@@ -904,7 +919,7 @@ class MetricAlignmentTest(unittest.TestCase):
             tasks=[task],
             local_couriers=[local_courier],
             partner_couriers_by_platform={"p1": [outer_one], "p2": [outer_two]},
-            movement_callback=lambda *args, **kwargs: None,
+            movement_callback=_complete_routes,
             station_set=[],
             travel_model=SimpleNamespace(distance=lambda start, end: 0.0, travel_time=lambda start, end: 0.0),
             service_radius_km=None,
@@ -971,12 +986,12 @@ class MetricAlignmentTest(unittest.TestCase):
     def test_greedy_uses_delivered_count_for_cr(self) -> None:
         """Greedy should derive delivered count from post-drain route state, not accepts."""
 
-        task = SimpleNamespace(num="t1", fare=10.0, s_time=0.0, d_time=10.0, weight=1.0, l_node="p1")
+        task = SimpleNamespace(num="t1", fare=10.0, s_time=0.0, d_time=0.0, weight=1.0, l_node="p1")
         courier = SimpleNamespace(num=1, location="start", re_schedule=[], re_weight=0.0, max_weight=5.0)
         environment = SimpleNamespace(
             tasks=[task],
             local_couriers=[courier],
-            movement_callback=lambda *args, **kwargs: None,
+            movement_callback=_complete_routes,
             station_set=[],
             travel_model=SimpleNamespace(distance=lambda start, end: 0.0, travel_time=lambda start, end: 0.0),
             service_radius_km=None,
@@ -1004,7 +1019,7 @@ class MetricAlignmentTest(unittest.TestCase):
         environment = SimpleNamespace(
             tasks=tasks,
             local_couriers=[courier],
-            movement_callback=lambda *args, **kwargs: None,
+            movement_callback=_complete_routes,
             station_set=[],
             travel_model=SimpleNamespace(distance=lambda start, end: 0.0, travel_time=lambda start, end: 0.0),
             service_radius_km=None,
@@ -1027,7 +1042,7 @@ class MetricAlignmentTest(unittest.TestCase):
         environment = SimpleNamespace(
             tasks=[task],
             local_couriers=[courier],
-            movement_callback=lambda *args, **kwargs: None,
+            movement_callback=_complete_routes,
             station_set=[],
             travel_model=SimpleNamespace(distance=lambda start, end: 0.0, travel_time=lambda start, end: 0.0),
             service_radius_km=None,
@@ -1058,7 +1073,7 @@ class MetricAlignmentTest(unittest.TestCase):
             tasks=[task],
             local_couriers=[courier],
             partner_couriers_by_platform={},
-            movement_callback=lambda *args, **kwargs: None,
+            movement_callback=_complete_routes,
             station_set=[],
             travel_model=SimpleNamespace(distance=lambda start, end: 0.0, travel_time=lambda start, end: 0.0),
             service_radius_km=None,
@@ -1089,7 +1104,7 @@ class MetricAlignmentTest(unittest.TestCase):
             tasks=tasks,
             local_couriers=[],
             partner_couriers_by_platform={},
-            movement_callback=lambda *args, **kwargs: None,
+            movement_callback=_complete_routes,
             station_set=[],
             travel_model=SimpleNamespace(distance=lambda start, end: 0.0, travel_time=lambda start, end: 0.0),
             service_radius_km=None,
@@ -1136,7 +1151,7 @@ class MetricAlignmentTest(unittest.TestCase):
             tasks=[task],
             local_couriers=[],
             partner_couriers_by_platform={"P1": [outer]},
-            movement_callback=lambda *args, **kwargs: None,
+            movement_callback=_complete_routes,
             station_set=[],
             travel_model=SimpleNamespace(distance=lambda start, end: 0.0, travel_time=lambda start, end: 0.0),
             service_radius_km=None,
@@ -1152,7 +1167,6 @@ class MetricAlignmentTest(unittest.TestCase):
         with (
             patch("baselines.ramcom.build_legacy_feasible_insertions", side_effect=feasible_insertions),
             patch("baselines.ramcom.drain_legacy_routes", return_value=1),
-            patch("baselines.ramcom.compute_delivered_legacy_task_count", return_value=1),
         ):
             result = run_ramcom_baseline_environment(environment=environment, random_seed=1)
 
@@ -1167,7 +1181,7 @@ class MetricAlignmentTest(unittest.TestCase):
             tasks=[task],
             local_couriers=[],
             partner_couriers_by_platform={},
-            movement_callback=lambda *args, **kwargs: None,
+            movement_callback=_complete_routes,
             station_set=[],
             travel_model=SimpleNamespace(distance=lambda start, end: 0.0, travel_time=lambda start, end: 0.0),
             service_radius_km=None,

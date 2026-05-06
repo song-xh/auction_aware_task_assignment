@@ -19,10 +19,11 @@ from capa.utility import (
     compute_local_platform_revenue_for_local_completion,
 )
 from env.chengdu import (
+    advance_legacy_routes_with_deadline_accounting,
     LegacyCourierSnapshotCache,
     apply_assignment_to_legacy_courier,
-    compute_delivered_legacy_task_ids,
     drain_legacy_routes,
+    drain_legacy_routes_with_deadline_accounting,
     flatten_partner_couriers,
     framework_movement_callback,
     get_model_release_time,
@@ -31,7 +32,13 @@ from env.chengdu import (
     sort_legacy_tasks,
 )
 
-from .common import build_legacy_feasible_insertions, extract_worker_history_values, mean_decision_time, sum_delivered_assignment_revenue
+from .common import (
+    build_legacy_feasible_insertions,
+    extract_worker_history_values,
+    mean_decision_time,
+    sum_delivered_assignment_revenue,
+    summarize_realized_assignment_breakdown,
+)
 
 
 @dataclass(frozen=True)
@@ -257,12 +264,13 @@ def run_ramcom_baseline_environment(
     current_time = int(get_model_release_time(tasks[0]))
     accepted_assignments = 0
     accepted_task_ids: set[str] = set()
+    delivered_task_ids: set[str] = set()
+    timed_out_task_ids: set[str] = set()
     accepted_revenues_by_task_id: dict[str, float] = {}
+    assignment_modes_by_task_id: dict[str, str] = {}
+    partner_platform_by_task_id: dict[str, str] = {}
+    partner_revenue_by_task_id: dict[str, float] = {}
     processing_time_seconds = 0.0
-    local_assignment_count = 0
-    cross_assignment_count = 0
-    partner_cross_assignment_counts: dict[str, int] = defaultdict(int)
-    partner_cross_revenues: dict[str, float] = defaultdict(float)
     progress_stride = max(1, total_tasks // 100)
     decision_trace: list[dict[str, Any]] = []
     batches = group_legacy_tasks_by_batch(tasks, batch_size)
@@ -292,7 +300,17 @@ def run_ramcom_baseline_environment(
             arrival_time = int(get_model_release_time(task))
             if arrival_time > current_time:
                 movement_started = perf_counter()
-                movement(local_couriers, flatten_partner_couriers(partner_couriers_by_platform), arrival_time - current_time, environment.station_set)
+                advance_legacy_routes_with_deadline_accounting(
+                    local_couriers=local_couriers,
+                    partner_couriers_by_platform=partner_couriers_by_platform,
+                    station_set=environment.station_set,
+                    movement_callback=movement,
+                    step_seconds=arrival_time - current_time,
+                    current_time=current_time,
+                    accepted_task_ids=accepted_task_ids,
+                    delivered_task_ids=delivered_task_ids,
+                    timed_out_task_ids=timed_out_task_ids,
+                )
                 timing.movement_time_seconds += perf_counter() - movement_started
                 current_time = arrival_time
             if get_true_deadline(task) < current_time:
@@ -342,8 +360,8 @@ def run_ramcom_baseline_environment(
                         local_payment_ratio=local_payment_ratio,
                     )
                     accepted_assignments += 1
-                    local_assignment_count += 1
                     accepted_task_ids.add(task_id)
+                    assignment_modes_by_task_id[task_id] = "local"
                     trace_entry["branch"] = "high_value_local"
                     trace_entry["selected_courier"] = str(getattr(chosen.courier, "num", ""))
                     assigned = True
@@ -423,10 +441,10 @@ def run_ramcom_baseline_environment(
                                 platform_payment=outer_payment,
                             )
                             accepted_assignments += 1
-                            cross_assignment_count += 1
                             accepted_task_ids.add(task_id)
-                            partner_cross_assignment_counts[selected_platform] += 1
-                            partner_cross_revenues[selected_platform] += float(outer_payment)
+                            assignment_modes_by_task_id[task_id] = "cross"
+                            partner_platform_by_task_id[task_id] = selected_platform
+                            partner_revenue_by_task_id[task_id] = float(outer_payment)
                             trace_entry["branch"] = "outer_success"
                             trace_entry["selected_platform"] = selected_platform
                             trace_entry["selected_courier"] = str(getattr(selected_insertion.courier, "num", ""))
@@ -454,20 +472,25 @@ def run_ramcom_baseline_environment(
                 )
 
     if accepted_assignments > 0:
-        drain_legacy_routes(
+        drain_legacy_routes_with_deadline_accounting(
             local_couriers=local_couriers,
             partner_couriers_by_platform=partner_couriers_by_platform,
             station_set=environment.station_set,
             step_seconds=60,
             movement_callback=movement,
+            current_time=current_time,
+            accepted_task_ids=accepted_task_ids,
+            delivered_task_ids=delivered_task_ids,
+            timed_out_task_ids=timed_out_task_ids,
         )
-    delivered_task_ids = compute_delivered_legacy_task_ids(
-        accepted_task_ids,
-        local_couriers,
-        partner_couriers_by_platform,
-    )
     delivered_parcels = len(delivered_task_ids)
     total_revenue = sum_delivered_assignment_revenue(accepted_revenues_by_task_id, delivered_task_ids)
+    local_assignment_count, cross_assignment_count, partner_cross_assignment_counts, partner_cross_revenues = summarize_realized_assignment_breakdown(
+        delivered_task_ids,
+        assignment_modes_by_task_id,
+        partner_platform_by_task_id=partner_platform_by_task_id,
+        partner_revenue_by_task_id=partner_revenue_by_task_id,
+    )
 
     return {
         "method": "RamCOM-CPUL",
@@ -484,10 +507,11 @@ def run_ramcom_baseline_environment(
         "BPT": mean_decision_time(processing_time_seconds, total_tasks),
         "delivered_parcels": delivered_parcels,
         "accepted_assignments": accepted_assignments,
+        "timed_out_parcels": len(timed_out_task_ids),
         "local_assignment_count": local_assignment_count,
         "cross_assignment_count": cross_assignment_count,
-        "unresolved_parcel_count": max(0, total_tasks - local_assignment_count - cross_assignment_count),
-        "partner_cross_assignment_counts": dict(partner_cross_assignment_counts),
-        "partner_cross_revenues": dict(partner_cross_revenues),
+        "unresolved_parcel_count": max(0, total_tasks - delivered_parcels - len(timed_out_task_ids)),
+        "partner_cross_assignment_counts": partner_cross_assignment_counts,
+        "partner_cross_revenues": partner_cross_revenues,
         "decision_trace": decision_trace,
     }

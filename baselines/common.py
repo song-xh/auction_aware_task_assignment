@@ -54,6 +54,46 @@ def sum_delivered_assignment_revenue(
     )
 
 
+def summarize_realized_assignment_breakdown(
+    delivered_task_ids: Iterable[str],
+    assignment_modes_by_task_id: Mapping[str, str],
+    partner_platform_by_task_id: Mapping[str, str] | None = None,
+    partner_revenue_by_task_id: Mapping[str, float] | None = None,
+) -> tuple[int, int, dict[str, int], dict[str, float]]:
+    """Summarize delivered local/cross assignments and realized partner revenue.
+
+    Args:
+        delivered_task_ids: Accepted task identifiers completed on time.
+        assignment_modes_by_task_id: Accepted assignment mode per task id.
+        partner_platform_by_task_id: Optional winning partner platform per cross task id.
+        partner_revenue_by_task_id: Optional realized partner payment per cross task id.
+
+    Returns:
+        ``(local_count, cross_count, partner_counts, partner_revenues)`` over
+        the on-time delivered task set only.
+    """
+
+    local_count = 0
+    cross_count = 0
+    partner_counts: dict[str, int] = {}
+    partner_revenues: dict[str, float] = {}
+    for task_id in delivered_task_ids:
+        mode = assignment_modes_by_task_id.get(task_id)
+        if mode == "local":
+            local_count += 1
+            continue
+        if mode != "cross":
+            continue
+        cross_count += 1
+        platform_id = None if partner_platform_by_task_id is None else partner_platform_by_task_id.get(task_id)
+        if platform_id is None:
+            continue
+        partner_counts[platform_id] = partner_counts.get(platform_id, 0) + 1
+        if partner_revenue_by_task_id is not None and task_id in partner_revenue_by_task_id:
+            partner_revenues[platform_id] = partner_revenues.get(platform_id, 0.0) + float(partner_revenue_by_task_id[task_id])
+    return local_count, cross_count, partner_counts, partner_revenues
+
+
 @dataclass(frozen=True)
 class LegacyFeasibleInsertion:
     """Store one feasible courier-task insertion against the current Chengdu state.

@@ -26,10 +26,11 @@ from capa.utility import (
     find_best_local_insertion,
 )
 from env.chengdu import (
+    advance_legacy_routes_with_deadline_accounting,
     LegacyCourierSnapshotCache,
     apply_assignment_to_legacy_courier,
-    compute_delivered_legacy_task_ids,
     drain_legacy_routes,
+    drain_legacy_routes_with_deadline_accounting,
     framework_movement_callback,
     legacy_task_to_parcel,
     sort_legacy_tasks,
@@ -163,6 +164,8 @@ def run_greedy_baseline_environment(
     progress_stride = max(1, total_tasks // 100)
     accepted_assignments = 0
     accepted_task_ids: set[str] = set()
+    delivered_task_ids: set[str] = set()
+    timed_out_task_ids: set[str] = set()
     accepted_revenues_by_task_id: dict[str, float] = {}
     processing_time_seconds = 0.0
 
@@ -171,7 +174,17 @@ def run_greedy_baseline_environment(
         advance_seconds = max(0, next_arrival_time - current_time)
         if advance_seconds > 0:
             movement_started = perf_counter()
-            movement(local_couriers, [], advance_seconds, environment.station_set)
+            advance_legacy_routes_with_deadline_accounting(
+                local_couriers=local_couriers,
+                partner_couriers_by_platform={},
+                station_set=environment.station_set,
+                movement_callback=movement,
+                step_seconds=advance_seconds,
+                current_time=current_time,
+                accepted_task_ids=accepted_task_ids,
+                delivered_task_ids=delivered_task_ids,
+                timed_out_task_ids=timed_out_task_ids,
+            )
             timing.movement_time_seconds += perf_counter() - movement_started
         current_time = next_arrival_time
         arrivals: list[Any] = []
@@ -226,18 +239,17 @@ def run_greedy_baseline_environment(
                 )
 
     if accepted_assignments > 0:
-        drain_legacy_routes(
+        drain_legacy_routes_with_deadline_accounting(
             local_couriers=local_couriers,
             partner_couriers_by_platform={},
             station_set=environment.station_set,
             step_seconds=max(1, realtime),
             movement_callback=movement,
+            current_time=current_time,
+            accepted_task_ids=accepted_task_ids,
+            delivered_task_ids=delivered_task_ids,
+            timed_out_task_ids=timed_out_task_ids,
         )
-    delivered_task_ids = compute_delivered_legacy_task_ids(
-        accepted_task_ids,
-        local_couriers,
-        {},
-    )
     delivered_parcels = len(delivered_task_ids)
     total_revenue = sum_delivered_assignment_revenue(accepted_revenues_by_task_id, delivered_task_ids)
 
@@ -247,9 +259,10 @@ def run_greedy_baseline_environment(
         "BPT": mean_decision_time(processing_time_seconds, processed_tasks),
         "delivered_parcels": delivered_parcels,
         "accepted_assignments": accepted_assignments,
-        "local_assignment_count": accepted_assignments,
+        "timed_out_parcels": len(timed_out_task_ids),
+        "local_assignment_count": delivered_parcels,
         "cross_assignment_count": 0,
-        "unresolved_parcel_count": max(0, total_tasks - accepted_assignments),
+        "unresolved_parcel_count": max(0, total_tasks - delivered_parcels - len(timed_out_task_ids)),
         "partner_cross_assignment_counts": {},
         "partner_cross_revenues": {},
     }
