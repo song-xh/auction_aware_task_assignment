@@ -73,6 +73,7 @@ def evaluate_rl_capa(
             "BPT": result.batch_processing_time,
             "delivered_parcels": len(env.delivered_parcels()),
             "accepted_assignments": len(env.accepted_assignments()),
+            "timed_out_parcels": len(env.timed_out_parcels()),
         },
     }
     output_dir.mkdir(parents=True, exist_ok=True)

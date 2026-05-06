@@ -26,6 +26,7 @@ from env.chengdu import (
     PreparedChengduBatch,
     build_chengdu_local_matching_runtime,
     commit_chengdu_local_assignments,
+    delivered_assignments_from_runtime,
     finalize_chengdu_batch,
     finalize_chengdu_runtime,
     get_model_release_time,
@@ -34,6 +35,7 @@ from env.chengdu import (
     prepare_chengdu_batch,
     run_chengdu_cross_matching,
     run_chengdu_direct_local_matching,
+    timed_out_assignments_from_runtime,
 )
 from experiments.seeding import ChengduEnvironmentSeed, clone_environment_from_seed
 from rl_capa.config import RLCAPAConfig
@@ -82,6 +84,8 @@ class RLCAPAEnv:
         self._current_batch_duration: int = 0
         self._cross_bid_history: deque[float] = deque(maxlen=cross_bid_window)
         self._delivered_parcels: list[Parcel] = []
+        self._delivered_assignments: list[Assignment] = []
+        self._timed_out_parcels: list[Parcel] = []
         self._episode_finalized: bool = False
 
     def reset(self) -> dict[str, Any]:
@@ -116,6 +120,8 @@ class RLCAPAEnv:
         self._current_batch_duration = 0
         self._cross_bid_history.clear()
         self._delivered_parcels = []
+        self._delivered_assignments = []
+        self._timed_out_parcels = []
         self._episode_finalized = False
         return {
             "total_parcels": len(self._runtime.sorted_tasks),
@@ -357,6 +363,10 @@ class RLCAPAEnv:
         if self._episode_finalized:
             return
         self._delivered_parcels = finalize_chengdu_runtime(runtime)
+        self._delivered_assignments = delivered_assignments_from_runtime(runtime)
+        self._timed_out_parcels = [
+            assignment.parcel for assignment in timed_out_assignments_from_runtime(runtime)
+        ]
         self._episode_finalized = True
 
     def is_done(self) -> bool:
@@ -387,6 +397,16 @@ class RLCAPAEnv:
         """Return physically delivered parcels after episode finalization."""
 
         return tuple(self._delivered_parcels)
+
+    def delivered_assignments(self) -> Tuple[Assignment, ...]:
+        """Return accepted assignments completed before the true deadline."""
+
+        return tuple(self._delivered_assignments)
+
+    def timed_out_parcels(self) -> Tuple[Parcel, ...]:
+        """Return accepted parcels that completed after the true deadline."""
+
+        return tuple(self._timed_out_parcels)
 
     def total_parcel_count(self) -> int:
         """Return total parcel count for the active episode."""

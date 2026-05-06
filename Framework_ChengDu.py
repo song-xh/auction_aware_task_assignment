@@ -268,7 +268,18 @@ def TaskSchedule(task, task_set, temp_cost, temp_weight, temp_task_num, task_sch
 
 
 # 令快递员移动，也就是修改相关变量
-def WalkAlongRoute(courier, time, c_location, a_lengt, time_cost, real_time, courier_set1, station_set):
+def WalkAlongRoute(
+        courier,
+        time,
+        c_location,
+        a_lengt,
+        time_cost,
+        real_time,
+        courier_set1,
+        station_set,
+        delivery_events=None,
+        absolute_start_time=None,
+):
     """
 
     :param courier_set1:
@@ -294,13 +305,42 @@ def WalkAlongRoute(courier, time, c_location, a_lengt, time_cost, real_time, cou
         # 总移动距离长度
         lengt += a_lengt
         if (VELOCITY * 1000) * time >= lengt:
+            completed_task = courier.re_schedule[0]
+            if delivery_events is not None:
+                delivery_events.append(
+                    {
+                        "task_id": str(completed_task.num),
+                        "completed_at": float((0 if absolute_start_time is None else absolute_start_time) + time_cost),
+                        "deadline": float(completed_task.d_time),
+                    }
+                )
             courier.re_weight -= courier.re_schedule[0].weight
             courier.location = courier.re_schedule[0].l_node
             del courier.re_schedule[0]
-            WalkAlongRoute(courier, time, courier.location, lengt, time_cost, real_time, courier_set1, station_set)
+            WalkAlongRoute(
+                courier,
+                time,
+                courier.location,
+                lengt,
+                time_cost,
+                real_time,
+                courier_set1,
+                station_set,
+                delivery_events=delivery_events,
+                absolute_start_time=absolute_start_time,
+            )
         else:
             courier.temp_lengt += (VELOCITY * 1000) * time
             if courier.temp_lengt >= lengt:
+                completed_task = courier.re_schedule[0]
+                if delivery_events is not None:
+                    delivery_events.append(
+                        {
+                            "task_id": str(completed_task.num),
+                            "completed_at": float((0 if absolute_start_time is None else absolute_start_time) + time_cost),
+                            "deadline": float(completed_task.d_time),
+                        }
+                    )
                 courier.location = courier.re_schedule[0].l_node
                 courier.temp_location = courier.re_schedule[0].l_node
                 courier.re_weight -= courier.re_schedule[0].weight

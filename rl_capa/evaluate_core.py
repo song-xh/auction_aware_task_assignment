@@ -105,8 +105,9 @@ def evaluate(
     env.finalize_episode()
 
     accepted = env.accepted_assignments()
+    delivered_assignments = env.delivered_assignments()
     delivered_parcels = env.delivered_parcels()
-    total_revenue = sum(a.local_platform_revenue for a in accepted)
+    total_revenue = sum(a.local_platform_revenue for a in delivered_assignments)
     completion_rate = len(delivered_parcels) / max(total_parcels, 1)
 
     pi1.train()
@@ -117,7 +118,7 @@ def evaluate(
         completion_rate=completion_rate,
         batch_processing_time=compute_batch_processing_time(env.batch_reports()),
         total_parcels=total_parcels,
-        assignments=len(accepted),
+        assignments=len(delivered_assignments),
         steps=step,
     )
 

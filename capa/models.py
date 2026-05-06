@@ -172,6 +172,16 @@ class Assignment:
 
 
 @dataclass(frozen=True)
+class DeliveryOutcome:
+    """Store the final deadline-aware completion state of one accepted parcel."""
+
+    task_id: str
+    completed_at: float
+    deadline: float
+    on_time: bool
+
+
+@dataclass(frozen=True)
 class CAMAResult:
     """Collect the outputs of Algorithm 2."""
 
@@ -205,6 +215,7 @@ class BatchReport:
     processing_time_seconds: float
     timing: BatchTimingBreakdown = field(default_factory=BatchTimingBreakdown)
     delivered_parcel_count: int = 0
+    timed_out_parcel_count: int = 0
 
 
 @dataclass(frozen=True)
@@ -216,6 +227,7 @@ class RunMetrics:
     batch_processing_time: float
     delivered_parcel_count: int = 0
     accepted_parcel_count: int = 0
+    timed_out_parcel_count: int = 0
     excluded_routing_time: float = 0.0
     excluded_insertion_time: float = 0.0
     excluded_movement_time: float = 0.0
@@ -230,3 +242,6 @@ class CAPAResult:
     batch_reports: Sequence[BatchReport]
     metrics: RunMetrics
     delivered_parcels: Sequence[Parcel] = field(default_factory=list)
+    delivered_assignments: Sequence[Assignment] = field(default_factory=list)
+    timed_out_parcels: Sequence[Parcel] = field(default_factory=list)
+    timed_out_assignments: Sequence[Assignment] = field(default_factory=list)

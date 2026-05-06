@@ -93,7 +93,7 @@ class CAPAAlgorithmRunner(AlgorithmRunner):
         partner_cross_revenues: dict[str, float] = defaultdict(float)
         local_assignment_count = 0
         cross_assignment_count = 0
-        for assignment in result.matching_plan:
+        for assignment in result.delivered_assignments:
             if assignment.mode == "local":
                 local_assignment_count += 1
                 continue
@@ -107,6 +107,7 @@ class CAPAAlgorithmRunner(AlgorithmRunner):
             "BPT": result.metrics.batch_processing_time,
             "delivered_parcels": result.metrics.delivered_parcel_count,
             "accepted_assignments": result.metrics.accepted_parcel_count,
+            "timed_out_parcels": result.metrics.timed_out_parcel_count,
         }
         summary = build_algorithm_summary(
             algorithm="capa",

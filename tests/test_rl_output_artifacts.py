@@ -121,6 +121,7 @@ class RLCAPAOutputArtifactTests(unittest.TestCase):
             batch_reports=lambda: [SimpleNamespace()],
             delivered_parcels=lambda: ["p1", "p2"],
             accepted_assignments=lambda: ["a1", "a2"],
+            timed_out_parcels=lambda: [],
         )
         fake_result = SimpleNamespace(
             total_revenue=12.0,

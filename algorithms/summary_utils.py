@@ -40,6 +40,7 @@ def build_algorithm_summary(
     """
 
     accepted_assignments = int(metrics.get("accepted_assignments", 0))
+    timed_out_parcels = int(metrics.get("timed_out_parcels", 0))
     resolved_local_assignments = accepted_assignments if local_assignment_count is None else int(local_assignment_count)
     resolved_cross_assignments = 0 if cross_assignment_count is None else int(cross_assignment_count)
     total_tasks = len(list(getattr(environment, "tasks", [])))
@@ -79,6 +80,7 @@ def build_algorithm_summary(
                 "local_matches": resolved_local_assignments,
                 "cross_platform_matches": resolved_cross_assignments,
                 "unresolved_parcels": resolved_unresolved,
+                "timed_out_parcels": timed_out_parcels,
             },
             "cooperating_platforms": partner_stats,
         },

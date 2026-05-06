@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass, field
 from functools import lru_cache
+import inspect
 from pathlib import Path
 import random
 from time import perf_counter
@@ -24,7 +25,7 @@ from capa.config import (
 )
 from capa.dapa import build_cross_candidate_shortlist, run_dapa
 from capa.metrics import build_run_metrics
-from capa.models import Assignment, BatchReport, CAPAConfig, CAPAResult, CooperatingPlatform, Courier, Parcel, ThresholdHistory
+from capa.models import Assignment, BatchReport, CAPAConfig, CAPAResult, CooperatingPlatform, Courier, DeliveryOutcome, Parcel, ThresholdHistory
 from capa.utility import (
     BatchDistanceMatrix,
     GeoIndex,
@@ -226,6 +227,10 @@ class ChengduBatchRuntime:
     batch_reports: list[BatchReport] = field(default_factory=list)
     matching_plan: list[Assignment] = field(default_factory=list)
     accepted_assignment_ids: set[str] = field(default_factory=set)
+    accepted_assignments_by_id: dict[str, Assignment] = field(default_factory=dict)
+    delivered_assignment_ids: set[str] = field(default_factory=set)
+    timed_out_assignment_ids: set[str] = field(default_factory=set)
+    delivery_outcomes: list[DeliveryOutcome] = field(default_factory=list)
     snapshot_cache: "LegacyCourierSnapshotCache" = field(default_factory=lambda: LegacyCourierSnapshotCache())
     insertion_cache: InsertionCache = field(default_factory=InsertionCache)
     persistent_travel_model: Any | None = None
@@ -237,6 +242,74 @@ class ChengduBatchRuntime:
 
         if self.persistent_travel_model is None:
             self.persistent_travel_model = PersistentDirectedDistanceCache(self.travel_model)
+
+
+def _movement_callback_accepts_deadline_events(movement_callback: Callable[..., None]) -> bool:
+    """Return whether one movement callback supports explicit delivery events.
+
+    Args:
+        movement_callback: Simulator advancement callback to inspect.
+
+    Returns:
+        True when the callback accepts both ``delivery_events`` and
+        ``absolute_start_time`` keyword arguments, or arbitrary keyword
+        arguments via ``**kwargs``.
+    """
+
+    try:
+        signature = inspect.signature(movement_callback)
+    except (TypeError, ValueError):
+        return False
+    accepts_var_keyword = any(
+        parameter.kind == inspect.Parameter.VAR_KEYWORD
+        for parameter in signature.parameters.values()
+    )
+    if accepts_var_keyword:
+        return True
+    parameter_names = set(signature.parameters)
+    return {"delivery_events", "absolute_start_time"} <= parameter_names
+
+
+def invoke_legacy_movement_callback(
+    movement_callback: Callable[..., None],
+    local_couriers: MutableSequence[Any],
+    partner_couriers: MutableSequence[Any],
+    step_seconds: int,
+    station_set: Sequence[Any],
+    *,
+    delivery_events: list[dict[str, float | str]] | None = None,
+    absolute_start_time: int | None = None,
+) -> None:
+    """Advance the legacy simulator with optional explicit delivery events.
+
+    Args:
+        movement_callback: Shared simulator advancement callback.
+        local_couriers: Active local couriers.
+        partner_couriers: Active partner couriers.
+        step_seconds: Duration advanced by this movement step.
+        station_set: Legacy station objects used by the framework.
+        delivery_events: Optional mutable event sink populated by callbacks that
+            support explicit completion timestamps.
+        absolute_start_time: Absolute step start time used to timestamp delivery
+            events.
+    """
+
+    if _movement_callback_accepts_deadline_events(movement_callback):
+        movement_callback(
+            local_couriers,
+            partner_couriers,
+            step_seconds,
+            station_set,
+            delivery_events=delivery_events,
+            absolute_start_time=absolute_start_time,
+        )
+        return
+    movement_callback(
+        local_couriers,
+        partner_couriers,
+        step_seconds,
+        station_set,
+    )
 
 
 @dataclass(frozen=True)
@@ -849,14 +922,40 @@ def framework_movement_callback(
     partner_couriers: MutableSequence[Any],
     step_seconds: int,
     station_set: Sequence[Any],
+    *,
+    delivery_events: list[dict[str, float | str]] | None = None,
+    absolute_start_time: int | None = None,
 ) -> None:
     """Advance legacy couriers along the original Chengdu road-network simulator."""
     import Framework_ChengDu as framework
 
+    step_start_time = 0 if absolute_start_time is None else int(absolute_start_time)
     for courier in list(local_couriers):
-        framework.WalkAlongRoute(courier, step_seconds, courier.location, 0, 0, step_seconds, local_couriers, station_set)
+        framework.WalkAlongRoute(
+            courier,
+            step_seconds,
+            courier.location,
+            0,
+            0,
+            step_seconds,
+            local_couriers,
+            station_set,
+            delivery_events=delivery_events,
+            absolute_start_time=step_start_time,
+        )
     for courier in list(partner_couriers):
-        framework.WalkAlongRoute(courier, step_seconds, courier.location, 0, 0, step_seconds, partner_couriers, station_set)
+        framework.WalkAlongRoute(
+            courier,
+            step_seconds,
+            courier.location,
+            0,
+            0,
+            step_seconds,
+            partner_couriers,
+            station_set,
+            delivery_events=delivery_events,
+            absolute_start_time=step_start_time,
+        )
 
 
 def flatten_partner_couriers(partner_couriers_by_platform: Mapping[str, Sequence[Any]]) -> list[Any]:
@@ -879,6 +978,28 @@ def current_legacy_route_task_ids(local_couriers: Sequence[Any], partner_courier
         for task in getattr(courier, "re_schedule", []):
             route_task_ids.add(str(getattr(task, "num")))
     return route_task_ids
+
+
+def current_legacy_route_tasks(
+    local_couriers: Sequence[Any],
+    partner_couriers_by_platform: Mapping[str, Sequence[Any]],
+) -> dict[str, Any]:
+    """Return the active legacy route tasks keyed by stable task identifier.
+
+    Args:
+        local_couriers: Active local legacy couriers.
+        partner_couriers_by_platform: Active partner legacy couriers grouped by platform.
+
+    Returns:
+        Mapping from task identifier to the first matching legacy task object
+        still present in any route.
+    """
+
+    route_tasks: dict[str, Any] = {}
+    for courier in [*local_couriers, *flatten_partner_couriers(partner_couriers_by_platform)]:
+        for task in getattr(courier, "re_schedule", []):
+            route_tasks.setdefault(str(getattr(task, "num")), task)
+    return route_tasks
 
 
 def compute_delivered_legacy_task_count(
@@ -918,6 +1039,85 @@ def compute_delivered_legacy_task_ids(
     """
 
     return set(accepted_task_ids) - current_legacy_route_task_ids(local_couriers, partner_couriers_by_platform)
+
+
+def advance_routes_with_deadline_accounting(
+    runtime: ChengduBatchRuntime,
+    step_seconds: int,
+) -> list[DeliveryOutcome]:
+    """Advance accepted routes and classify completed tasks by the true deadline.
+
+    Args:
+        runtime: Shared mutable Chengdu runtime.
+        step_seconds: Duration advanced by this movement step.
+
+    Returns:
+        Newly observed delivery outcomes emitted during this movement step.
+    """
+
+    if step_seconds <= 0:
+        return []
+    pending_before = current_legacy_route_tasks(
+        runtime.active_local_couriers,
+        runtime.active_partner_by_platform,
+    )
+    if not pending_before:
+        invoke_legacy_movement_callback(
+            runtime.movement,
+            runtime.active_local_couriers,
+            flatten_partner_couriers(runtime.active_partner_by_platform),
+            step_seconds,
+            runtime.station_set,
+            absolute_start_time=runtime.current_time,
+        )
+        return []
+    delivery_events: list[dict[str, float | str]] = []
+    step_end_time = runtime.current_time + step_seconds
+    invoke_legacy_movement_callback(
+        runtime.movement,
+        runtime.active_local_couriers,
+        flatten_partner_couriers(runtime.active_partner_by_platform),
+        step_seconds,
+        runtime.station_set,
+        delivery_events=delivery_events,
+        absolute_start_time=runtime.current_time,
+    )
+    pending_after_ids = current_legacy_route_task_ids(
+        runtime.active_local_couriers,
+        runtime.active_partner_by_platform,
+    )
+    removed_task_ids = [
+        task_id for task_id in pending_before
+        if task_id not in pending_after_ids
+    ]
+    event_lookup = {
+        str(event["task_id"]): event
+        for event in delivery_events
+    }
+    outcomes: list[DeliveryOutcome] = []
+    for task_id in removed_task_ids:
+        if task_id in runtime.delivered_assignment_ids or task_id in runtime.timed_out_assignment_ids:
+            continue
+        assignment = runtime.accepted_assignments_by_id.get(task_id)
+        task = pending_before.get(task_id)
+        if assignment is None or task is None:
+            continue
+        event = event_lookup.get(task_id)
+        completed_at = float(step_end_time if event is None else event["completed_at"])
+        deadline = float(get_true_deadline(task))
+        outcome = DeliveryOutcome(
+            task_id=task_id,
+            completed_at=completed_at,
+            deadline=deadline,
+            on_time=completed_at <= deadline,
+        )
+        runtime.delivery_outcomes.append(outcome)
+        outcomes.append(outcome)
+        if outcome.on_time:
+            runtime.delivered_assignment_ids.add(task_id)
+        else:
+            runtime.timed_out_assignment_ids.add(task_id)
+    return outcomes
 
 
 def partition_terminal_backlog(
@@ -1009,12 +1209,18 @@ def drain_legacy_routes(
     partner_couriers_by_platform: Mapping[str, MutableSequence[Any]],
     station_set: Sequence[Any],
     step_seconds: int,
-    movement_callback: Callable[[MutableSequence[Any], MutableSequence[Any], int, Sequence[Any]], None],
+    movement_callback: Callable[..., None],
 ) -> int:
     """Advance the simulator after the last batch until all accepted parcels are physically delivered."""
     drain_steps = 0
     while has_pending_legacy_routes(local_couriers, partner_couriers_by_platform):
-        movement_callback(local_couriers, flatten_partner_couriers(partner_couriers_by_platform), step_seconds, station_set)
+        invoke_legacy_movement_callback(
+            movement_callback,
+            local_couriers,
+            flatten_partner_couriers(partner_couriers_by_platform),
+            step_seconds,
+            station_set,
+        )
         drain_steps += 1
     return drain_steps
 
@@ -1025,6 +1231,42 @@ def _index_best_local_pairs(cama_result: Any) -> Dict[tuple[str, str], int]:
         (pair.parcel.parcel_id, pair.courier.courier_id): pair.utility.insertion_index
         for pair in getattr(cama_result, "candidate_best_pairs", [])
     }
+
+
+def register_accepted_assignment(
+    runtime: ChengduBatchRuntime,
+    assignment: Assignment,
+) -> None:
+    """Register one accepted assignment for later deadline-aware finalization.
+
+    Args:
+        runtime: Shared mutable Chengdu runtime.
+        assignment: Accepted legacy-bound assignment to register.
+    """
+
+    task_id = str(getattr(assignment.parcel, "parcel_id"))
+    runtime.accepted_assignment_ids.add(task_id)
+    runtime.accepted_assignments_by_id[task_id] = assignment
+
+
+def delivered_assignments_from_runtime(runtime: ChengduBatchRuntime) -> list[Assignment]:
+    """Return accepted assignments completed on time in observed completion order."""
+
+    return [
+        runtime.accepted_assignments_by_id[outcome.task_id]
+        for outcome in runtime.delivery_outcomes
+        if outcome.on_time and outcome.task_id in runtime.accepted_assignments_by_id
+    ]
+
+
+def timed_out_assignments_from_runtime(runtime: ChengduBatchRuntime) -> list[Assignment]:
+    """Return accepted assignments that completed after the true deadline."""
+
+    return [
+        runtime.accepted_assignments_by_id[outcome.task_id]
+        for outcome in runtime.delivery_outcomes
+        if (not outcome.on_time) and outcome.task_id in runtime.accepted_assignments_by_id
+    ]
 
 
 def _build_partner_lookup(partner_couriers_by_platform: Mapping[str, Sequence[Any]]) -> Dict[str, Dict[str, Any]]:
@@ -1142,12 +1384,7 @@ def prepare_chengdu_batch(
     batch_end_time = runtime.current_time + batch_seconds
     timing = TimingAccumulator()
     movement_started = perf_counter()
-    runtime.movement(
-        runtime.active_local_couriers,
-        flatten_partner_couriers(runtime.active_partner_by_platform),
-        batch_seconds,
-        runtime.station_set,
-    )
+    advance_routes_with_deadline_accounting(runtime, batch_seconds)
     timing.movement_time_seconds += perf_counter() - movement_started
     arrived_tasks: list[Any] = []
     while runtime.next_task_index < len(runtime.sorted_tasks):
@@ -1252,9 +1489,10 @@ def commit_chengdu_local_assignments(
         apply_assignment_to_legacy_courier(task, legacy_courier, insertion_index)
         runtime.snapshot_cache.invalidate(assignment.courier.courier_id)
         runtime.insertion_cache.invalidate_courier(assignment.courier.courier_id)
-        local_assignments.append(bind_assignment_to_legacy_objects(assignment, task, legacy_courier))
+        realized_assignment = bind_assignment_to_legacy_objects(assignment, task, legacy_courier)
+        local_assignments.append(realized_assignment)
         assigned_task_ids.add(id(task))
-        runtime.accepted_assignment_ids.add(str(getattr(task, "num")))
+        register_accepted_assignment(runtime, realized_assignment)
     remaining_tasks = [
         task for task in matching_runtime.task_lookup.values() if id(task) not in assigned_task_ids
     ]
@@ -1333,7 +1571,6 @@ def run_chengdu_direct_local_matching(
         snapshot_courier.current_load += parcel.weight
         runtime.snapshot_cache.invalidate(snapshot_courier.courier_id)
         runtime.insertion_cache.invalidate_courier(snapshot_courier.courier_id)
-        runtime.accepted_assignment_ids.add(str(getattr(task, "num")))
         assignment = Assignment(
             parcel=parcel,
             courier=snapshot_courier,
@@ -1358,7 +1595,9 @@ def run_chengdu_direct_local_matching(
             ),
             utility_value=None,
         )
-        assignments.append(bind_assignment_to_legacy_objects(assignment, task, legacy_courier))
+        realized_assignment = bind_assignment_to_legacy_objects(assignment, task, legacy_courier)
+        assignments.append(realized_assignment)
+        register_accepted_assignment(runtime, realized_assignment)
     elapsed = perf_counter() - started
     timing.decision_time_seconds += max(
         0.0,
@@ -1474,8 +1713,9 @@ def run_chengdu_cross_matching(
         apply_assignment_to_legacy_courier(task, legacy_courier, insertion_index)
         runtime.snapshot_cache.invalidate(assignment.courier.courier_id)
         runtime.insertion_cache.invalidate_courier(assignment.courier.courier_id)
-        realized.append(bind_assignment_to_legacy_objects(assignment, task, legacy_courier))
-        runtime.accepted_assignment_ids.add(str(getattr(task, "num")))
+        realized_assignment = bind_assignment_to_legacy_objects(assignment, task, legacy_courier)
+        realized.append(realized_assignment)
+        register_accepted_assignment(runtime, realized_assignment)
     return realized
 
 
@@ -1520,11 +1760,6 @@ def finalize_chengdu_batch(
         runtime.terminal_unassigned.extend(terminal_tasks)
         backlog = retriable_tasks
     runtime.backlog = backlog
-    delivered_parcel_count = compute_delivered_legacy_task_count(
-        runtime.accepted_assignment_ids,
-        runtime.active_local_couriers,
-        runtime.active_partner_by_platform,
-    )
     report = BatchReport(
         batch_index=prepared_batch.batch_index,
         batch_time=prepared_batch.batch_end_time,
@@ -1534,7 +1769,8 @@ def finalize_chengdu_batch(
         unresolved_parcels=[legacy_task_to_parcel(task) for task in backlog],
         processing_time_seconds=processing_time_seconds,
         timing=prepared_batch.timing.freeze(),
-        delivered_parcel_count=delivered_parcel_count,
+        delivered_parcel_count=len(runtime.delivered_assignment_ids),
+        timed_out_parcel_count=len(runtime.timed_out_assignment_ids),
     )
     runtime.batch_reports.append(report)
     runtime.matching_plan.extend(local_assignments)
@@ -1543,18 +1779,15 @@ def finalize_chengdu_batch(
 
 
 def finalize_chengdu_runtime(runtime: ChengduBatchRuntime) -> list[Parcel]:
-    """Drain accepted routes after the last batch and return delivered parcels."""
+    """Drain accepted routes after the last batch and return on-time parcels."""
 
-    if not runtime.matching_plan:
-        return []
-    drain_legacy_routes(
+    while has_pending_legacy_routes(
         runtime.active_local_couriers,
         runtime.active_partner_by_platform,
-        runtime.station_set,
-        runtime.step_seconds,
-        runtime.movement,
-    )
-    return [assignment.parcel for assignment in runtime.matching_plan]
+    ):
+        advance_routes_with_deadline_accounting(runtime, runtime.step_seconds)
+        runtime.current_time += runtime.step_seconds
+    return [assignment.parcel for assignment in delivered_assignments_from_runtime(runtime)]
 
 
 def run_time_stepped_chengdu_batches(
@@ -1640,11 +1873,8 @@ def run_time_stepped_chengdu_batches(
                     unresolved_parcels=[],
                     processing_time_seconds=0.0,
                     timing=prepared_batch.timing.freeze(),
-                    delivered_parcel_count=compute_delivered_legacy_task_count(
-                        runtime.accepted_assignment_ids,
-                        runtime.active_local_couriers,
-                        runtime.active_partner_by_platform,
-                    ),
+                    delivered_parcel_count=len(runtime.delivered_assignment_ids),
+                    timed_out_parcel_count=len(runtime.timed_out_assignment_ids),
                 )
             )
             if progress_callback is not None:
@@ -1758,22 +1988,31 @@ def run_time_stepped_chengdu_batches(
                 unresolved_parcels=[legacy_task_to_parcel(task) for task in runtime.backlog],
                 processing_time_seconds=0.0,
                 timing=TimingAccumulator().freeze(),
+                delivered_parcel_count=len(runtime.delivered_assignment_ids),
+                timed_out_parcel_count=len(runtime.timed_out_assignment_ids),
             )
         )
 
     delivered_parcels = finalize_chengdu_runtime(runtime)
+    delivered_assignments = delivered_assignments_from_runtime(runtime)
+    timed_out_assignments = timed_out_assignments_from_runtime(runtime)
 
     return CAPAResult(
         matching_plan=runtime.matching_plan,
         unassigned_parcels=[legacy_task_to_parcel(task) for task in runtime.terminal_unassigned],
         batch_reports=runtime.batch_reports,
         metrics=build_run_metrics(
-            runtime.matching_plan,
+            delivered_assignments,
             len(tasks),
             runtime.batch_reports,
             delivered_parcel_count=len(delivered_parcels),
+            accepted_parcel_count=len(runtime.matching_plan),
+            timed_out_parcel_count=len(timed_out_assignments),
         ),
         delivered_parcels=delivered_parcels,
+        delivered_assignments=delivered_assignments,
+        timed_out_parcels=[assignment.parcel for assignment in timed_out_assignments],
+        timed_out_assignments=timed_out_assignments,
     )
 
 

@@ -87,8 +87,10 @@ def _capa_result() -> CAPAResult:
             batch_processing_time=0.05,
             delivered_parcel_count=2,
             accepted_parcel_count=2,
+            timed_out_parcel_count=1,
         ),
         delivered_parcels=[local_parcel, cross_parcel],
+        delivered_assignments=[local_assignment, cross_assignment],
     )
 
 
@@ -102,9 +104,11 @@ def test_capa_runner_summary_exposes_assignment_and_partner_stats() -> None:
         summary = runner.run(environment=environment)
 
     assert summary["metrics"]["TR"] == 15.5
+    assert summary["metrics"]["timed_out_parcels"] == 1
     assert summary["assignment_stats"]["local_platform"]["local_matches"] == 1
     assert summary["assignment_stats"]["local_platform"]["cross_platform_matches"] == 1
     assert summary["assignment_stats"]["local_platform"]["unresolved_parcels"] == 1
+    assert summary["assignment_stats"]["local_platform"]["timed_out_parcels"] == 1
     assert summary["assignment_stats"]["cooperating_platforms"]["P1"]["own_task_count"] == 2
     assert summary["assignment_stats"]["cooperating_platforms"]["P1"]["accepted_cross_platform_tasks"] == 1
     assert summary["assignment_stats"]["cooperating_platforms"]["P1"]["cooperative_revenue"] == 4.5
@@ -124,6 +128,7 @@ def test_basegta_runner_summary_propagates_cross_platform_breakdown() -> None:
             "BPT": 0.04,
             "delivered_parcels": 2,
             "accepted_assignments": 2,
+            "timed_out_parcels": 1,
             "local_assignment_count": 1,
             "cross_assignment_count": 1,
             "unresolved_parcel_count": 1,
@@ -136,6 +141,7 @@ def test_basegta_runner_summary_propagates_cross_platform_breakdown() -> None:
 
     assert summary["assignment_stats"]["local_platform"]["local_matches"] == 1
     assert summary["assignment_stats"]["local_platform"]["cross_platform_matches"] == 1
+    assert summary["assignment_stats"]["local_platform"]["timed_out_parcels"] == 1
     assert summary["assignment_stats"]["cooperating_platforms"]["P2"]["accepted_cross_platform_tasks"] == 1
     assert summary["assignment_stats"]["cooperating_platforms"]["P2"]["cooperative_revenue"] == 6.0
 
@@ -152,6 +158,7 @@ def test_greedy_runner_summary_defaults_to_local_only_breakdown() -> None:
             "BPT": 0.03,
             "delivered_parcels": 2,
             "accepted_assignments": 2,
+            "timed_out_parcels": 1,
         },
     )
 
@@ -160,5 +167,6 @@ def test_greedy_runner_summary_defaults_to_local_only_breakdown() -> None:
     assert summary["assignment_stats"]["local_platform"]["local_matches"] == 2
     assert summary["assignment_stats"]["local_platform"]["cross_platform_matches"] == 0
     assert summary["assignment_stats"]["local_platform"]["unresolved_parcels"] == 1
+    assert summary["assignment_stats"]["local_platform"]["timed_out_parcels"] == 1
     assert summary["assignment_stats"]["cooperating_platforms"]["P1"]["accepted_cross_platform_tasks"] == 0
     assert summary["assignment_stats"]["cooperating_platforms"]["P1"]["cooperative_revenue"] == 0.0
