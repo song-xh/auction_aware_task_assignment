@@ -89,6 +89,33 @@ class RLCAPAAblationTests(unittest.TestCase):
             self.assertGreaterEqual(call.kwargs["alpha"], 0.15)
             self.assertLessEqual(call.kwargs["alpha"], 0.25)
 
+    def test_plot_reward_comparison_scales_ylim_to_reward_history(self) -> None:
+        """Reward comparison plot should keep the y-axis wide enough for the actual rewards."""
+
+        from rl_capa.visualize import _configure_matplotlib_cache
+        from rl_capa.ablation_compare import plot_reward_comparison
+
+        _configure_matplotlib_cache()
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot
+
+        with patch("matplotlib.axes.Axes.set_ylim") as set_ylim:
+            plot_reward_comparison(
+                reward_histories={
+                    "rl-capa": [1000.0, 1800.0],
+                    "rl-capa-stage1": [1200.0, 1500.0],
+                    "rl-capa-stage2": [1100.0, 1900.0],
+                },
+                output_path=self.temp_root / "reward_comparison.png",
+                window=2,
+            )
+
+        lower, upper = set_ylim.call_args.args
+        self.assertLessEqual(lower, 10.0)
+        self.assertGreaterEqual(upper, 19.0)
+
     def test_combined_ablation_runner_returns_reward_plot(self) -> None:
         """Combined runner should train all variants and expose the merged plot."""
 

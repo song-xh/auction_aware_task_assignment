@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 from typing import Mapping, Sequence
 
@@ -52,6 +53,43 @@ def _plot_publication_band(
         label=label,
         zorder=3,
     )
+
+
+def _nice_tick_step(span: float, target_ticks: int = 6) -> float:
+    """Return a human-readable tick step for one numeric span."""
+
+    safe_span = max(float(span), 1e-9)
+    raw_step = safe_span / max(target_ticks - 1, 1)
+    magnitude = 10.0 ** math.floor(math.log10(raw_step))
+    for factor in (1.0, 2.0, 5.0, 10.0):
+        step = factor * magnitude
+        if step >= raw_step:
+            return step
+    return 10.0 * magnitude
+
+
+def _reward_axis_from_histories(reward_histories: Mapping[str, Sequence[float]]) -> tuple[float, float, list[float]]:
+    """Compute dynamic reward-axis bounds and ticks from ablation histories."""
+
+    scaled_values = [
+        float(value) / 100.0
+        for rewards in reward_histories.values()
+        for value in rewards
+    ]
+    if not scaled_values:
+        return 0.0, 1.0, [0.0, 1.0]
+    value_min = min(scaled_values)
+    value_max = max(scaled_values)
+    span = max(value_max - value_min, 1.0)
+    padding = max(span * 0.08, 0.5)
+    lower_bound = max(0.0, value_min - padding)
+    upper_bound = value_max + padding
+    step = _nice_tick_step(upper_bound - lower_bound)
+    snapped_lower = math.floor(lower_bound / step) * step
+    snapped_upper = math.ceil(upper_bound / step) * step
+    tick_count = max(2, int(round((snapped_upper - snapped_lower) / step)) + 1)
+    ticks = [snapped_lower + step * index for index in range(tick_count)]
+    return snapped_lower, snapped_upper, ticks
 
 
 def plot_reward_comparison(
@@ -120,8 +158,9 @@ def plot_reward_comparison(
     ax.set_xlim(0, 2000)
     ax.set_xticks([0, 500, 1000, 1500, 2000])
     ax.margins(x=0)
-    ax.set_ylim(20.5, 32.2)
-    ax.set_yticks([22, 24, 26, 28, 30, 32])
+    y_lower, y_upper, y_ticks = _reward_axis_from_histories(reward_histories)
+    ax.set_ylim(y_lower, y_upper)
+    ax.set_yticks(y_ticks)
     ax.text(
         0.0,
         1.01,
