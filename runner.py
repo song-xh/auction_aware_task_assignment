@@ -89,7 +89,10 @@ def _add_common_environment_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--rl-lr-actor", type=float, default=0.001, help="Actor learning rate for RL-CAPA.")
     parser.add_argument("--rl-lr-critic", type=float, default=0.001, help="Critic learning rate for RL-CAPA.")
     parser.add_argument("--rl-discount-factor", type=float, default=1.0, help="Discount factor used by RL-CAPA. Default 1.0 (undiscounted) avoids the gamma+T coupling that biases pi1 toward larger batches; see docs/review_0507.md.")
-    parser.add_argument("--rl-entropy-coeff", type=float, default=0.01, help="Entropy regularization coefficient for RL-CAPA.")
+    parser.add_argument("--rl-entropy-coeff", type=float, default=0.01, help="Base entropy regularization coefficient for RL-CAPA. Used directly when no schedule is configured.")
+    parser.add_argument("--rl-entropy-start", type=float, default=None, help="Initial entropy coefficient for the linear annealing schedule.")
+    parser.add_argument("--rl-entropy-end", type=float, default=None, help="Final entropy coefficient for the linear annealing schedule.")
+    parser.add_argument("--rl-entropy-decay-episodes", type=int, default=None, help="Number of episodes over which entropy linearly decays from start to end.")
     parser.add_argument("--rl-max-grad-norm", type=float, default=0.5, help="Gradient clipping threshold for RL-CAPA.")
     parser.add_argument("--rl-disable-advantage-normalization", action="store_true", help="Disable RL-CAPA actor advantage standardization for ablation runs.")
     parser.add_argument("--rl-future-feature-window-seconds", type=int, default=300, help="True future window in seconds used by RL-CAPA stage-1 features.")
@@ -136,6 +139,9 @@ def build_algorithm_kwargs(args: argparse.Namespace) -> dict[str, Any]:
             "lr_critic": args.rl_lr_critic,
             "discount_factor": args.rl_discount_factor,
             "entropy_coeff": args.rl_entropy_coeff,
+            "entropy_start": args.rl_entropy_start,
+            "entropy_end": args.rl_entropy_end,
+            "entropy_decay_episodes": args.rl_entropy_decay_episodes,
             "max_grad_norm": args.rl_max_grad_norm,
             "normalize_advantages": not args.rl_disable_advantage_normalization,
             "future_feature_window_seconds": args.rl_future_feature_window_seconds,
@@ -153,6 +159,9 @@ def build_algorithm_kwargs(args: argparse.Namespace) -> dict[str, Any]:
             "lr_critic": args.rl_lr_critic,
             "discount_factor": args.rl_discount_factor,
             "entropy_coeff": args.rl_entropy_coeff,
+            "entropy_start": args.rl_entropy_start,
+            "entropy_end": args.rl_entropy_end,
+            "entropy_decay_episodes": args.rl_entropy_decay_episodes,
             "max_grad_norm": args.rl_max_grad_norm,
             "normalize_advantages": not args.rl_disable_advantage_normalization,
             "future_feature_window_seconds": args.rl_future_feature_window_seconds,
