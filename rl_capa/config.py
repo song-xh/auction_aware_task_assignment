@@ -54,10 +54,13 @@ class RLTrainingConfig:
     """Actor-critic training hyperparameters for RL-CAPA."""
 
     episodes: int = 500
-    discount_factor: float = 0.9
+    discount_factor: float = 1.0
     lr_actor: float = 0.001
     lr_critic: float = 0.001
     entropy_coeff: float = 0.01
+    entropy_start: float | None = None
+    entropy_end: float | None = None
+    entropy_decay_episodes: int | None = None
     max_grad_norm: float = 0.5
     max_steps_per_episode: int = 500
     normalize_advantages: bool = True

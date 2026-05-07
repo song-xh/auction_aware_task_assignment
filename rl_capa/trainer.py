@@ -21,6 +21,7 @@ import torch.nn as nn
 
 from rl_capa.networks import (
     BatchSizeActor,
+    BatchSizeQCritic,
     ConditionalValueCritic,
     CrossOrNotActor,
     StateValueCritic,
@@ -38,17 +39,26 @@ class TrainingConfig:
         discount_factor: Gamma for discounted returns.
         lr_actor: Learning rate for both actors.
         lr_critic: Learning rate for both critics.
-        entropy_coeff: Entropy bonus coefficient (prevents premature convergence).
+        entropy_coeff: Base entropy bonus coefficient (used when entropy_start
+            is None). Linear annealing between entropy_start and entropy_end
+            over entropy_decay_episodes overrides this when entropy_start is set.
+        entropy_start: Optional initial entropy coefficient for the linear schedule.
+        entropy_end: Optional final entropy coefficient for the linear schedule.
+        entropy_decay_episodes: Episodes over which entropy decays from
+            entropy_start to entropy_end (clamped to num_episodes).
         max_grad_norm: Gradient clipping threshold.
         max_steps_per_episode: Safety limit on steps per episode.
         normalize_advantages: Whether to standardize detached advantages before actor updates.
     """
 
     num_episodes: int = 500
-    discount_factor: float = 0.9
+    discount_factor: float = 1.0
     lr_actor: float = 0.001
     lr_critic: float = 0.001
     entropy_coeff: float = 0.01
+    entropy_start: float | None = None
+    entropy_end: float | None = None
+    entropy_decay_episodes: int | None = None
     max_grad_norm: float = 0.5
     max_steps_per_episode: int = 500
     normalize_advantages: bool = True
@@ -60,7 +70,7 @@ class StepRecord:
     """One step's data in the episode buffer.
 
     Args:
-        s1: First-stage state tensor (6,).
+        s1: First-stage state tensor (8,).
         a1_index: Sampled batch-size action index.
         log_prob_1: Log probability of a1 under pi1.
         s2_agg: Mean-pooled second-stage state tensor (9,).
@@ -117,6 +127,7 @@ class EpisodeLog:
     entropy_pi1: float = 0.0
     entropy_pi2: float = 0.0
     mean_batch_size: float = 0.0
+    discounted_return: float = 0.0
     truncated: bool = False
 
 
@@ -146,17 +157,22 @@ class RLCAPATrainer:
         self.config = config
         self.device = select_torch_device(config.device if device is None else device)
 
-        # 4 networks (spec Section 7)
+        # 4 networks (spec Section 7; Q1 replaces V1 to avoid V1==V2 target
+        # collapse described in docs/review_0507.md §3.2).
         self.pi1 = BatchSizeActor(
             state_dim=STAGE1_STATE_DIM, num_actions=num_batch_actions, hidden_dim=128
         ).to(self.device)
         self.pi2 = CrossOrNotActor(state_dim=STAGE2_STATE_DIM, hidden_dim=128).to(self.device)
+        self.q1 = BatchSizeQCritic(
+            state_dim=STAGE1_STATE_DIM, num_actions=num_batch_actions, hidden_dim=128
+        ).to(self.device)
         self.v1 = StateValueCritic(state_dim=STAGE1_STATE_DIM, hidden_dim=128).to(self.device)
         self.v2 = ConditionalValueCritic(state_dim=STAGE2_STATE_DIM, hidden_dim=128).to(self.device)
 
         # 4 independent optimizers (spec Section 6.4)
         self.opt_pi1 = torch.optim.Adam(self.pi1.parameters(), lr=config.lr_actor)
         self.opt_pi2 = torch.optim.Adam(self.pi2.parameters(), lr=config.lr_actor)
+        self.opt_q1 = torch.optim.Adam(self.q1.parameters(), lr=config.lr_critic)
         self.opt_v1 = torch.optim.Adam(self.v1.parameters(), lr=config.lr_critic)
         self.opt_v2 = torch.optim.Adam(self.v2.parameters(), lr=config.lr_critic)
 
@@ -184,7 +200,12 @@ class RLCAPATrainer:
         Returns:
             List of per-episode logs.
         """
-        self._batch_action_values = batch_action_values
+        if len(batch_action_values) != self.pi1.net[-1].out_features:
+            raise ValueError(
+                f"batch_action_values size {len(batch_action_values)} does not match "
+                f"pi1 output dim {self.pi1.net[-1].out_features}."
+            )
+        self._batch_action_values = list(batch_action_values)
         self.history = []
 
         for episode_idx in range(self.config.num_episodes):
@@ -234,9 +255,10 @@ class RLCAPATrainer:
         # Compute discounted returns (backward cumulation)
         returns = self._compute_discounted_returns(episode_buffer)
 
-        # Update networks
+        # Update networks (entropy coefficient annealed per episode)
+        entropy_coeff = self._current_entropy_coeff(episode_idx)
         loss_pi1, loss_pi2, loss_v1, loss_v2 = self._update_networks(
-            episode_buffer, returns
+            episode_buffer, returns, entropy_coeff=entropy_coeff
         )
 
         self.env.finalize_episode()
@@ -253,6 +275,7 @@ class RLCAPATrainer:
         )
         mean_batch_size = float(np.mean(batch_sizes)) if batch_sizes else 0.0
         truncated = not self.env.is_done()
+        discounted_return = float(returns[0]) if returns else 0.0
         return EpisodeLog(
             episode=episode_idx,
             total_reward=total_reward,
@@ -267,6 +290,7 @@ class RLCAPATrainer:
             entropy_pi1=entropy_pi1,
             entropy_pi2=entropy_pi2,
             mean_batch_size=mean_batch_size,
+            discounted_return=discounted_return,
             truncated=truncated,
         )
 
@@ -379,10 +403,29 @@ class RLCAPATrainer:
             discount_factor=self.config.discount_factor,
         )
 
+    def _current_entropy_coeff(self, episode_idx: int) -> float:
+        """Linear-anneal the entropy bonus across the configured schedule.
+
+        Falls back to ``config.entropy_coeff`` when ``entropy_start`` is None.
+        """
+
+        start = self.config.entropy_start
+        end = self.config.entropy_end
+        decay = self.config.entropy_decay_episodes
+        if start is None:
+            return float(self.config.entropy_coeff)
+        if end is None:
+            end = float(self.config.entropy_coeff)
+        if decay is None or decay <= 0:
+            decay = max(1, self.config.num_episodes)
+        progress = min(1.0, episode_idx / max(1, decay))
+        return float(start + (end - start) * progress)
+
     def _update_networks(
         self,
         buffer: List[StepRecord],
         returns: List[float],
+        entropy_coeff: float | None = None,
     ) -> tuple[float, float, float, float]:
         """Update all 4 networks from episode data.
 
@@ -398,16 +441,35 @@ class RLCAPATrainer:
         Returns:
             Tuple of (loss_pi1, loss_pi2, loss_v1, loss_v2) as floats.
         """
+        if entropy_coeff is None:
+            entropy_coeff = float(self.config.entropy_coeff)
         # Stack episode data
         s1_batch = torch.stack([r.s1 for r in buffer])
         s2_agg_batch = torch.stack([r.s2_agg for r in buffer])
         returns_tensor = torch.tensor(returns, dtype=torch.float32, device=self.device)
+        # Per-step rewards drive pi2's local advantage so pi2 only sees its own
+        # batch's outcome (review §3.5).
+        rewards_tensor = torch.tensor(
+            [r.reward for r in buffer], dtype=torch.float32, device=self.device
+        )
+        action_indices = torch.tensor(
+            [r.a1_index for r in buffer], dtype=torch.long, device=self.device
+        )
         log_probs_1 = torch.stack([r.log_prob_1 for r in buffer])
         log_probs_2 = torch.stack([r.log_prob_2 for r in buffer])
         entropies_1 = torch.stack([r.entropy_1 for r in buffer])
         entropies_2 = torch.stack([r.entropy_2 for r in buffer])
 
-        # --- Critic 1 update ---
+        # --- Q1 critic update (action-value regression to R_hat) ---
+        q1_all = self.q1(s1_batch)  # (T, |A_b|)
+        q1_taken = q1_all.gather(1, action_indices.unsqueeze(-1)).squeeze(-1)
+        loss_q1 = ((q1_taken - returns_tensor.detach()) ** 2).mean()
+        self.opt_q1.zero_grad()
+        loss_q1.backward()
+        nn.utils.clip_grad_norm_(self.q1.parameters(), self.config.max_grad_norm)
+        self.opt_q1.step()
+
+        # --- V1 baseline update (value regression for monitoring + variance) ---
         v1_values = self.v1(s1_batch)
         loss_v1 = ((v1_values - returns_tensor.detach()) ** 2).mean()
         self.opt_v1.zero_grad()
@@ -415,9 +477,9 @@ class RLCAPATrainer:
         nn.utils.clip_grad_norm_(self.v1.parameters(), self.config.max_grad_norm)
         self.opt_v1.step()
 
-        # --- Critic 2 update ---
+        # --- V2 critic update (per-step reward target, decoupled from pi1) ---
         v2_values = self.v2(s2_agg_batch)
-        loss_v2 = ((v2_values - returns_tensor.detach()) ** 2).mean()
+        loss_v2 = ((v2_values - rewards_tensor.detach()) ** 2).mean()
         self.opt_v2.zero_grad()
         loss_v2.backward()
         nn.utils.clip_grad_norm_(self.v2.parameters(), self.config.max_grad_norm)
@@ -425,23 +487,30 @@ class RLCAPATrainer:
 
         # --- Advantages (detached) ---
         with torch.no_grad():
-            v1_detached = self.v1(s1_batch)
+            q1_detached = self.q1(s1_batch)
+            pi1_probs = self.pi1(s1_batch).probs              # (T, |A_b|)
+            q1_baseline = (pi1_probs * q1_detached).sum(dim=-1)
+            q1_taken_detached = q1_detached.gather(
+                1, action_indices.unsqueeze(-1)
+            ).squeeze(-1)
+            # A1 = Q1(s, a) - E_{a' ~ pi1}[Q1(s, a')] (counterfactual advantage)
+            adv_1 = q1_taken_detached - q1_baseline
+            # A2 = r_t - V2(s2_agg): pi2 credit limited to its batch outcome.
             v2_detached = self.v2(s2_agg_batch)
-            adv_1 = v2_detached - v1_detached       # A1 = V2 - V1
-            adv_2 = returns_tensor - v2_detached     # A2 = R_hat - V2
+            adv_2 = rewards_tensor - v2_detached
             if self.config.normalize_advantages:
                 adv_1 = self._normalize_advantages(adv_1)
                 adv_2 = self._normalize_advantages(adv_2)
 
         # --- Actor 1 update ---
-        loss_pi1 = -(log_probs_1 * adv_1).mean() - self.config.entropy_coeff * entropies_1.mean()
+        loss_pi1 = -(log_probs_1 * adv_1).mean() - entropy_coeff * entropies_1.mean()
         self.opt_pi1.zero_grad()
         loss_pi1.backward()
         nn.utils.clip_grad_norm_(self.pi1.parameters(), self.config.max_grad_norm)
         self.opt_pi1.step()
 
         # --- Actor 2 update ---
-        loss_pi2 = -(log_probs_2 * adv_2).mean() - self.config.entropy_coeff * entropies_2.mean()
+        loss_pi2 = -(log_probs_2 * adv_2).mean() - entropy_coeff * entropies_2.mean()
         self.opt_pi2.zero_grad()
         loss_pi2.backward()
         nn.utils.clip_grad_norm_(self.pi2.parameters(), self.config.max_grad_norm)
@@ -458,19 +527,22 @@ class RLCAPATrainer:
     def _normalize_advantages(advantages: torch.Tensor, epsilon: float = 1e-8) -> torch.Tensor:
         """Standardize one detached advantage vector for stable actor updates.
 
+        When variance collapses (e.g., pi1 deterministic), fall back to the
+        mean-centered raw advantage instead of zeroing it out, so the actor
+        still receives any residual signal. See docs/review_0507.md §3.4.
+
         Args:
             advantages: One-dimensional tensor of detached advantage values.
             epsilon: Minimum standard deviation used for numerical stability.
 
         Returns:
-            Tensor with zero mean and unit population standard deviation when
-            variance is present; all zeros for a constant vector.
+            Mean-centered advantages, scaled by std when std > epsilon.
         """
 
         centered = advantages - advantages.mean()
         std = centered.std(unbiased=False)
         if std <= epsilon:
-            return torch.zeros_like(advantages)
+            return centered
         return centered / (std + epsilon)
 
     def save_checkpoint(self, output_dir: Path) -> None:
@@ -483,6 +555,7 @@ class RLCAPATrainer:
         output_dir.mkdir(parents=True, exist_ok=True)
         torch.save(self.pi1.state_dict(), output_dir / "pi1.pt")
         torch.save(self.pi2.state_dict(), output_dir / "pi2.pt")
+        torch.save(self.q1.state_dict(), output_dir / "q1.pt")
         torch.save(self.v1.state_dict(), output_dir / "v1.pt")
         torch.save(self.v2.state_dict(), output_dir / "v2.pt")
         torch.save(
@@ -521,6 +594,9 @@ class RLCAPATrainer:
         )
         trainer.pi1.load_state_dict(torch.load(checkpoint_dir / "pi1.pt", map_location=trainer.device))
         trainer.pi2.load_state_dict(torch.load(checkpoint_dir / "pi2.pt", map_location=trainer.device))
+        q1_path = checkpoint_dir / "q1.pt"
+        if q1_path.exists():
+            trainer.q1.load_state_dict(torch.load(q1_path, map_location=trainer.device))
         trainer.v1.load_state_dict(torch.load(checkpoint_dir / "v1.pt", map_location=trainer.device))
         trainer.v2.load_state_dict(torch.load(checkpoint_dir / "v2.pt", map_location=trainer.device))
         normalizers = torch.load(checkpoint_dir / "normalizers.pt", map_location="cpu")

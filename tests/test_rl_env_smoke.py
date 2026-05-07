@@ -172,8 +172,8 @@ def test_local_stage_failure_returns_to_backlog_for_next_batch() -> None:
     assert not env.is_done()
 
 
-def test_stage1_state_uses_six_dimensions_and_true_future_window() -> None:
-    """Stage 1 should expose true future parcel/courier counts in a 6D state."""
+def test_stage1_state_uses_eight_dimensions_and_true_future_window() -> None:
+    """Stage 1 should expose true future and progress features in an 8D state."""
 
     seed = _seed([
         _task("now", "now-node", release=0),
@@ -196,14 +196,14 @@ def test_stage1_state_uses_six_dimensions_and_true_future_window() -> None:
     short_state = short_env.get_stage1_state()
     long_state = long_env.get_stage1_state()
 
-    assert short_state.shape == (6,)
-    assert long_state.shape == (6,)
+    assert short_state.shape == (8,)
+    assert long_state.shape == (8,)
     assert short_state[2] == 1.0
     assert long_state[2] == 2.0
 
 
-def test_trainer_uses_six_dimensional_stage1_networks_and_adam() -> None:
-    """Trainer dimensions should match 6D stage-1 state while keeping Adam."""
+def test_trainer_uses_eight_dimensional_stage1_networks_and_adam() -> None:
+    """Trainer dimensions should match 8D stage-1 state while keeping Adam."""
 
     env = RLCAPAEnv(
         environment_seed=_seed([_task("now", "now-node")]),
@@ -212,9 +212,10 @@ def test_trainer_uses_six_dimensional_stage1_networks_and_adam() -> None:
     )
     trainer = RLCAPATrainer(env=env, config=TrainingConfig(num_episodes=0), num_batch_actions=1)
 
-    assert trainer.norm_s1.dim == 6
-    assert trainer.pi1.net[0].in_features == 6
-    assert trainer.v1.net[0].in_features == 6
+    assert trainer.norm_s1.dim == 8
+    assert trainer.pi1.net[0].in_features == 8
+    assert trainer.v1.net[0].in_features == 8
+    assert trainer.q1.net[0].in_features == 8
     assert isinstance(trainer.opt_pi1, torch.optim.Adam)
 
 

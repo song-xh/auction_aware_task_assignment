@@ -27,8 +27,11 @@ class RLCAPAAlgorithmRunner(AlgorithmRunner):
         episodes: int = 10,
         lr_actor: float = 0.001,
         lr_critic: float = 0.001,
-        discount_factor: float = 0.9,
+        discount_factor: float = 1.0,
         entropy_coeff: float = 0.01,
+        entropy_start: float | None = None,
+        entropy_end: float | None = None,
+        entropy_decay_episodes: int | None = None,
         max_grad_norm: float = 0.5,
         normalize_advantages: bool = True,
         future_feature_window_seconds: int = 300,
@@ -61,6 +64,9 @@ class RLCAPAAlgorithmRunner(AlgorithmRunner):
         self._lr_critic = lr_critic
         self._discount_factor = discount_factor
         self._entropy_coeff = entropy_coeff
+        self._entropy_start = entropy_start
+        self._entropy_end = entropy_end
+        self._entropy_decay_episodes = entropy_decay_episodes
         self._max_grad_norm = max_grad_norm
         self._normalize_advantages = normalize_advantages
         self._future_feature_window_seconds = future_feature_window_seconds
@@ -104,6 +110,9 @@ class RLCAPAAlgorithmRunner(AlgorithmRunner):
             lr_actor=self._lr_actor,
             lr_critic=self._lr_critic,
             entropy_coeff=self._entropy_coeff,
+            entropy_start=self._entropy_start,
+            entropy_end=self._entropy_end,
+            entropy_decay_episodes=self._entropy_decay_episodes,
             max_grad_norm=self._max_grad_norm,
             normalize_advantages=self._normalize_advantages,
             device=self._device,
@@ -147,8 +156,11 @@ def build_rl_capa_runner(
     episodes: int = 10,
     lr_actor: float = 0.001,
     lr_critic: float = 0.001,
-    discount_factor: float = 0.9,
+    discount_factor: float = 1.0,
     entropy_coeff: float = 0.01,
+    entropy_start: float | None = None,
+    entropy_end: float | None = None,
+    entropy_decay_episodes: int | None = None,
     max_grad_norm: float = 0.5,
     normalize_advantages: bool = True,
     future_feature_window_seconds: int = 300,
@@ -166,6 +178,9 @@ def build_rl_capa_runner(
         lr_critic=lr_critic,
         discount_factor=discount_factor,
         entropy_coeff=entropy_coeff,
+        entropy_start=entropy_start,
+        entropy_end=entropy_end,
+        entropy_decay_episodes=entropy_decay_episodes,
         max_grad_norm=max_grad_norm,
         normalize_advantages=normalize_advantages,
         future_feature_window_seconds=future_feature_window_seconds,

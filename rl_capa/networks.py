@@ -127,6 +127,54 @@ class StateValueCritic(nn.Module):
         return self.net(state).squeeze(-1)
 
 
+class BatchSizeQCritic(nn.Module):
+    """Q1: action-value head over the discrete batch-size action space.
+
+    Input:  s_t^(1) in R^{state_dim}
+    Hidden: 2-layer MLP, 128 units, ReLU
+    Output: vector of Q-values, one per batch-size action.
+
+    Used to drive A1 = Q1(s, a) - sum_a' pi1(a'|s) * Q1(s, a'), which gives
+    pi1 a counterfactual signal that does not collapse to zero when the
+    policy becomes deterministic. See docs/review_0507.md §3.2.
+    """
+
+    def __init__(
+        self,
+        state_dim: int = STAGE1_STATE_DIM,
+        num_actions: int = 11,
+        hidden_dim: int = 128,
+    ) -> None:
+        """Initialize Q1.
+
+        Args:
+            state_dim: Dimension of first-stage state.
+            num_actions: Size of |A_b|.
+            hidden_dim: Hidden layer width.
+        """
+
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(state_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, num_actions),
+        )
+
+    def forward(self, state: torch.Tensor) -> torch.Tensor:
+        """Compute action-value vector.
+
+        Args:
+            state: Tensor of shape (batch, state_dim) or (state_dim,).
+
+        Returns:
+            Tensor of shape (batch, num_actions) or (num_actions,).
+        """
+
+        return self.net(state)
+
+
 class ConditionalValueCritic(nn.Module):
     """V2: conditional state value after first-stage action.
 

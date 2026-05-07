@@ -17,7 +17,7 @@ from capa.cama import is_feasible_local_match
 from capa.models import Courier, Parcel
 
 
-STAGE1_STATE_DIM = 6
+STAGE1_STATE_DIM = 8
 STAGE2_STATE_DIM = 9
 
 
@@ -88,11 +88,14 @@ def build_stage1_state(
     service_radius_meters: float | None = None,
     future_parcel_count: int = 0,
     future_courier_count: int = 0,
+    delivered_ratio: float = 0.0,
+    expired_ratio: float = 0.0,
 ) -> np.ndarray:
-    """Construct the 6-dim first-stage state s_t^(1).
+    """Construct the 8-dim first-stage state s_t^(1).
 
-    Features (spec Section 3.1):
-      [|Gamma_t^Loc|, |C_t^Loc|, N_Z^Gamma, N_Z^C, |D|, |T|]
+    Features (spec Section 3.1, extended for review_0507.md §8):
+      [|Gamma_t^Loc|, |C_t^Loc|, N_Z^Gamma, N_Z^C, |D|, |T|,
+       delivered_ratio, expired_ratio]
 
     Args:
         pending_parcels: Parcels awaiting assignment.
@@ -102,9 +105,11 @@ def build_stage1_state(
         service_radius_meters: Optional service radius constraint.
         future_parcel_count: True future parcel count inside the configured window.
         future_courier_count: True future local courier availability count.
+        delivered_ratio: Fraction of total parcels already delivered/accepted.
+        expired_ratio: Fraction of total parcels already past their deadline.
 
     Returns:
-        Float32 array of shape (6,).
+        Float32 array of shape (8,).
     """
     pending_count = float(len(pending_parcels))
     available_count = float(
@@ -145,6 +150,8 @@ def build_stage1_state(
             float(future_courier_count),
             avg_distance,
             avg_urgency,
+            float(delivered_ratio),
+            float(expired_ratio),
         ],
         dtype=np.float32,
     )

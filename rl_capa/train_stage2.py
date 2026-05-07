@@ -42,6 +42,9 @@ def train_stage2_rl_capa(
             lr_actor=training_config.lr_actor,
             lr_critic=training_config.lr_critic,
             entropy_coeff=training_config.entropy_coeff,
+            entropy_start=training_config.entropy_start,
+            entropy_end=training_config.entropy_end,
+            entropy_decay_episodes=training_config.entropy_decay_episodes,
             max_grad_norm=training_config.max_grad_norm,
             max_steps_per_episode=training_config.max_steps_per_episode,
             normalize_advantages=training_config.normalize_advantages,
@@ -90,6 +93,8 @@ def train_stage2_rl_capa(
         "entropy_pi2": [log.entropy_pi2 for log in history],
         "mean_batch_size": [log.mean_batch_size for log in history],
         "batch_size_sequences": [list(log.batch_sizes) for log in history],
+        "batch_action_values": [int(fixed_batch_size)],
+        "discount_factor": training_config.discount_factor,
         "device": str(trainer.device),
         "plots": {
             "training_curves": str(training_plot_path),

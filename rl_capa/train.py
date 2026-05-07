@@ -57,6 +57,9 @@ def train_rl_capa(
             lr_actor=training_config.lr_actor,
             lr_critic=training_config.lr_critic,
             entropy_coeff=training_config.entropy_coeff,
+            entropy_start=training_config.entropy_start,
+            entropy_end=training_config.entropy_end,
+            entropy_decay_episodes=training_config.entropy_decay_episodes,
             max_grad_norm=training_config.max_grad_norm,
             max_steps_per_episode=training_config.max_steps_per_episode,
             normalize_advantages=training_config.normalize_advantages,
@@ -99,6 +102,7 @@ def train_rl_capa(
 
     summary = {
         "episode_returns": [log.total_reward for log in history],
+        "discounted_returns": [getattr(log, "discounted_return", 0.0) for log in history],
         "loss_pi1": [log.loss_pi1 for log in history],
         "loss_pi2": [log.loss_pi2 for log in history],
         "loss_v1": [log.loss_v1 for log in history],
@@ -108,6 +112,8 @@ def train_rl_capa(
         "entropy_pi2": [log.entropy_pi2 for log in history],
         "mean_batch_size": [log.mean_batch_size for log in history],
         "batch_size_sequences": [list(log.batch_sizes) for log in history],
+        "batch_action_values": list(rl_config.batch_action_values()),
+        "discount_factor": training_config.discount_factor,
         "checkpoint_dir": str(checkpoint_dir),
         "device": str(trainer.device),
         "plots": {

@@ -100,6 +100,11 @@ class Stage1RLCAPATrainer:
             Per-episode training logs.
         """
 
+        if len(batch_action_values) != self.pi1.net[-1].out_features:
+            raise ValueError(
+                f"batch_action_values size {len(batch_action_values)} does not match "
+                f"pi1 output dim {self.pi1.net[-1].out_features}."
+            )
         self._batch_action_values = list(batch_action_values)
         self.history = []
         for episode_idx in range(self.config.num_episodes):
@@ -129,16 +134,16 @@ class Stage1RLCAPATrainer:
                 assignments=0,
             )
 
-        # Stage-1 ablation uses undiscounted return (gamma=1) instead of the
-        # paper's discounted gamma=0.9. Reason: paper trains pi1 jointly with
-        # pi2 via A1 = V2 - V1, which isolates the batch-size contribution from
-        # the per-step reward magnitude. The ablation must use REINFORCE-style
-        # A1 = R_hat - V1, but with gamma<1 the discounted return G_t systematically
-        # depends on the number of remaining steps (smaller batch -> more steps
-        # -> larger sum even when total raw revenue is identical). That induces
-        # a spurious preference for the smallest batch size and degrades total
-        # platform revenue. gamma=1 makes G_t = sum of remaining raw revenue,
-        # which equals the true platform-level objective.
+        # Stage-1 ablation uses undiscounted return (gamma=1) to neutralize the
+        # gamma<1 + episode-length coupling that biases pi1 across batch sizes.
+        # Concretely: with the same total raw revenue R distributed across T
+        # steps (T inversely related to batch size), the discounted initial
+        # return is G_0 = (R/T) * (1-gamma^T)/(1-gamma); for gamma<1 this
+        # DECREASES with T, so larger batches (fewer steps, less discounting)
+        # receive an inflated supervised target. That biases pi1 toward the
+        # largest available batch even when raw revenue is unchanged. Setting
+        # gamma=1 makes G_0 = R independent of T, aligning the actor signal
+        # with true platform revenue. See docs/review_0507.md §3.1.
         returns = compute_discounted_returns(
             rewards=[record.reward for record in buffer],
             discount_factor=1.0,
