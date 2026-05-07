@@ -70,7 +70,7 @@ class StepRecord:
     """One step's data in the episode buffer.
 
     Args:
-        s1: First-stage state tensor (6,).
+        s1: First-stage state tensor (8,).
         a1_index: Sampled batch-size action index.
         log_prob_1: Log probability of a1 under pi1.
         s2_agg: Mean-pooled second-stage state tensor (9,).
@@ -127,6 +127,7 @@ class EpisodeLog:
     entropy_pi1: float = 0.0
     entropy_pi2: float = 0.0
     mean_batch_size: float = 0.0
+    discounted_return: float = 0.0
     truncated: bool = False
 
 
@@ -274,6 +275,7 @@ class RLCAPATrainer:
         )
         mean_batch_size = float(np.mean(batch_sizes)) if batch_sizes else 0.0
         truncated = not self.env.is_done()
+        discounted_return = float(returns[0]) if returns else 0.0
         return EpisodeLog(
             episode=episode_idx,
             total_reward=total_reward,
@@ -288,6 +290,7 @@ class RLCAPATrainer:
             entropy_pi1=entropy_pi1,
             entropy_pi2=entropy_pi2,
             mean_batch_size=mean_batch_size,
+            discounted_return=discounted_return,
             truncated=truncated,
         )
 

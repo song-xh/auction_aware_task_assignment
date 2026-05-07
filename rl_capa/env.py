@@ -129,12 +129,15 @@ class RLCAPAEnv:
         }
 
     def get_stage1_state(self) -> np.ndarray:
-        """Construct the 6-dimensional first-stage state ``s_t^(1)``."""
+        """Construct the 8-dimensional first-stage state ``s_t^(1)``."""
 
         runtime = self._require_runtime()
         pending_parcels = [legacy_task_to_parcel(task) for task in self._pending_tasks_before_next_batch()]
         local_couriers = self._snapshot_local_couriers()
         future_window_end = runtime.current_time + self._rl_config.future_feature_window_seconds
+        total_parcels = max(1, len(runtime.sorted_tasks))
+        delivered_ratio = float(len(runtime.matching_plan)) / float(total_parcels)
+        expired_ratio = float(len(runtime.terminal_unassigned)) / float(total_parcels)
         return build_stage1_state(
             pending_parcels=pending_parcels,
             local_couriers=local_couriers,
@@ -143,6 +146,8 @@ class RLCAPAEnv:
             service_radius_meters=runtime.service_radius_meters,
             future_parcel_count=self._count_future_parcels(future_window_end),
             future_courier_count=self._count_future_local_couriers(local_couriers, future_window_end),
+            delivered_ratio=delivered_ratio,
+            expired_ratio=expired_ratio,
         )
 
     def apply_batch_size(self, batch_size: int) -> None:

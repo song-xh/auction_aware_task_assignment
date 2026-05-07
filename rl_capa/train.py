@@ -102,6 +102,7 @@ def train_rl_capa(
 
     summary = {
         "episode_returns": [log.total_reward for log in history],
+        "discounted_returns": [getattr(log, "discounted_return", 0.0) for log in history],
         "loss_pi1": [log.loss_pi1 for log in history],
         "loss_pi2": [log.loss_pi2 for log in history],
         "loss_v1": [log.loss_v1 for log in history],
