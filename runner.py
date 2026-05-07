@@ -88,7 +88,7 @@ def _add_common_environment_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--episodes", type=int, default=500, help="Training episodes used by RL-CAPA before evaluation.")
     parser.add_argument("--rl-lr-actor", type=float, default=0.001, help="Actor learning rate for RL-CAPA.")
     parser.add_argument("--rl-lr-critic", type=float, default=0.001, help="Critic learning rate for RL-CAPA.")
-    parser.add_argument("--rl-discount-factor", type=float, default=0.9, help="Discount factor used by RL-CAPA.")
+    parser.add_argument("--rl-discount-factor", type=float, default=1.0, help="Discount factor used by RL-CAPA. Default 1.0 (undiscounted) avoids the gamma+T coupling that biases pi1 toward larger batches; see docs/review_0507.md.")
     parser.add_argument("--rl-entropy-coeff", type=float, default=0.01, help="Entropy regularization coefficient for RL-CAPA.")
     parser.add_argument("--rl-max-grad-norm", type=float, default=0.5, help="Gradient clipping threshold for RL-CAPA.")
     parser.add_argument("--rl-disable-advantage-normalization", action="store_true", help="Disable RL-CAPA actor advantage standardization for ablation runs.")

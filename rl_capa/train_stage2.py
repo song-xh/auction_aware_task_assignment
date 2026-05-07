@@ -90,6 +90,8 @@ def train_stage2_rl_capa(
         "entropy_pi2": [log.entropy_pi2 for log in history],
         "mean_batch_size": [log.mean_batch_size for log in history],
         "batch_size_sequences": [list(log.batch_sizes) for log in history],
+        "batch_action_values": [int(fixed_batch_size)],
+        "discount_factor": training_config.discount_factor,
         "device": str(trainer.device),
         "plots": {
             "training_curves": str(training_plot_path),

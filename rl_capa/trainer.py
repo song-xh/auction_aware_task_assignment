@@ -45,7 +45,7 @@ class TrainingConfig:
     """
 
     num_episodes: int = 500
-    discount_factor: float = 0.9
+    discount_factor: float = 1.0
     lr_actor: float = 0.001
     lr_critic: float = 0.001
     entropy_coeff: float = 0.01
@@ -184,7 +184,12 @@ class RLCAPATrainer:
         Returns:
             List of per-episode logs.
         """
-        self._batch_action_values = batch_action_values
+        if len(batch_action_values) != self.pi1.net[-1].out_features:
+            raise ValueError(
+                f"batch_action_values size {len(batch_action_values)} does not match "
+                f"pi1 output dim {self.pi1.net[-1].out_features}."
+            )
+        self._batch_action_values = list(batch_action_values)
         self.history = []
 
         for episode_idx in range(self.config.num_episodes):
