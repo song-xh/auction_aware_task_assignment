@@ -12,6 +12,9 @@ from unittest.mock import patch
 from algorithms.rl_capa_runner import build_rl_capa_runner
 from algorithms.rl_capa_infer_runner import build_rl_capa_infer_runner
 from capa.models import CAPAConfig
+from env.chengdu import ChengduEnvironment
+from experiments.framework.models import ExperimentPointSpec
+from experiments.framework.point_runner import run_environment_comparison_point
 from rl_capa.config import RLCAPAConfig, RLTrainingConfig
 from rl_capa.evaluate import evaluate_rl_capa
 from rl_capa.train import train_rl_capa
@@ -229,6 +232,58 @@ class RLCAPAOutputArtifactTests(unittest.TestCase):
         self.assertIn("evaluation", summary["plots"])
         self.assertIn("TR", summary["plots"]["evaluation"])
         evaluate_mock.assert_called_once()
+
+    def test_point_runner_can_execute_rl_capa_infer_on_shared_environment(self) -> None:
+        """Shared-environment point execution should support checkpoint-based RL-CAPA inference."""
+
+        checkpoint_dir = self.temp_root / "checkpoints"
+        checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        environment = ChengduEnvironment(
+            tasks=[],
+            local_couriers=[],
+            partner_couriers_by_platform={},
+            station_set=[],
+            travel_model=SimpleNamespace(),
+            platform_base_prices={},
+            platform_sharing_rates={},
+            platform_qualities={},
+            partner_tasks_by_platform={},
+        )
+        point_spec = ExperimentPointSpec(
+            axis_name="num_parcels",
+            axis_value=500,
+            output_dir=self.temp_root / "point",
+            algorithms=["rl-capa-infer"],
+            batch_size=30,
+            runner_overrides_by_algorithm={
+                "rl-capa-infer": {
+                    "checkpoint_dir": str(checkpoint_dir),
+                    "batch_actions": [10, 15, 20, 25, 30],
+                    "future_feature_window_seconds": 300,
+                }
+            },
+        )
+
+        with patch(
+            "algorithms.rl_capa_infer_runner.evaluate_rl_capa",
+            return_value={
+                "algorithm": "rl-capa",
+                "metrics": {"TR": 9.0, "CR": 0.9, "BPT": 0.3},
+                "plots": {
+                    "TR": str(self.temp_root / "point" / "rl-capa-infer" / "eval" / "tr_over_batches.png"),
+                    "CR": str(self.temp_root / "point" / "rl-capa-infer" / "eval" / "cr_over_batches.png"),
+                    "BPT": str(self.temp_root / "point" / "rl-capa-infer" / "eval" / "bpt_over_batches.png"),
+                },
+            },
+        ):
+            summary = run_environment_comparison_point(
+                environment=environment,
+                point_spec=point_spec,
+            )
+
+        self.assertIn("rl-capa-infer", summary)
+        self.assertEqual(summary["rl-capa-infer"]["metrics"]["TR"], 9.0)
+        self.assertTrue((self.temp_root / "point" / "summary.json").exists())
 
 
 if __name__ == "__main__":
