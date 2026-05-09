@@ -703,6 +703,25 @@ class MetricAlignmentTest(unittest.TestCase):
         self.assertEqual(overrides["impgta"]["prediction_success_rate"], 0.55)
         self.assertEqual(overrides["impgta"]["prediction_sampling_seed"], 19)
 
+    def test_paper_runner_overrides_include_rl_capa_infer_checkpoint_controls(self) -> None:
+        """Paper point/split execution should forward RL-CAPA inference checkpoint controls."""
+
+        overrides = build_paper_runner_overrides_from_fixed_config(
+            {
+                "prediction_window_seconds": 180,
+                "prediction_success_rate": 0.6,
+                "prediction_sampling_seed": 17,
+                "rl_future_feature_window_seconds": 420,
+                "rl_checkpoint_dir": "outputs/plots/rl_capa_ablation_v2_500/rl-capa/checkpoints",
+            }
+        )
+
+        self.assertEqual(overrides["rl-capa-infer"]["future_feature_window_seconds"], 420)
+        self.assertEqual(
+            overrides["rl-capa-infer"]["checkpoint_dir"],
+            "outputs/plots/rl_capa_ablation_v2_500/rl-capa/checkpoints",
+        )
+
     def test_basegta_uses_delivered_count_for_cr(self) -> None:
         """BaseGTA should derive delivered count from post-drain route state, not accepts."""
 

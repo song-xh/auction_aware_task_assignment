@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from experiments.paper_chengdu import DEFAULT_CHENGDU_PAPER_FIXED_CONFIG
-from experiments.paper_config import PAPER_SUITE_PRESETS
+from experiments.paper_config import DEFAULT_CHENGDU_PAPER_ALGORITHMS, PAPER_SUITE_PRESETS
 
 
 def test_formal_paper_presets_match_requested_experiment_points() -> None:
@@ -25,3 +25,9 @@ def test_default_fixed_config_uses_new_cross_experiment_baselines() -> None:
     assert DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["local_couriers"] == 200
     assert DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["platforms"] == 4
     assert DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["courier_capacity"] == 50.0
+
+
+def test_default_paper_algorithms_include_rl_capa_inference() -> None:
+    """Paper experiments should expose checkpoint-based RL-CAPA inference by default."""
+
+    assert "rl-capa-infer" in DEFAULT_CHENGDU_PAPER_ALGORITHMS

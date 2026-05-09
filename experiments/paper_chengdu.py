@@ -67,6 +67,17 @@ DEFAULT_CHENGDU_PAPER_FIXED_CONFIG: dict[str, Any] = {
     "platform_quality_start": DEFAULT_PLATFORM_QUALITY_START,
     "platform_quality_step": DEFAULT_PLATFORM_QUALITY_STEP,
     "rl_future_feature_window_seconds": 300,
+    "rl_checkpoint_dir": Path("outputs/plots/rl_capa_ablation_v2_500/rl-capa/checkpoints"),
+    "rl_batch_actions": [10, 15, 20, 25, 30],
+    "rl_step_seconds": 60,
+    "rl_episodes": 1500,
+    "rl_discount_factor": 1.0,
+    "rl_lr_actor": 2e-4,
+    "rl_lr_critic": 1e-3,
+    "rl_entropy_start": 0.05,
+    "rl_entropy_end": 0.005,
+    "rl_entropy_decay_episodes": 1000,
+    "rl_max_grad_norm": 0.5,
 }
 
 
@@ -683,6 +694,21 @@ def build_script_parser(description: str) -> argparse.ArgumentParser:
     parser.add_argument("--platform-quality-start", type=float, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["platform_quality_start"])
     parser.add_argument("--platform-quality-step", type=float, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["platform_quality_step"])
     parser.add_argument("--rl-future-feature-window-seconds", type=int, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["rl_future_feature_window_seconds"])
+    parser.add_argument("--rl-checkpoint-dir", default=str(DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["rl_checkpoint_dir"]))
+    parser.add_argument("--rl-batch-actions", type=int, nargs="+", default=list(DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["rl_batch_actions"]))
+    parser.add_argument("--rl-step-seconds", type=int, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["rl_step_seconds"])
+    parser.add_argument("--rl-episodes", type=int, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["rl_episodes"])
+    parser.add_argument("--rl-discount-factor", type=float, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["rl_discount_factor"])
+    parser.add_argument("--rl-lr-actor", type=float, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["rl_lr_actor"])
+    parser.add_argument("--rl-lr-critic", type=float, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["rl_lr_critic"])
+    parser.add_argument("--rl-entropy-start", type=float, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["rl_entropy_start"])
+    parser.add_argument("--rl-entropy-end", type=float, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["rl_entropy_end"])
+    parser.add_argument(
+        "--rl-entropy-decay-episodes",
+        type=int,
+        default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["rl_entropy_decay_episodes"],
+    )
+    parser.add_argument("--rl-max-grad-norm", type=float, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["rl_max_grad_norm"])
     parser.add_argument("--success-tr-ratio", type=float, default=0.9)
     parser.add_argument("--success-cr-gap", type=float, default=0.02)
     parser.add_argument("--utility-balance-gamma", type=float, default=None)
@@ -726,6 +752,21 @@ def build_fixed_config_from_args(args: argparse.Namespace) -> dict[str, Any]:
         "platform_quality_start": getattr(args, "platform_quality_start", DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["platform_quality_start"]),
         "platform_quality_step": getattr(args, "platform_quality_step", DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["platform_quality_step"]),
         "rl_future_feature_window_seconds": getattr(args, "rl_future_feature_window_seconds", DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["rl_future_feature_window_seconds"]),
+        "rl_checkpoint_dir": Path(getattr(args, "rl_checkpoint_dir", DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["rl_checkpoint_dir"])),
+        "rl_batch_actions": [int(value) for value in getattr(args, "rl_batch_actions", DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["rl_batch_actions"])],
+        "rl_step_seconds": getattr(args, "rl_step_seconds", DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["rl_step_seconds"]),
+        "rl_episodes": getattr(args, "rl_episodes", DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["rl_episodes"]),
+        "rl_discount_factor": getattr(args, "rl_discount_factor", DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["rl_discount_factor"]),
+        "rl_lr_actor": getattr(args, "rl_lr_actor", DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["rl_lr_actor"]),
+        "rl_lr_critic": getattr(args, "rl_lr_critic", DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["rl_lr_critic"]),
+        "rl_entropy_start": getattr(args, "rl_entropy_start", DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["rl_entropy_start"]),
+        "rl_entropy_end": getattr(args, "rl_entropy_end", DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["rl_entropy_end"]),
+        "rl_entropy_decay_episodes": getattr(
+            args,
+            "rl_entropy_decay_episodes",
+            DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["rl_entropy_decay_episodes"],
+        ),
+        "rl_max_grad_norm": getattr(args, "rl_max_grad_norm", DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["rl_max_grad_norm"]),
     }
 
 
@@ -760,6 +801,13 @@ def build_paper_runner_overrides_from_fixed_config(
         Per-algorithm runner kwargs that should be honored by point/split runners.
     """
 
+    rl_batch_actions = [
+        int(value)
+        for value in fixed_config.get(
+            "rl_batch_actions",
+            DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["rl_batch_actions"],
+        )
+    ]
     merged: dict[str, dict[str, Any]] = {
         "impgta": {
             "prediction_window_seconds": int(fixed_config["prediction_window_seconds"]),
@@ -767,13 +815,46 @@ def build_paper_runner_overrides_from_fixed_config(
             "prediction_sampling_seed": int(fixed_config["prediction_sampling_seed"]),
         },
         "rl-capa": {
+            "min_batch_size": min(rl_batch_actions),
+            "max_batch_size": max(rl_batch_actions),
+            "batch_actions": list(rl_batch_actions),
+            "step_seconds": int(fixed_config.get("rl_step_seconds", DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["rl_step_seconds"])),
+            "episodes": int(fixed_config.get("rl_episodes", DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["rl_episodes"])),
+            "discount_factor": float(fixed_config.get("rl_discount_factor", DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["rl_discount_factor"])),
+            "lr_actor": float(fixed_config.get("rl_lr_actor", DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["rl_lr_actor"])),
+            "lr_critic": float(fixed_config.get("rl_lr_critic", DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["rl_lr_critic"])),
+            "entropy_start": float(fixed_config.get("rl_entropy_start", DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["rl_entropy_start"])) if fixed_config.get("rl_entropy_start", DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["rl_entropy_start"]) is not None else None,
+            "entropy_end": float(fixed_config.get("rl_entropy_end", DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["rl_entropy_end"])) if fixed_config.get("rl_entropy_end", DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["rl_entropy_end"]) is not None else None,
+            "entropy_decay_episodes": int(fixed_config.get("rl_entropy_decay_episodes", DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["rl_entropy_decay_episodes"])) if fixed_config.get("rl_entropy_decay_episodes", DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["rl_entropy_decay_episodes"]) is not None else None,
+            "max_grad_norm": float(fixed_config.get("rl_max_grad_norm", DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["rl_max_grad_norm"])),
             "future_feature_window_seconds": int(
                 fixed_config.get(
                     "rl_future_feature_window_seconds",
                     DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["rl_future_feature_window_seconds"],
                 )
             ),
-        }
+        },
+        "rl-capa-infer": {
+            "checkpoint_dir": str(fixed_config.get("rl_checkpoint_dir", DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["rl_checkpoint_dir"])),
+            "min_batch_size": min(rl_batch_actions),
+            "max_batch_size": max(rl_batch_actions),
+            "batch_actions": list(rl_batch_actions),
+            "step_seconds": int(fixed_config.get("rl_step_seconds", DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["rl_step_seconds"])),
+            "episodes": int(fixed_config.get("rl_episodes", DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["rl_episodes"])),
+            "discount_factor": float(fixed_config.get("rl_discount_factor", DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["rl_discount_factor"])),
+            "lr_actor": float(fixed_config.get("rl_lr_actor", DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["rl_lr_actor"])),
+            "lr_critic": float(fixed_config.get("rl_lr_critic", DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["rl_lr_critic"])),
+            "entropy_start": float(fixed_config.get("rl_entropy_start", DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["rl_entropy_start"])) if fixed_config.get("rl_entropy_start", DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["rl_entropy_start"]) is not None else None,
+            "entropy_end": float(fixed_config.get("rl_entropy_end", DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["rl_entropy_end"])) if fixed_config.get("rl_entropy_end", DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["rl_entropy_end"]) is not None else None,
+            "entropy_decay_episodes": int(fixed_config.get("rl_entropy_decay_episodes", DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["rl_entropy_decay_episodes"])) if fixed_config.get("rl_entropy_decay_episodes", DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["rl_entropy_decay_episodes"]) is not None else None,
+            "max_grad_norm": float(fixed_config.get("rl_max_grad_norm", DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["rl_max_grad_norm"])),
+            "future_feature_window_seconds": int(
+                fixed_config.get(
+                    "rl_future_feature_window_seconds",
+                    DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["rl_future_feature_window_seconds"],
+                )
+            ),
+        },
     }
     for algorithm, overrides in (explicit_overrides or {}).items():
         merged.setdefault(algorithm, {})

@@ -10,6 +10,7 @@ DEFAULT_CHENGDU_PAPER_ALGORITHMS = (
     "mra",
     "basegta",
     "impgta",
+    "rl-capa-infer",
 )
 
 
