@@ -59,6 +59,33 @@ class RLCAPARunnerUXTests(unittest.TestCase):
         self.assertEqual(kwargs["batch_actions"], [10, 15, 20])
         self.assertTrue(kwargs["normalize_advantages"])
 
+    def test_runner_build_kwargs_include_rl_checkpoint_dir_for_inference(self) -> None:
+        """Inference runner should accept a checkpoint directory and RL action-space settings."""
+
+        args = parse_args(
+            [
+                "run",
+                "--algorithm",
+                "rl-capa-infer",
+                "--data-dir",
+                "Data",
+                "--rl-checkpoint-dir",
+                "outputs/plots/rl_capa_ablation_v2_500/rl-capa/checkpoints",
+                "--rl-batch-actions",
+                "10",
+                "15",
+                "20",
+                "25",
+                "30",
+            ]
+        )
+
+        kwargs = build_algorithm_kwargs(args)
+
+        self.assertEqual(kwargs["checkpoint_dir"], "outputs/plots/rl_capa_ablation_v2_500/rl-capa/checkpoints")
+        self.assertEqual(kwargs["batch_actions"], [10, 15, 20, 25, 30])
+        self.assertTrue(kwargs["normalize_advantages"])
+
     def test_runner_build_kwargs_include_stage1_ablation_rl_params(self) -> None:
         """Stage-1 ablation should receive the same RL hyperparameters as RL-CAPA."""
 

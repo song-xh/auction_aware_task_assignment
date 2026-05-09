@@ -13,6 +13,7 @@ SUPPORTED_ALGORITHMS = (
     "mra",
     "ramcom",
     "rl-capa",
+    "rl-capa-infer",
     "rl-capa-ablation",
     "rl-capa-stage1",
     "rl-capa-stage2",

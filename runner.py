@@ -96,6 +96,7 @@ def _add_common_environment_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--rl-max-grad-norm", type=float, default=0.5, help="Gradient clipping threshold for RL-CAPA.")
     parser.add_argument("--rl-disable-advantage-normalization", action="store_true", help="Disable RL-CAPA actor advantage standardization for ablation runs.")
     parser.add_argument("--rl-future-feature-window-seconds", type=int, default=300, help="True future window in seconds used by RL-CAPA stage-1 features.")
+    parser.add_argument("--rl-checkpoint-dir", default=None, help="Checkpoint directory used by eval-only RL-CAPA inference runs.")
     parser.add_argument("--rl-device", default=None, help="Optional torch device override for RL-CAPA, for example `cpu` or `cuda`.")
     parser.add_argument(
         "--prediction-window-seconds",
@@ -128,7 +129,7 @@ def build_algorithm_kwargs(args: argparse.Namespace) -> dict[str, Any]:
             "prediction_success_rate": args.prediction_success_rate,
             "prediction_sampling_seed": args.prediction_sampling_seed,
         }
-    if args.algorithm in {"rl-capa", "rl-capa-stage1", "rl-capa-ablation"}:
+    if args.algorithm in {"rl-capa", "rl-capa-infer", "rl-capa-stage1", "rl-capa-ablation"}:
         kwargs = {
             "min_batch_size": args.min_batch_size,
             "max_batch_size": args.max_batch_size,
@@ -147,6 +148,8 @@ def build_algorithm_kwargs(args: argparse.Namespace) -> dict[str, Any]:
             "future_feature_window_seconds": args.rl_future_feature_window_seconds,
             "device": args.rl_device,
         }
+        if args.algorithm == "rl-capa-infer":
+            kwargs["checkpoint_dir"] = args.rl_checkpoint_dir
         if args.algorithm == "rl-capa-ablation":
             kwargs["fixed_batch_size"] = args.batch_size
         return kwargs
