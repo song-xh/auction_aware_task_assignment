@@ -134,7 +134,7 @@ def plot_reward_comparison(
     plt.rcParams["mathtext.bf"] = f"{preferred_serif}:bold"
     plt.rcParams["mathtext.cal"] = preferred_serif
 
-    fig, ax = plt.subplots(figsize=(7.2, 4.2))
+    fig, ax = plt.subplots(figsize=(6, 5))
     colors = {
         "rl-capa": "#3B4CFF",
         "rl-capa-stage1": "#F5B02E",
@@ -155,8 +155,8 @@ def plot_reward_comparison(
 
     ax.set_xlabel("Episodes", fontsize=18)
     ax.set_ylabel("Total Reward", fontsize=18)
-    ax.set_xlim(0, 2000)
-    ax.set_xticks([0, 500, 1000, 1500, 2000])
+    ax.set_xlim(0, 1500)
+    ax.set_xticks([0, 500, 1000, 1500])
     ax.margins(x=0)
     y_lower, y_upper, y_ticks = _reward_axis_from_histories(reward_histories)
     ax.set_ylim(y_lower, y_upper)
