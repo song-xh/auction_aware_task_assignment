@@ -10,6 +10,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from algorithms.rl_capa_runner import build_rl_capa_runner
+from algorithms.rl_capa_infer_runner import build_rl_capa_infer_runner
 from capa.models import CAPAConfig
 from rl_capa.config import RLCAPAConfig, RLTrainingConfig
 from rl_capa.evaluate import evaluate_rl_capa
@@ -191,6 +192,43 @@ class RLCAPAOutputArtifactTests(unittest.TestCase):
         self.assertIn("evaluation", summary["plots"])
         self.assertIn("training_curves", summary["plots"]["training"])
         self.assertIn("TR", summary["plots"]["evaluation"])
+
+    def test_rl_infer_runner_uses_checkpoint_evaluation_only(self) -> None:
+        """Inference runner should load one checkpointed policy and skip training."""
+
+        checkpoint_dir = self.temp_root / "checkpoints"
+        checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        runner = build_rl_capa_infer_runner(
+            checkpoint_dir=checkpoint_dir,
+            batch_actions=[10, 15, 20, 25, 30],
+            future_feature_window_seconds=300,
+        )
+
+        with patch("algorithms.rl_capa_infer_runner.build_environment_seed", return_value=SimpleNamespace()), patch(
+            "algorithms.rl_capa_infer_runner.evaluate_rl_capa",
+            return_value={
+                "algorithm": "rl-capa",
+                "metrics": {"TR": 8.0, "CR": 0.8, "BPT": 0.2},
+                "plots": {
+                    "TR": str(self.temp_root / "eval" / "tr_over_batches.png"),
+                    "CR": str(self.temp_root / "eval" / "cr_over_batches.png"),
+                    "BPT": str(self.temp_root / "eval" / "bpt_over_batches.png"),
+                },
+            },
+        ) as evaluate_mock:
+            summary = runner.run(
+                environment=SimpleNamespace(),
+                output_dir=self.temp_root / "infer",
+            )
+
+        self.assertEqual(summary["algorithm"], "rl-capa-infer")
+        self.assertEqual(summary["metrics"]["TR"], 8.0)
+        self.assertEqual(summary["checkpoint_dir"], str(checkpoint_dir))
+        self.assertIn("evaluation", summary)
+        self.assertIn("plots", summary)
+        self.assertIn("evaluation", summary["plots"])
+        self.assertIn("TR", summary["plots"]["evaluation"])
+        evaluate_mock.assert_called_once()
 
 
 if __name__ == "__main__":
