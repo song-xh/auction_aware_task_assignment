@@ -260,6 +260,31 @@ def test_stage1_state_uses_eight_dimensions_and_true_future_window() -> None:
     assert long_state[2] == 2.0
 
 
+def test_trainer_total_reward_equals_delivered_tr() -> None:
+    """One full RL training episode total_reward must equal delivered TR."""
+
+    env = RLCAPAEnv(
+        environment_seed=_seed([
+            _task("a", "a-node", release=0),
+            _task("b", "b-node", release=5),
+            _task("c", "c-node", release=15),
+        ]),
+        capa_config=CAPAConfig(),
+        rl_config=RLCAPAConfig(min_batch_size=10, max_batch_size=10),
+    )
+    trainer = RLCAPATrainer(
+        env=env,
+        config=TrainingConfig(num_episodes=1, max_steps_per_episode=20, discount_factor=0.9),
+        num_batch_actions=1,
+    )
+    history = trainer.train(batch_action_values=[10])
+
+    delivered_revenue = sum(
+        assignment.local_platform_revenue for assignment in env.delivered_assignments()
+    )
+    assert history[0].total_reward == delivered_revenue
+
+
 def test_trainer_uses_eight_dimensional_stage1_networks_and_adam() -> None:
     """Trainer dimensions should match 8D stage-1 state while keeping Adam."""
 
