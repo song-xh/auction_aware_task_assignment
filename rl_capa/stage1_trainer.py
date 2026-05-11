@@ -134,6 +134,11 @@ class Stage1RLCAPATrainer:
                 assignments=0,
             )
 
+        self.env.finalize_episode()
+        terminal_reward = self.env.pop_terminal_delivered_revenue()
+        if terminal_reward:
+            buffer[-1].reward += terminal_reward
+
         # Stage-1 ablation uses undiscounted return (gamma=1) to neutralize the
         # gamma<1 + episode-length coupling that biases pi1 across batch sizes.
         # Concretely: with the same total raw revenue R distributed across T
@@ -149,7 +154,6 @@ class Stage1RLCAPATrainer:
             discount_factor=1.0,
         )
         loss_pi1, loss_v1 = self._update_networks(buffer, returns)
-        self.env.finalize_episode()
         batch_sizes = [record.batch_duration for record in buffer]
         return Stage1EpisodeLog(
             episode=episode_idx,

@@ -252,6 +252,11 @@ class RLCAPATrainer:
                 assignments=0,
             )
 
+        self.env.finalize_episode()
+        terminal_reward = self.env.pop_terminal_delivered_revenue()
+        if terminal_reward:
+            episode_buffer[-1].reward += terminal_reward
+
         # Compute discounted returns (backward cumulation)
         returns = self._compute_discounted_returns(episode_buffer)
 
@@ -260,8 +265,6 @@ class RLCAPATrainer:
         loss_pi1, loss_pi2, loss_v1, loss_v2 = self._update_networks(
             episode_buffer, returns, entropy_coeff=entropy_coeff
         )
-
-        self.env.finalize_episode()
 
         total_reward = sum(r.reward for r in episode_buffer)
         batch_sizes = [r.batch_duration for r in episode_buffer]

@@ -120,12 +120,16 @@ class Stage2RLCAPATrainer:
                 fixed_batch_size=self.fixed_batch_size,
             )
 
+        self.env.finalize_episode()
+        terminal_reward = self.env.pop_terminal_delivered_revenue()
+        if terminal_reward:
+            buffer[-1].reward += terminal_reward
+
         returns = compute_discounted_returns(
             rewards=[record.reward for record in buffer],
             discount_factor=self.config.discount_factor,
         )
         loss_pi2, loss_v2 = self._update_networks(buffer, returns)
-        self.env.finalize_episode()
         total_unassigned = sum(record.num_unassigned for record in buffer)
         total_cross = sum(record.num_cross for record in buffer)
         return Stage2EpisodeLog(
