@@ -1,0 +1,16 @@
+{
+  "axis": "service_radius",
+  "preset": "formal",
+  "algorithms": [
+    "capa",
+    "greedy",
+    "basegta",
+    "impgta",
+    "mra",
+    "ramcom"
+  ],
+  "summary": "result/remote/exp3_formal/summary.json",
+  "tmp_root": "/tmp/exp3_formal",
+  "seed_path": "/tmp/exp3_formal/canonical_seed.pkl",
+  "execution_mode": "split"
+}
