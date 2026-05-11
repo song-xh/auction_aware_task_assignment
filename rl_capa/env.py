@@ -17,7 +17,6 @@ from typing import Any, Dict, List, Mapping, Sequence, Tuple
 
 import numpy as np
 
-from capa.metrics import compute_total_revenue
 from capa.models import Assignment, CAPAConfig, Courier, Parcel
 from capa.cama import run_cama
 from env.chengdu import (
@@ -87,6 +86,7 @@ class RLCAPAEnv:
         self._delivered_assignments: list[Assignment] = []
         self._timed_out_parcels: list[Parcel] = []
         self._episode_finalized: bool = False
+        self._delivery_outcome_cursor: int = 0
 
     def reset(self) -> dict[str, Any]:
         """Reset the episode to the immutable seed state.
@@ -123,6 +123,7 @@ class RLCAPAEnv:
         self._delivered_assignments = []
         self._timed_out_parcels = []
         self._episode_finalized = False
+        self._delivery_outcome_cursor = 0
         return {
             "total_parcels": len(self._runtime.sorted_tasks),
             "start_time": self._runtime.current_time,
@@ -280,7 +281,7 @@ class RLCAPAEnv:
             unresolved_tasks=unresolved_tasks,
             processing_time_seconds=processing_time_seconds,
         )
-        step_revenue = compute_total_revenue([*local_assignments, *cross_assignments])
+        step_revenue = self._drain_new_delivered_revenue()
         self._clear_current_batch_state()
         return step_revenue
 
@@ -357,7 +358,7 @@ class RLCAPAEnv:
             unresolved_tasks=unresolved_tasks,
             processing_time_seconds=processing_time_seconds,
         )
-        step_revenue = compute_total_revenue([*local_assignments, *cross_assignments])
+        step_revenue = self._drain_new_delivered_revenue()
         self._clear_current_batch_state()
         return step_revenue
 
@@ -373,6 +374,21 @@ class RLCAPAEnv:
             assignment.parcel for assignment in timed_out_assignments_from_runtime(runtime)
         ]
         self._episode_finalized = True
+
+    def pop_terminal_delivered_revenue(self) -> float:
+        """Return delivered revenue emitted since the last drain.
+
+        Intended for use after `finalize_episode()` so trainers can credit
+        outcomes that completed during terminal route draining to the last
+        in-buffer step record. The cursor is advanced so repeated calls return
+        ``0.0``.
+
+        Returns:
+            On-time delivered local-platform revenue not yet returned by any
+            previous `apply_stage2_decisions`/`apply_capa_batch`/this method.
+        """
+
+        return self._drain_new_delivered_revenue()
 
     def is_done(self) -> bool:
         """Return whether no future arrivals or unresolved backlog remain."""
@@ -496,6 +512,33 @@ class RLCAPAEnv:
                     )
                 )
         return snapshots
+
+    def _drain_new_delivered_revenue(self) -> float:
+        """Sum on-time local-platform revenue from outcomes since last drain.
+
+        Reads ``runtime.delivery_outcomes`` from the internal cursor through
+        the current end, advances the cursor, and returns the realized
+        revenue. Off-deadline outcomes contribute zero, aligning the RL step
+        reward with the paper's on-time delivery definition.
+
+        Returns:
+            On-time delivered local-platform revenue for newly observed
+            outcomes since the previous call.
+        """
+
+        runtime = self._require_runtime()
+        outcomes = runtime.delivery_outcomes
+        cursor = self._delivery_outcome_cursor
+        total = 0.0
+        for outcome in outcomes[cursor:]:
+            if not outcome.on_time:
+                continue
+            assignment = runtime.accepted_assignments_by_id.get(outcome.task_id)
+            if assignment is None:
+                continue
+            total += float(assignment.local_platform_revenue)
+        self._delivery_outcome_cursor = len(outcomes)
+        return total
 
     def _clear_current_batch_state(self) -> None:
         """Drop per-batch temporary state after finalization."""

@@ -145,11 +145,69 @@ def test_apply_capa_batch_reuses_standard_cama_dapa_flow() -> None:
     env.reset()
     env.apply_batch_size(10)
     reward = env.apply_capa_batch()
+    env.finalize_episode()
+    terminal_reward = env.pop_terminal_delivered_revenue()
 
-    assert reward > 0.0
+    assert reward + terminal_reward > 0.0
+    delivered_revenue = sum(
+        assignment.local_platform_revenue for assignment in env.delivered_assignments()
+    )
+    assert reward + terminal_reward == delivered_revenue
     assert len(env.accepted_assignments()) == 1
     assert len(env.batch_reports()) == 1
     assert env.batch_reports()[0].input_parcels[0].parcel_id == "batch-task"
+
+
+def test_step_reward_sum_equals_delivered_revenue() -> None:
+    """Sum of step rewards plus terminal credit equals delivered TR."""
+
+    env = RLCAPAEnv(
+        environment_seed=_seed([
+            _task("local-task", "local-node"),
+            _task("cross-task", "cross-node"),
+        ]),
+        capa_config=CAPAConfig(),
+        rl_config=RLCAPAConfig(min_batch_size=10, max_batch_size=10),
+    )
+
+    env.reset()
+    rewards: list[float] = []
+    while not env.is_done():
+        env.apply_batch_size(10)
+        rewards.append(env.apply_stage2_decisions(
+            {parcel.parcel_id: 0 for parcel in env.current_eligible_parcels()}
+        ))
+    env.finalize_episode()
+    rewards[-1] += env.pop_terminal_delivered_revenue()
+
+    delivered_revenue = sum(
+        assignment.local_platform_revenue for assignment in env.delivered_assignments()
+    )
+    assert sum(rewards) == delivered_revenue
+    assert env.pop_terminal_delivered_revenue() == 0.0
+
+
+def test_timed_out_assignment_yields_zero_step_reward() -> None:
+    """A parcel accepted but delivered after deadline must not contribute reward."""
+
+    late_task = _task("late", "late-node", release=0, deadline=5)
+    env = RLCAPAEnv(
+        environment_seed=_seed([late_task], partner_count=0),
+        capa_config=CAPAConfig(),
+        rl_config=RLCAPAConfig(min_batch_size=4, max_batch_size=4),
+    )
+
+    env.reset()
+    env.apply_batch_size(4)
+    reward = env.apply_stage2_decisions(
+        {parcel.parcel_id: 0 for parcel in env.current_eligible_parcels()}
+    )
+    env.finalize_episode()
+    reward += env.pop_terminal_delivered_revenue()
+
+    assert reward == 0.0
+    assert len(env.timed_out_parcels()) == 1
+    assert env.delivered_assignments() == ()
 
 
 def test_local_stage_failure_returns_to_backlog_for_next_batch() -> None:
