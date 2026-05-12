@@ -19,7 +19,7 @@ from experiments.paper_chengdu import (
 )
 
 
-DEFAULT_DEADLINE_DISTURBANCE_ALGORITHMS = ("rl-capa", "ramcom")
+DEFAULT_DEADLINE_DISTURBANCE_ALGORITHMS = ("rl-capa-infer", "ramcom")
 
 
 def main() -> int:

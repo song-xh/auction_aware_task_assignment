@@ -67,7 +67,8 @@ DEFAULT_CHENGDU_PAPER_FIXED_CONFIG: dict[str, Any] = {
     "platform_quality_start": DEFAULT_PLATFORM_QUALITY_START,
     "platform_quality_step": DEFAULT_PLATFORM_QUALITY_STEP,
     "rl_future_feature_window_seconds": 300,
-    "rl_checkpoint_dir": Path("outputs/plots/rl_capa_ablation_v2_500/rl-capa/checkpoints"),
+    "rl_checkpoint_dir": Path("outputs/plots/rl_capa_robust_500/rl-capa/checkpoints"),
+    "rl_checkpoint_training_disturbance": "domain_randomized",
     "rl_batch_actions": [10, 15, 20, 25, 30],
     "rl_step_seconds": 60,
     "rl_episodes": 1500,
@@ -836,6 +837,12 @@ def build_paper_runner_overrides_from_fixed_config(
         },
         "rl-capa-infer": {
             "checkpoint_dir": str(fixed_config.get("rl_checkpoint_dir", DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["rl_checkpoint_dir"])),
+            "checkpoint_training_disturbance": str(
+                fixed_config.get(
+                    "rl_checkpoint_training_disturbance",
+                    DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["rl_checkpoint_training_disturbance"],
+                )
+            ),
             "min_batch_size": min(rl_batch_actions),
             "max_batch_size": max(rl_batch_actions),
             "batch_actions": list(rl_batch_actions),

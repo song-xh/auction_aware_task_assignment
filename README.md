@@ -631,3 +631,48 @@ Exp-1 — local couriers ∈ {100,200,300,400,500}, default 300
     --courier-capacity 50 --service-radius-km 1.0
 
 ```
+
+### Exp-7 / Exp-8 — Deadline 处理延迟与噪声鲁棒性
+
+Exp-7 (deadline 处理延迟) 与 Exp-8 (deadline 噪声) 现在默认以 `rl-capa-infer` 加 `ramcom` 作为对照算法：`DEFAULT_DEADLINE_DISTURBANCE_ALGORITHMS = ("rl-capa-infer", "ramcom")`。RL-CAPA 一侧加载上节 **域随机化训练** 产出的 `outputs/plots/rl_capa_robust_500/rl-capa/checkpoints` 单一 checkpoint，不再随每个扰动幅度重新训练，从而构成纯粹的鲁棒性比较。
+
+运行前提：先按照上节命令训练 `outputs/plots/rl_capa_robust_500/` checkpoint；否则 `rl-capa-infer` 加载会报 `FileNotFoundError`。
+
+Exp-7（处理延迟，axis 取自 `DEADLINE_DELAY_VALUES = (5, 10, 15, 20, 30, 60)` 秒）：
+
+```bash
+python3 -m experiments.run_chengdu_exp7_deadline_delay \
+  --execution-mode split --preset formal \
+  --output-dir outputs/plots/chengdu_exp7_deadline_delay \
+  --tmp-root /tmp/chengdu_exp7_deadline_delay \
+  --data-dir Data \
+  --num-parcels 3000 --local-couriers 200 \
+  --platforms 4 --couriers-per-platform 50 \
+  --courier-capacity 50 --service-radius-km 1.0 \
+  --batch-size 30 \
+  --task-window-start-seconds 0 --task-window-end-seconds 3600
+```
+
+Exp-8（perceived-deadline 噪声，axis 取自 `DEADLINE_NOISE_VALUES = (-20, -15, -10, -5, 0, 5, 10, 15, 20)` 百分比）：
+
+```bash
+python3 -m experiments.run_chengdu_exp8_deadline_noise \
+  --execution-mode split --preset formal \
+  --output-dir outputs/plots/chengdu_exp8_deadline_noise \
+  --tmp-root /tmp/chengdu_exp8_deadline_noise \
+  --data-dir Data \
+  --num-parcels 3000 --local-couriers 200 \
+  --platforms 4 --couriers-per-platform 50 \
+  --courier-capacity 50 --service-radius-km 1.0 \
+  --batch-size 30 \
+  --task-window-start-seconds 0 --task-window-end-seconds 3600
+```
+
+每个 axis 点的 `summary.json` 现在包含四个 TR-损失归因字段，可直接用于论文中分解损失来源：
+
+- `expired_at_intake`: 算法首次见到任务时，真实 deadline 已过 → 任务未被接受。
+- `accepted_but_timed_out`: 算法接受任务，但完成时间晚于真实 deadline → 已分配但无收益。
+- `rejected_observed_deadline`: 算法以感知 deadline 判定不可行，主动放弃 → infeasibility 拒绝。
+- `expired_due_to_true_deadline`: 上述前两项之和，等价于真实-deadline 总损失。
+
+如需切换回过去 "rl-capa 每点重训" 的 narrative（非鲁棒性实验），显式传 `--algorithms rl-capa ramcom` 覆盖默认即可。
