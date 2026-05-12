@@ -82,6 +82,10 @@ class RLCAPAEnv:
         self._current_processing_started_at: float | None = None
         self._current_batch_duration: int = 0
         self._cross_bid_history: deque[float] = deque(maxlen=cross_bid_window)
+        self._recent_batch_window = max(1, int(getattr(rl_config, "recent_batch_window", 20)))
+        self._recent_batch_stats: deque[dict[str, int]] = deque(maxlen=self._recent_batch_window)
+        self._prev_delivered_count: int = 0
+        self._prev_timed_out_count: int = 0
         self._delivered_parcels: list[Parcel] = []
         self._delivered_assignments: list[Assignment] = []
         self._timed_out_parcels: list[Parcel] = []
@@ -119,6 +123,9 @@ class RLCAPAEnv:
         self._current_processing_started_at = None
         self._current_batch_duration = 0
         self._cross_bid_history.clear()
+        self._recent_batch_stats.clear()
+        self._prev_delivered_count = 0
+        self._prev_timed_out_count = 0
         self._delivered_parcels = []
         self._delivered_assignments = []
         self._timed_out_parcels = []
@@ -130,7 +137,7 @@ class RLCAPAEnv:
         }
 
     def get_stage1_state(self) -> np.ndarray:
-        """Construct the 8-dimensional first-stage state ``s_t^(1)``."""
+        """Construct the 10-dimensional first-stage state ``s_t^(1)``."""
 
         runtime = self._require_runtime()
         pending_parcels = [legacy_task_to_parcel(task) for task in self._pending_tasks_before_next_batch()]
@@ -139,6 +146,7 @@ class RLCAPAEnv:
         total_parcels = max(1, len(runtime.sorted_tasks))
         delivered_ratio = float(len(runtime.matching_plan)) / float(total_parcels)
         expired_ratio = float(len(runtime.terminal_unassigned)) / float(total_parcels)
+        recent_timeout_ratio, recent_unresolved_ratio = self._recent_batch_ratios()
         return build_stage1_state(
             pending_parcels=pending_parcels,
             local_couriers=local_couriers,
@@ -149,6 +157,8 @@ class RLCAPAEnv:
             future_courier_count=self._count_future_local_couriers(local_couriers, future_window_end),
             delivered_ratio=delivered_ratio,
             expired_ratio=expired_ratio,
+            recent_timeout_ratio=recent_timeout_ratio,
+            recent_unresolved_ratio=recent_unresolved_ratio,
         )
 
     def apply_batch_size(self, batch_size: int) -> None:
@@ -192,6 +202,7 @@ class RLCAPAEnv:
         """
 
         runtime = self._require_runtime()
+        prepared_batch = self._require_current_batch()
         target_parcels = list(self.current_eligible_parcels() if parcels is None else parcels)
         local_couriers = self._snapshot_local_couriers()
         cross_couriers = self._snapshot_partner_couriers()
@@ -200,6 +211,12 @@ class RLCAPAEnv:
             if self._cross_bid_history
             else 0.0
         )
+        observed_slack_by_parcel = self._build_observed_slack_lookup(
+            prepared_batch.eligible_tasks,
+            target_parcels,
+            runtime.current_time,
+        )
+        recent_timeout_ratio, _ = self._recent_batch_ratios()
         return build_stage2_states(
             unassigned_parcels=target_parcels,
             local_couriers=local_couriers,
@@ -208,6 +225,8 @@ class RLCAPAEnv:
             batch_size=self._current_batch_duration,
             local_payment_ratio=self._capa_config.local_payment_ratio_zeta,
             avg_cross_bid=avg_cross_bid,
+            observed_slack_by_parcel=observed_slack_by_parcel,
+            recent_timeout_ratio=recent_timeout_ratio,
         )
 
     def apply_stage2_decisions(self, decisions: Dict[str, int]) -> float:
@@ -280,6 +299,10 @@ class RLCAPAEnv:
             cross_assignments=cross_assignments,
             unresolved_tasks=unresolved_tasks,
             processing_time_seconds=processing_time_seconds,
+        )
+        self._record_recent_batch_stats(
+            input_count=len(prepared_batch.input_tasks),
+            unresolved_count=len(unresolved_tasks),
         )
         step_revenue = self._drain_new_delivered_revenue()
         self._clear_current_batch_state()
@@ -357,6 +380,10 @@ class RLCAPAEnv:
             cross_assignments=cross_assignments,
             unresolved_tasks=unresolved_tasks,
             processing_time_seconds=processing_time_seconds,
+        )
+        self._record_recent_batch_stats(
+            input_count=len(prepared_batch.input_tasks),
+            unresolved_count=len(unresolved_tasks),
         )
         step_revenue = self._drain_new_delivered_revenue()
         self._clear_current_batch_state()
@@ -565,6 +592,68 @@ class RLCAPAEnv:
             total += float(assignment.local_platform_revenue)
         self._delivery_outcome_cursor = len(outcomes)
         return total
+
+    def _record_recent_batch_stats(self, input_count: int, unresolved_count: int) -> None:
+        """Track per-batch deltas used to derive drift-signal ratios.
+
+        Args:
+            input_count: Total tasks entering the just-finalized batch.
+            unresolved_count: Tasks the algorithm could not match within the
+                batch's perceived deadline.
+        """
+
+        runtime = self._require_runtime()
+        delivered_total = len(runtime.delivered_assignment_ids)
+        timed_out_total = len(runtime.timed_out_assignment_ids)
+        delta_delivered = max(0, delivered_total - self._prev_delivered_count)
+        delta_timed_out = max(0, timed_out_total - self._prev_timed_out_count)
+        accepted_delta = delta_delivered + delta_timed_out
+        self._recent_batch_stats.append(
+            {
+                "input": int(input_count),
+                "unresolved": int(unresolved_count),
+                "accepted": int(accepted_delta),
+                "timed_out": int(delta_timed_out),
+            }
+        )
+        self._prev_delivered_count = delivered_total
+        self._prev_timed_out_count = timed_out_total
+
+    def _recent_batch_ratios(self) -> tuple[float, float]:
+        """Return ``(recent_timeout_ratio, recent_unresolved_ratio)`` in `[0, 1]`."""
+
+        if not self._recent_batch_stats:
+            return 0.0, 0.0
+        total_input = sum(stat["input"] for stat in self._recent_batch_stats)
+        accepted = sum(stat["accepted"] for stat in self._recent_batch_stats)
+        timed_out = sum(stat["timed_out"] for stat in self._recent_batch_stats)
+        unresolved = sum(stat["unresolved"] for stat in self._recent_batch_stats)
+        timeout_ratio = timed_out / max(1, accepted)
+        unresolved_ratio = unresolved / max(1, total_input)
+        return min(1.0, timeout_ratio), min(1.0, unresolved_ratio)
+
+    def _build_observed_slack_lookup(
+        self,
+        eligible_tasks: Sequence[Any],
+        eligible_parcels: Sequence[Parcel],
+        current_time: int,
+    ) -> Dict[str, float]:
+        """Compute per-parcel observed remaining-slack ratios in `[0, 1]`.
+
+        Each ratio is ``max(0, observed_deadline - current_time) /
+        max(observed_deadline - observed_release, 1)``, where both observed
+        fields come from the originating legacy task via
+        ``get_model_release_time`` and the parcel's already-perceived
+        ``deadline`` attribute.
+        """
+
+        lookup: Dict[str, float] = {}
+        for task, parcel in zip(eligible_tasks, eligible_parcels):
+            observed_release = float(get_model_release_time(task))
+            window = max(float(parcel.deadline) - observed_release, 1.0)
+            remaining = max(0.0, float(parcel.deadline) - float(current_time))
+            lookup[parcel.parcel_id] = min(1.0, remaining / window)
+        return lookup
 
     def _clear_current_batch_state(self) -> None:
         """Drop per-batch temporary state after finalization."""

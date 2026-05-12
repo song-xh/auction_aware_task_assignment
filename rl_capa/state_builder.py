@@ -9,7 +9,7 @@ Provides:
 
 from __future__ import annotations
 
-from typing import List, Sequence
+from typing import List, Mapping, Sequence
 
 import numpy as np
 
@@ -17,8 +17,8 @@ from capa.cama import is_feasible_local_match
 from capa.models import Courier, Parcel
 
 
-STAGE1_STATE_DIM = 8
-STAGE2_STATE_DIM = 9
+STAGE1_STATE_DIM = 10
+STAGE2_STATE_DIM = 11
 
 
 class RunningNormalizer:
@@ -90,12 +90,16 @@ def build_stage1_state(
     future_courier_count: int = 0,
     delivered_ratio: float = 0.0,
     expired_ratio: float = 0.0,
+    recent_timeout_ratio: float = 0.0,
+    recent_unresolved_ratio: float = 0.0,
 ) -> np.ndarray:
-    """Construct the 8-dim first-stage state s_t^(1).
+    """Construct the 10-dim first-stage state s_t^(1).
 
-    Features (spec Section 3.1, extended for review_0507.md §8):
-      [|Gamma_t^Loc|, |C_t^Loc|, N_Z^Gamma, N_Z^C, |D|, |T|,
-       delivered_ratio, expired_ratio]
+    Features (spec Section 3.1, extended for review_0507.md §8 and
+    review_0512.md §P3):
+      [|Gamma_t^Loc|, |C_t^Loc|, N_Z^Gamma, N_Z^C, avg_distance, avg_urgency,
+       delivered_ratio, expired_ratio,
+       recent_timeout_ratio, recent_unresolved_ratio]
 
     Args:
         pending_parcels: Parcels awaiting assignment.
@@ -107,9 +111,14 @@ def build_stage1_state(
         future_courier_count: True future local courier availability count.
         delivered_ratio: Fraction of total parcels already delivered/accepted.
         expired_ratio: Fraction of total parcels already past their deadline.
+        recent_timeout_ratio: Sliding-window ratio of recent accepted parcels
+            that completed after their true deadline (drift signal).
+        recent_unresolved_ratio: Sliding-window ratio of recent batch input
+            parcels that the algorithm could not match within the perceived
+            deadline (drift signal).
 
     Returns:
-        Float32 array of shape (8,).
+        Float32 array of shape (10,).
     """
     pending_count = float(len(pending_parcels))
     available_count = float(
@@ -152,6 +161,8 @@ def build_stage1_state(
             avg_urgency,
             float(delivered_ratio),
             float(expired_ratio),
+            float(recent_timeout_ratio),
+            float(recent_unresolved_ratio),
         ],
         dtype=np.float32,
     )
@@ -165,12 +176,15 @@ def build_stage2_states(
     batch_size: int,
     local_payment_ratio: float = 0.2,
     avg_cross_bid: float = 0.0,
+    observed_slack_by_parcel: Mapping[str, float] | None = None,
+    recent_timeout_ratio: float = 0.0,
 ) -> List[np.ndarray]:
-    """Construct per-parcel 9-dim second-stage states s_{t,i}^(2).
+    """Construct per-parcel 11-dim second-stage states s_{t,i}^(2).
 
-    Features (spec Section 3.2):
+    Features (spec Section 3.2, extended for review_0512.md §P3):
       [t_tau_i, t_cur, v_tau_i, |DeltaGamma_t|, |C_t^Loc|,
-       u_bar_t^Loc, |C_t^Cross|, b_bar_t^Cross, Delta_b]
+       u_bar_t^Loc, |C_t^Cross|, b_bar_t^Cross, Delta_b,
+       observed_slack_ratio, recent_timeout_ratio]
 
     Args:
         unassigned_parcels: Parcels not assigned by CAMA.
@@ -180,9 +194,13 @@ def build_stage2_states(
         batch_size: First-stage action a_t^(1).
         local_payment_ratio: Zeta for Rc_hat estimation.
         avg_cross_bid: Sliding average of recent cross-platform bids.
+        observed_slack_by_parcel: Optional per-parcel observed remaining slack
+            ratio in `[0, 1]`. Defaults to 0 when omitted.
+        recent_timeout_ratio: Sliding-window timeout ratio broadcast to every
+            parcel state (drift signal).
 
     Returns:
-        List of float32 arrays, each shape (9,).
+        List of float32 arrays, each shape (11,).
     """
     available_local = float(
         sum(1 for c in local_couriers if c.available_from <= current_time)
@@ -197,9 +215,11 @@ def build_stage2_states(
     )
     unassigned_count = float(len(unassigned_parcels))
 
+    slack_lookup = observed_slack_by_parcel or {}
     states: List[np.ndarray] = []
     for parcel in unassigned_parcels:
         v_tau = parcel.fare * (1.0 - local_payment_ratio)
+        observed_slack_ratio = float(slack_lookup.get(parcel.parcel_id, 0.0))
         state = np.array(
             [
                 float(parcel.deadline),
@@ -211,6 +231,8 @@ def build_stage2_states(
                 float(cross_courier_count),
                 avg_cross_bid,
                 float(batch_size),
+                observed_slack_ratio,
+                float(recent_timeout_ratio),
             ],
             dtype=np.float32,
         )
