@@ -413,9 +413,15 @@ def expected_future_local_platform_revenue(
     )
 
 
-def should_dispatch_inner_task_impgta(task: Any, idle_worker_count: int, future_tasks: Sequence[Any]) -> bool:
-    """Evaluate ImpGTA's inner conditions for the local platform."""
-    if idle_worker_count > len(future_tasks):
+def future_task_weight_demand(future_tasks: Sequence[Any]) -> float:
+    """Return the total parcel-weight demand represented by a predicted task window."""
+
+    return sum(max(0.0, float(getattr(task, "weight", 1.0))) for task in future_tasks)
+
+
+def should_dispatch_inner_task_impgta(task: Any, available_capacity_weight: float, future_tasks: Sequence[Any]) -> bool:
+    """Evaluate ImpGTA's inner conditions under the CPUL parcel-capacity model."""
+    if float(available_capacity_weight) > future_task_weight_demand(future_tasks):
         return True
     return float(getattr(task, "fare")) >= expected_future_reward(future_tasks)
 
@@ -445,7 +451,7 @@ def estimate_impgta_outer_task_value(
 
 def should_bid_outer_platform_impgta(
     current_task_value: float,
-    idle_worker_count: int,
+    available_capacity_weight: float,
     future_tasks: Sequence[Any],
     local_payment_ratio: float = DEFAULT_LOCAL_PAYMENT_RATIO,
 ) -> bool:
@@ -454,8 +460,8 @@ def should_bid_outer_platform_impgta(
     Args:
         current_task_value: Net revenue expected from accepting the current
             cross-platform task.
-        idle_worker_count: Available residual courier capacity in the prediction
-            window.
+        available_capacity_weight: Available residual courier capacity weight in
+            the prediction window.
         future_tasks: Predicted own-task stream for the cooperating platform.
         local_payment_ratio: Fixed courier payment ratio for own-task net
             revenue.
@@ -465,7 +471,7 @@ def should_bid_outer_platform_impgta(
         is no worse than the predicted own-task net revenue.
     """
 
-    if idle_worker_count > len(future_tasks):
+    if float(available_capacity_weight) > future_task_weight_demand(future_tasks):
         return True
     return float(current_task_value) >= expected_future_local_platform_revenue(
         future_tasks,
@@ -675,7 +681,7 @@ def _run_gta_environment(
             if local_bid is not None:
                 if algorithm == "basegta" or should_dispatch_inner_task_impgta(
                     task=task,
-                    idle_worker_count=count_available_capacity_slots(
+                    available_capacity_weight=count_available_capacity_slots(
                         local_couriers,
                         current_time,
                         prediction_window_seconds or 0,
@@ -741,7 +747,7 @@ def _run_gta_environment(
                             dispatch_cost=partner_bid.dispatch_cost,
                             cross_platform_sharing_rate_mu2=cross_platform_sharing_rate_mu2,
                         ),
-                        idle_worker_count=count_available_capacity_slots(
+                        available_capacity_weight=count_available_capacity_slots(
                             partner_couriers,
                             current_time,
                             prediction_window_seconds or 0,

@@ -22,6 +22,7 @@ from baselines.gta import (
     run_impgta_baseline_environment,
     settle_aim_auction,
     should_bid_outer_platform_impgta,
+    should_dispatch_inner_task_impgta,
 )
 from baselines.mra import run_mra_baseline_environment
 from baselines.ramcom import choose_outer_payment_by_expected_revenue, run_ramcom_baseline_environment, worker_acceptance_probability
@@ -321,6 +322,24 @@ class MetricAlignmentTest(unittest.TestCase):
         self.assertEqual(result["accepted_assignments"], 4)
         self.assertEqual(result["local_assignment_count"], 4)
 
+    def test_impgta_inner_condition_compares_capacity_to_future_weight(self) -> None:
+        """ImpGTA local gating should compare residual capacity against future parcel weight."""
+
+        current_task = SimpleNamespace(num="t0", fare=10.0, weight=1.0)
+        future_tasks = [
+            SimpleNamespace(num="f1", fare=100.0, weight=3.0),
+            SimpleNamespace(num="f2", fare=100.0, weight=3.0),
+            SimpleNamespace(num="f3", fare=100.0, weight=3.0),
+        ]
+
+        self.assertFalse(
+            should_dispatch_inner_task_impgta(
+                task=current_task,
+                available_capacity_weight=5.0,
+                future_tasks=future_tasks,
+            )
+        )
+
     def test_impgta_outer_prediction_success_rate_changes_partner_bid_decision(self) -> None:
         """ImpGTA outer bidding should use partner own-task predictions, not an empty future window."""
 
@@ -459,7 +478,7 @@ class MetricAlignmentTest(unittest.TestCase):
         self.assertTrue(
             should_bid_outer_platform_impgta(
                 current_task_value=current_revenue,
-                idle_worker_count=0,
+                available_capacity_weight=0,
                 future_tasks=future_tasks,
             )
         )
