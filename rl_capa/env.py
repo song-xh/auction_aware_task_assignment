@@ -375,6 +375,32 @@ class RLCAPAEnv:
         ]
         self._episode_finalized = True
 
+    def disposition_breakdown(self) -> Dict[str, int]:
+        """Return per-disposition task counts for TR-loss attribution.
+
+        Keys:
+            expired_at_intake: True deadline already past when the algorithm
+                first sees the task (loss source A).
+            accepted_but_timed_out: Algorithm accepted the task but realized
+                completion exceeded the true deadline (loss source B).
+            rejected_observed_deadline: Algorithm dropped the task as
+                infeasible against its perceived deadline (loss source C).
+            expired_due_to_true_deadline: Aggregate
+                ``expired_at_intake + accepted_but_timed_out`` capturing total
+                true-deadline failures.
+        """
+
+        runtime = self._require_runtime()
+        accepted_but_timed_out = len(runtime.timed_out_assignment_ids)
+        expired_at_intake = int(runtime.expired_at_intake_count)
+        rejected_observed_deadline = int(runtime.rejected_observed_deadline_count)
+        return {
+            "expired_at_intake": expired_at_intake,
+            "accepted_but_timed_out": accepted_but_timed_out,
+            "rejected_observed_deadline": rejected_observed_deadline,
+            "expired_due_to_true_deadline": expired_at_intake + accepted_but_timed_out,
+        }
+
     def pop_terminal_delivered_revenue(self) -> float:
         """Return delivered revenue emitted since the last drain.
 

@@ -126,6 +126,12 @@ class RLCAPAOutputArtifactTests(unittest.TestCase):
             delivered_parcels=lambda: ["p1", "p2"],
             accepted_assignments=lambda: ["a1", "a2"],
             timed_out_parcels=lambda: [],
+            disposition_breakdown=lambda: {
+                "expired_at_intake": 0,
+                "accepted_but_timed_out": 0,
+                "rejected_observed_deadline": 0,
+                "expired_due_to_true_deadline": 0,
+            },
         )
         fake_result = SimpleNamespace(
             total_revenue=12.0,

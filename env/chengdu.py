@@ -224,6 +224,8 @@ class ChengduBatchRuntime:
     next_task_index: int = 0
     backlog: list[Any] = field(default_factory=list)
     terminal_unassigned: list[Any] = field(default_factory=list)
+    expired_at_intake_count: int = 0
+    rejected_observed_deadline_count: int = 0
     batch_reports: list[BatchReport] = field(default_factory=list)
     matching_plan: list[Assignment] = field(default_factory=list)
     accepted_assignment_ids: set[str] = field(default_factory=set)
@@ -1488,6 +1490,7 @@ def prepare_chengdu_batch(
         task for task in input_tasks if get_true_deadline(task) < runtime.current_time
     ]
     runtime.terminal_unassigned.extend(expired_tasks)
+    runtime.expired_at_intake_count += len(expired_tasks)
     return PreparedChengduBatch(
         batch_index=runtime.batch_index,
         batch_end_time=batch_end_time,
@@ -1843,6 +1846,7 @@ def finalize_chengdu_batch(
             speed_m_per_s=runtime.speed_m_per_s,
         )
         runtime.terminal_unassigned.extend(terminal_tasks)
+        runtime.rejected_observed_deadline_count += len(terminal_tasks)
         backlog = retriable_tasks
     runtime.backlog = backlog
     report = BatchReport(
@@ -2070,6 +2074,7 @@ def run_time_stepped_chengdu_batches(
 
     if runtime.backlog:
         runtime.terminal_unassigned.extend(runtime.backlog)
+        runtime.rejected_observed_deadline_count += len(runtime.backlog)
         runtime.batch_reports.append(
             BatchReport(
                 batch_index=len(runtime.batch_reports) + 1,

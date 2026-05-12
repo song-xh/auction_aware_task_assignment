@@ -266,6 +266,8 @@ def run_ramcom_baseline_environment(
     accepted_task_ids: set[str] = set()
     delivered_task_ids: set[str] = set()
     timed_out_task_ids: set[str] = set()
+    expired_at_intake_count = 0
+    rejected_observed_deadline_count = 0
     accepted_revenues_by_task_id: dict[str, float] = {}
     assignment_modes_by_task_id: dict[str, str] = {}
     partner_platform_by_task_id: dict[str, str] = {}
@@ -316,6 +318,7 @@ def run_ramcom_baseline_environment(
             if get_true_deadline(task) < current_time:
                 trace_entry["branch"] = "expired"
                 trace_entry["reject_reason"] = "deadline_expired"
+                expired_at_intake_count += 1
                 decision_trace.append(trace_entry)
                 if progress_callback is not None and (task_index == total_tasks or task_index % progress_stride == 0):
                     progress_callback(
@@ -455,6 +458,8 @@ def run_ramcom_baseline_environment(
                     trace_entry["branch"] = "outer_no_candidate"
                     trace_entry["reject_reason"] = "no_feasible_outer"
             decision_trace.append(trace_entry)
+            if trace_entry["reject_reason"] in {"no_feasible_outer", "rejected_by_all", "invalid_payment"}:
+                rejected_observed_deadline_count += 1
 
             processing_time_seconds += max(
                 0.0,
@@ -508,6 +513,10 @@ def run_ramcom_baseline_environment(
         "delivered_parcels": delivered_parcels,
         "accepted_assignments": accepted_assignments,
         "timed_out_parcels": len(timed_out_task_ids),
+        "expired_at_intake": expired_at_intake_count,
+        "accepted_but_timed_out": len(timed_out_task_ids),
+        "rejected_observed_deadline": rejected_observed_deadline_count,
+        "expired_due_to_true_deadline": expired_at_intake_count + len(timed_out_task_ids),
         "local_assignment_count": local_assignment_count,
         "cross_assignment_count": cross_assignment_count,
         "unresolved_parcel_count": max(0, total_tasks - delivered_parcels - len(timed_out_task_ids)),

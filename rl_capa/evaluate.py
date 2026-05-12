@@ -74,6 +74,7 @@ def evaluate_rl_capa(
             "delivered_parcels": len(env.delivered_parcels()),
             "accepted_assignments": len(env.accepted_assignments()),
             "timed_out_parcels": len(env.timed_out_parcels()),
+            **env.disposition_breakdown(),
         },
     }
     output_dir.mkdir(parents=True, exist_ok=True)
