@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
+import random
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
 from capa.models import CAPAConfig
+from experiments.deadline_disturbance import DEADLINE_DELAY_VALUES, DEADLINE_NOISE_VALUES
 from experiments.seeding import build_environment_seed
 from rl_capa.config import RLCAPAConfig, RLTrainingConfig
 from rl_capa.evaluate import evaluate_rl_capa
@@ -36,6 +38,10 @@ class RLCAPAAlgorithmRunner(AlgorithmRunner):
         normalize_advantages: bool = True,
         future_feature_window_seconds: int = 300,
         device: str | None = None,
+        domain_randomize: bool = False,
+        domain_randomize_delays: Sequence[float] | None = None,
+        domain_randomize_noises: Sequence[float] | None = None,
+        domain_randomize_seed: int = 0,
     ) -> None:
         """Store the RL-CAPA hyperparameters exposed through the unified runner.
 
@@ -53,6 +59,15 @@ class RLCAPAAlgorithmRunner(AlgorithmRunner):
             normalize_advantages: Whether actor advantages are standardized during training.
             future_feature_window_seconds: True future window used by stage-1 features.
             device: Optional torch device override.
+            domain_randomize: When True, sample a ``(delay_seconds,
+                noise_percent)`` pair per episode and inject the disturbance
+                onto the cloned environment before training begins.
+            domain_randomize_delays: Optional override for the delay support.
+                Defaults to ``(0,) + DEADLINE_DELAY_VALUES``.
+            domain_randomize_noises: Optional override for the deadline-noise
+                support. Defaults to ``(0,) + DEADLINE_NOISE_VALUES``.
+            domain_randomize_seed: RNG seed for the domain-randomization
+                sampler so training stays reproducible.
         """
 
         self._min_batch_size = min_batch_size
@@ -71,6 +86,14 @@ class RLCAPAAlgorithmRunner(AlgorithmRunner):
         self._normalize_advantages = normalize_advantages
         self._future_feature_window_seconds = future_feature_window_seconds
         self._device = device
+        self._domain_randomize = bool(domain_randomize)
+        self._domain_randomize_delays = (
+            None if domain_randomize_delays is None else [float(value) for value in domain_randomize_delays]
+        )
+        self._domain_randomize_noises = (
+            None if domain_randomize_noises is None else [float(value) for value in domain_randomize_noises]
+        )
+        self._domain_randomize_seed = int(domain_randomize_seed)
 
     def run(
         self,
@@ -117,6 +140,7 @@ class RLCAPAAlgorithmRunner(AlgorithmRunner):
             normalize_advantages=self._normalize_advantages,
             device=self._device,
         )
+        disturbance_sampler = self._build_disturbance_sampler()
         training_summary = train_rl_capa(
             environment_seed=environment_seed,
             capa_config=capa_config,
@@ -124,6 +148,8 @@ class RLCAPAAlgorithmRunner(AlgorithmRunner):
             training_config=training_config,
             output_dir=normalized_output_dir,
             progress_callback=progress_callback,
+            disturbance_sampler=disturbance_sampler,
+            disturbance_seed=self._domain_randomize_seed,
         )
         evaluation_summary = evaluate_rl_capa(
             environment_seed=environment_seed,
@@ -148,6 +174,38 @@ class RLCAPAAlgorithmRunner(AlgorithmRunner):
         return summary
 
 
+    def _build_disturbance_sampler(self) -> Callable[[int, random.Random], Mapping[str, float]] | None:
+        """Return a per-episode disturbance sampler when domain randomization is on.
+
+        Delay support defaults to ``(0,) + DEADLINE_DELAY_VALUES`` and noise
+        support defaults to ``(0,) + DEADLINE_NOISE_VALUES`` so the clean
+        ``(0, 0)`` corner stays in the support and the policy still encounters
+        clean episodes.
+        """
+
+        if not self._domain_randomize:
+            return None
+        delays = (
+            tuple(self._domain_randomize_delays)
+            if self._domain_randomize_delays is not None
+            else (0.0, *(float(value) for value in DEADLINE_DELAY_VALUES))
+        )
+        noises = (
+            tuple(self._domain_randomize_noises)
+            if self._domain_randomize_noises is not None
+            else (0.0, *(float(value) for value in DEADLINE_NOISE_VALUES))
+        )
+
+        def _sample(episode_index: int, rng: random.Random) -> Mapping[str, float]:
+            del episode_index
+            return {
+                "delay_seconds": float(rng.choice(delays)),
+                "noise_percent": float(rng.choice(noises)),
+            }
+
+        return _sample
+
+
 def build_rl_capa_runner(
     min_batch_size: int = 10,
     max_batch_size: int = 20,
@@ -165,6 +223,10 @@ def build_rl_capa_runner(
     normalize_advantages: bool = True,
     future_feature_window_seconds: int = 300,
     device: str | None = None,
+    domain_randomize: bool = False,
+    domain_randomize_delays: Sequence[float] | None = None,
+    domain_randomize_noises: Sequence[float] | None = None,
+    domain_randomize_seed: int = 0,
 ) -> RLCAPAAlgorithmRunner:
     """Build the unified RL-CAPA runner with explicit training hyperparameters."""
 
@@ -185,4 +247,8 @@ def build_rl_capa_runner(
         normalize_advantages=normalize_advantages,
         future_feature_window_seconds=future_feature_window_seconds,
         device=device,
+        domain_randomize=domain_randomize,
+        domain_randomize_delays=domain_randomize_delays,
+        domain_randomize_noises=domain_randomize_noises,
+        domain_randomize_seed=domain_randomize_seed,
     )

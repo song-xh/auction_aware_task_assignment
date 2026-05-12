@@ -14,7 +14,7 @@ from capa.models import CAPAConfig
 from experiments.seeding import ChengduEnvironmentSeed
 
 from .config import RLCAPAConfig, RLTrainingConfig
-from .env import RLCAPAEnv
+from .env import DisturbanceSampler, RLCAPAEnv
 from .trainer import RLCAPATrainer, TrainingConfig
 from .visualize import plot_training_curves
 
@@ -26,6 +26,8 @@ def train_rl_capa(
     training_config: RLTrainingConfig,
     output_dir: Path,
     progress_callback: Callable[[Mapping[str, float | int | bool]], None] | None = None,
+    disturbance_sampler: DisturbanceSampler | None = None,
+    disturbance_seed: int = 0,
 ) -> dict[str, Any]:
     """Train the hierarchical actor-critic RL-CAPA policy.
 
@@ -48,7 +50,10 @@ def train_rl_capa(
         environment_seed=environment_seed,
         capa_config=capa_config,
         rl_config=rl_config,
+        disturbance_sampler=disturbance_sampler,
+        disturbance_seed=disturbance_seed,
     )
+    episode_disturbances: list[dict[str, float]] = []
     trainer = RLCAPATrainer(
         env=env,
         config=TrainingConfig(
@@ -84,6 +89,7 @@ def train_rl_capa(
             batch=f"{float(payload['avg_batch_size']):.1f}",
             trunc="yes" if bool(payload["truncated"]) else "no",
         )
+        episode_disturbances.append(dict(env.last_disturbance))
         if progress_callback is not None:
             progress_callback(payload)
 
@@ -116,6 +122,7 @@ def train_rl_capa(
         "discount_factor": training_config.discount_factor,
         "checkpoint_dir": str(checkpoint_dir),
         "device": str(trainer.device),
+        "episode_disturbance": episode_disturbances,
         "plots": {
             "training_curves": str(training_plot_path),
         },

@@ -99,6 +99,31 @@ def _add_common_environment_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--rl-checkpoint-dir", default=None, help="Checkpoint directory used by eval-only RL-CAPA inference runs.")
     parser.add_argument("--rl-device", default=None, help="Optional torch device override for RL-CAPA, for example `cpu` or `cuda`.")
     parser.add_argument(
+        "--rl-domain-randomize",
+        action="store_true",
+        help="Randomize (delay, noise) disturbance per episode during RL-CAPA training. Produces one robust checkpoint reused across Exp-7/Exp-8 axes.",
+    )
+    parser.add_argument(
+        "--rl-domain-randomize-delays",
+        type=float,
+        nargs="+",
+        default=None,
+        help="Override the per-episode delay support (seconds). Defaults to 0 plus DEADLINE_DELAY_VALUES.",
+    )
+    parser.add_argument(
+        "--rl-domain-randomize-noises",
+        type=float,
+        nargs="+",
+        default=None,
+        help="Override the per-episode deadline-noise support (percent). Defaults to 0 plus DEADLINE_NOISE_VALUES.",
+    )
+    parser.add_argument(
+        "--rl-domain-randomize-seed",
+        type=int,
+        default=0,
+        help="Seed for the disturbance sampler used by --rl-domain-randomize.",
+    )
+    parser.add_argument(
         "--prediction-window-seconds",
         type=int,
         default=DEFAULT_IMPGTA_WINDOW_SECONDS,
@@ -148,6 +173,15 @@ def build_algorithm_kwargs(args: argparse.Namespace) -> dict[str, Any]:
             "future_feature_window_seconds": args.rl_future_feature_window_seconds,
             "device": args.rl_device,
         }
+        if args.algorithm == "rl-capa":
+            kwargs.update(
+                {
+                    "domain_randomize": args.rl_domain_randomize,
+                    "domain_randomize_delays": args.rl_domain_randomize_delays,
+                    "domain_randomize_noises": args.rl_domain_randomize_noises,
+                    "domain_randomize_seed": args.rl_domain_randomize_seed,
+                }
+            )
         if args.algorithm == "rl-capa-infer":
             kwargs["checkpoint_dir"] = args.rl_checkpoint_dir
         if args.algorithm == "rl-capa-ablation":

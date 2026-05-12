@@ -10,10 +10,11 @@ decision points:
 
 from __future__ import annotations
 
+import random
 from collections import deque
 from dataclasses import dataclass
 from time import perf_counter
-from typing import Any, Dict, List, Mapping, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Sequence, Tuple
 
 import numpy as np
 
@@ -36,9 +37,13 @@ from env.chengdu import (
     run_chengdu_direct_local_matching,
     timed_out_assignments_from_runtime,
 )
+from experiments.deadline_disturbance import apply_deadline_noise, apply_processing_delay
 from experiments.seeding import ChengduEnvironmentSeed, clone_environment_from_seed
 from rl_capa.config import RLCAPAConfig
 from rl_capa.state_builder import build_stage1_state, build_stage2_states
+
+
+DisturbanceSampler = Callable[[int, random.Random], Mapping[str, float]]
 
 
 @dataclass(frozen=True)
@@ -58,6 +63,8 @@ class RLCAPAEnv:
         capa_config: CAPAConfig,
         rl_config: RLCAPAConfig,
         cross_bid_window: int = 20,
+        disturbance_sampler: DisturbanceSampler | None = None,
+        disturbance_seed: int = 0,
     ) -> None:
         """Initialize the RL-CAPA environment wrapper.
 
@@ -66,12 +73,23 @@ class RLCAPAEnv:
             capa_config: CAPA configuration reused by CAMA and DAPA.
             rl_config: RL-specific configuration such as batch action values.
             cross_bid_window: Window size for recent winning cross bids.
+            disturbance_sampler: Optional callable invoked once per ``reset()``
+                to inject domain-randomized deadline disturbances into the
+                cloned environment. Receives ``(episode_index, rng)`` and must
+                return a mapping containing ``delay_seconds`` and
+                ``noise_percent`` floats.
+            disturbance_seed: Seed used to initialise the sampler RNG so
+                training runs remain reproducible.
         """
 
         self._seed = environment_seed
         self._capa_config = capa_config
         self._rl_config = rl_config
         self._cross_bid_window = cross_bid_window
+        self._disturbance_sampler = disturbance_sampler
+        self._disturbance_rng = random.Random(int(disturbance_seed))
+        self._episode_index = 0
+        self.last_disturbance: Dict[str, float] = {"delay_seconds": 0.0, "noise_percent": 0.0}
 
         self._environment: ChengduEnvironment | None = None
         self._runtime: ChengduBatchRuntime | None = None
@@ -100,6 +118,7 @@ class RLCAPAEnv:
         """
 
         self._environment = clone_environment_from_seed(self._seed)
+        self._apply_episode_disturbance(self._environment)
         self._runtime = initialize_chengdu_batch_runtime(
             tasks=self._environment.tasks,
             local_couriers=self._environment.local_couriers,
@@ -592,6 +611,28 @@ class RLCAPAEnv:
             total += float(assignment.local_platform_revenue)
         self._delivery_outcome_cursor = len(outcomes)
         return total
+
+    def _apply_episode_disturbance(self, environment: ChengduEnvironment) -> None:
+        """Sample and inject per-episode disturbances on the cloned environment.
+
+        When no sampler is configured the episode runs clean and
+        ``self.last_disturbance`` is zeroed so downstream loggers can record
+        an explicit ``(0, 0)`` entry.
+        """
+
+        if self._disturbance_sampler is None:
+            self.last_disturbance = {"delay_seconds": 0.0, "noise_percent": 0.0}
+            self._episode_index += 1
+            return
+        sample = dict(self._disturbance_sampler(self._episode_index, self._disturbance_rng))
+        delay = float(sample.get("delay_seconds", 0.0))
+        noise = float(sample.get("noise_percent", 0.0))
+        if delay > 0:
+            apply_processing_delay(environment.tasks, delay)
+        if noise != 0:
+            apply_deadline_noise(environment.tasks, noise)
+        self.last_disturbance = {"delay_seconds": delay, "noise_percent": noise}
+        self._episode_index += 1
 
     def _record_recent_batch_stats(self, input_count: int, unresolved_count: int) -> None:
         """Track per-batch deltas used to derive drift-signal ratios.

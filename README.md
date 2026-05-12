@@ -97,6 +97,53 @@ python3 runner.py run \
 
 这个诊断配方用于观察逐步收敛过程，不是为了把 cross rate 人为抬高。若本地 courier 足以几乎完成全部包裹，且跨平台完成需要扣除合作平台 payment，那么 actor-critic 后期学到 cross rate 接近 `0` 可能是收益目标下的合理确定性策略，而不是绘图平滑导致。新的 `training_summary.json` 会额外记录 `entropy_pi1`、`entropy_pi2`、`mean_batch_size`，训练图也会显示 policy entropy，用于区分真实策略坍缩和图表平滑。
 
+### RL-CAPA 域随机化 (Domain Randomization) 训练配方 — 用于 Exp-7/Exp-8
+
+Exp-7 (deadline 处理延迟) 与 Exp-8 (deadline 噪声) 的鲁棒性比较需要 **一次性** 训练一份对 deadline 扰动鲁棒的 RL-CAPA checkpoint，再以 `rl-capa-infer` 加载这份 checkpoint 进行多扰动幅度推断（详见下面 Exp-7/Exp-8 一节）。训练命令：
+
+```bash
+python3 runner.py run \
+  --algorithm rl-capa \
+  --data-dir Data \
+  --num-parcels 3000 \
+  --local-couriers 200 \
+  --platforms 4 \
+  --couriers-per-platform 50 \
+  --courier-capacity 50 \
+  --service-radius-km 1.0 \
+  --task-window-start-seconds 0 \
+  --task-window-end-seconds 3600 \
+  --partner-history-task-count-start 200 \
+  --partner-history-task-count-step 0 \
+  --rl-batch-actions 10 15 20 25 30 \
+  --step-seconds 60 \
+  --episodes 1500 \
+  --rl-lr-actor 0.0003 \
+  --rl-lr-critic 0.0005 \
+  --rl-discount-factor 1.0 \
+  --rl-entropy-start 0.05 \
+  --rl-entropy-end 0.005 \
+  --rl-entropy-decay-episodes 1000 \
+  --rl-max-grad-norm 0.5 \
+  --rl-domain-randomize \
+  --rl-domain-randomize-seed 0 \
+  --output-dir outputs/plots/rl_capa_robust_500
+```
+
+`--rl-domain-randomize` 打开后，RL-CAPA 在每个 episode 开始时随机抽取一组 `(delay_seconds, noise_percent)`：
+
+- delay 从 `{0, 5, 10, 15, 20, 30, 60}` 中均匀抽样（默认 `(0,) + DEADLINE_DELAY_VALUES`，可用 `--rl-domain-randomize-delays` 覆盖）。
+- noise 从 `{0, ±5, ±10, ±15, ±20}` 中均匀抽样（默认 `(0,) + DEADLINE_NOISE_VALUES`，可用 `--rl-domain-randomize-noises` 覆盖）。
+- 抽样后通过 `apply_processing_delay` / `apply_deadline_noise` 注入到本 episode 克隆环境上的 task；真实 release/deadline 不变，只有模型感知到的 `observed_s_time` / `observed_d_time` 受扰动。
+
+要点：
+
+- 同时包含 `(0, 0)` 这个 clean 角点，确保策略不会在 clean baseline 上退化。
+- 训练完成后 checkpoint 落在 `outputs/plots/rl_capa_robust_500/rl-capa/checkpoints`，与 Exp-7/Exp-8 的 `rl-capa-infer` 默认 `rl_checkpoint_dir` 对齐，可直接被加载推断（参见 P1 修改的 `experiments/paper_chengdu.py` 默认值）。
+- `--rl-domain-randomize-seed` 控制 sampler 的 RNG，方便复现。
+- `training_summary.json` 多出 `episode_disturbance` 字段，按 episode 记录抽到的 `(delay, noise)`，方便事后核对采样分布。
+- stage1/stage2 的 `recent_timeout_ratio`、`recent_unresolved_ratio`、`observed_slack_ratio` 在训练期间持续累计，policy 会借助这些 drift signal 学到针对扰动的策略。
+
 RL-CAPA stage1 消融只让 RL 决策 batch-size，batch 内任务仍完整走 CAPA 的 CAMA 动态阈值与 DAPA 双层竞价：
 
 ```bash
