@@ -34,13 +34,36 @@ XLABEL_OVERRIDE = {
 
 
 def _apply_rc() -> None:
+    """Configure matplotlib to render every text element (axis labels, ticks,
+    legends, math symbols) in Times New Roman.
+
+    Cross-platform fallback chain: real ``Times New Roman`` (Win/macOS) →
+    ``Tinos`` (Google open-source Times-metric clone, Linux) → ``Nimbus Roman``
+    (URW PostScript Times clone) → ``DejaVu Serif`` (matplotlib bundled).
+
+    Math symbols use the ``stix`` fontset, which is metric-compatible with Times
+    and ensures characters like ``|P|``, ``×10⁵``, Greek letters, etc. share the
+    same look as the surrounding text — so the entire plot is visually
+    Times-family even when the literal ``Times New Roman`` file is absent.
+    """
+
     import matplotlib.pyplot as plt
 
-    plt.rcParams["font.family"] = ["Times New Roman", "DejaVu Serif", "serif"]
-    plt.rcParams["mathtext.fontset"] = "custom"
-    plt.rcParams["mathtext.rm"] = "Times New Roman"
-    plt.rcParams["mathtext.it"] = "Times New Roman:italic"
-    plt.rcParams["mathtext.bf"] = "Times New Roman:bold"
+    serif_chain = [
+        "Times New Roman",
+        "Tinos",
+        "Nimbus Roman",
+        "Nimbus Roman No9 L",
+        "Liberation Serif",
+        "DejaVu Serif",
+        "serif",
+    ]
+    plt.rcParams["font.family"] = "serif"
+    plt.rcParams["font.serif"] = serif_chain
+    plt.rcParams["mathtext.fontset"] = "stix"
+    plt.rcParams["mathtext.default"] = "rm"
+    plt.rcParams["pdf.fonttype"] = 42
+    plt.rcParams["ps.fonttype"] = 42
 
 
 def _pick_scale(values: Sequence[float]) -> tuple[float, str]:

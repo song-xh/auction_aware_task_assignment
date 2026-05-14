@@ -363,7 +363,31 @@ def run_chengdu_paper_split_experiment(
             str(fixed_config["platform_quality_step"]),
             "--rl-future-feature-window-seconds",
             str(fixed_config["rl_future_feature_window_seconds"]),
+            "--num-parcels",
+            str(fixed_config["num_parcels"]),
+            "--rl-checkpoint-dir",
+            str(fixed_config["rl_checkpoint_dir"]),
+            "--rl-step-seconds",
+            str(fixed_config["rl_step_seconds"]),
+            "--rl-episodes",
+            str(fixed_config["rl_episodes"]),
+            "--rl-discount-factor",
+            str(fixed_config["rl_discount_factor"]),
+            "--rl-lr-actor",
+            str(fixed_config["rl_lr_actor"]),
+            "--rl-lr-critic",
+            str(fixed_config["rl_lr_critic"]),
+            "--rl-max-grad-norm",
+            str(fixed_config["rl_max_grad_norm"]),
+            "--rl-batch-actions",
+            *[str(int(v)) for v in fixed_config["rl_batch_actions"]],
         ]
+        if fixed_config.get("rl_entropy_start") is not None:
+            command.extend(["--rl-entropy-start", str(fixed_config["rl_entropy_start"])])
+        if fixed_config.get("rl_entropy_end") is not None:
+            command.extend(["--rl-entropy-end", str(fixed_config["rl_entropy_end"])])
+        if fixed_config.get("rl_entropy_decay_episodes") is not None:
+            command.extend(["--rl-entropy-decay-episodes", str(fixed_config["rl_entropy_decay_episodes"])])
         if fixed_config["courier_beta"] is not None:
             command.extend(["--courier-beta", str(fixed_config["courier_beta"])])
         if fixed_config["task_window_start_seconds"] is not None:
@@ -837,12 +861,6 @@ def build_paper_runner_overrides_from_fixed_config(
         },
         "rl-capa-infer": {
             "checkpoint_dir": str(fixed_config.get("rl_checkpoint_dir", DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["rl_checkpoint_dir"])),
-            "checkpoint_training_disturbance": str(
-                fixed_config.get(
-                    "rl_checkpoint_training_disturbance",
-                    DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["rl_checkpoint_training_disturbance"],
-                )
-            ),
             "min_batch_size": min(rl_batch_actions),
             "max_batch_size": max(rl_batch_actions),
             "batch_actions": list(rl_batch_actions),
