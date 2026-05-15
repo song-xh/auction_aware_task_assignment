@@ -9,7 +9,7 @@ import random
 from time import perf_counter
 from typing import Any, Callable, Mapping, Sequence
 
-from capa.config import DEFAULT_CAPA_BATCH_SIZE, DEFAULT_RAMCOM_RANDOM_SEED
+from capa.config import DEFAULT_CAPA_BATCH_SIZE, DEFAULT_CROSS_PLATFORM_SHARING_RATE_MU2, DEFAULT_RAMCOM_RANDOM_SEED
 from capa.utility import (
     DEFAULT_LOCAL_PAYMENT_RATIO,
     InsertionCache,
@@ -199,11 +199,34 @@ def choose_outer_payment_by_expected_revenue(
     ).payment
 
 
+def compute_ramcom_platform_payment(
+    parcel_fare: float,
+    ramcom_outer_payment: float,
+    cross_platform_sharing_rate_mu2: float = DEFAULT_CROSS_PLATFORM_SHARING_RATE_MU2,
+) -> float:
+    """Return the CAPA-aligned platform payment charged for a RamCOM cross task.
+
+    Args:
+        parcel_fare: Fare paid by the user for the parcel.
+        ramcom_outer_payment: RamCOM's selected outer-worker payment.
+        cross_platform_sharing_rate_mu2: Shared cross-platform payment ratio.
+
+    Returns:
+        Platform settlement payment, capped by parcel fare.
+    """
+
+    return min(
+        float(parcel_fare),
+        float(ramcom_outer_payment) + (float(cross_platform_sharing_rate_mu2) * float(parcel_fare)),
+    )
+
+
 def run_ramcom_baseline_environment(
     environment: Any,
     random_seed: int = DEFAULT_RAMCOM_RANDOM_SEED,
     batch_size: int = DEFAULT_CAPA_BATCH_SIZE,
     local_payment_ratio: float = DEFAULT_LOCAL_PAYMENT_RATIO,
+    cross_platform_sharing_rate_mu2: float = DEFAULT_CROSS_PLATFORM_SHARING_RATE_MU2,
     progress_callback: Callable[[Mapping[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     """Run the Chengdu-adapted RamCOM baseline on the unified environment.
@@ -240,6 +263,10 @@ def run_ramcom_baseline_environment(
             "unresolved_parcel_count": 0,
             "partner_cross_assignment_counts": {},
             "partner_cross_revenues": {},
+            "cross_payment_total": 0.0,
+            "cross_fare_total": 0.0,
+            "avg_cross_payment_ratio": 0.0,
+            "cross_local_revenue_total": 0.0,
             "decision_trace": [],
         }
 
@@ -272,6 +299,9 @@ def run_ramcom_baseline_environment(
     assignment_modes_by_task_id: dict[str, str] = {}
     partner_platform_by_task_id: dict[str, str] = {}
     partner_revenue_by_task_id: dict[str, float] = {}
+    cross_fare_by_task_id: dict[str, float] = {}
+    cross_payment_by_task_id: dict[str, float] = {}
+    cross_local_revenue_by_task_id: dict[str, float] = {}
     processing_time_seconds = 0.0
     progress_stride = max(1, total_tasks // 100)
     decision_trace: list[dict[str, Any]] = []
@@ -439,16 +469,25 @@ def run_ramcom_baseline_environment(
                             snapshot_cache.invalidate(courier_cache_id)
                             insertion_cache.invalidate_courier(courier_cache_id)
                             task_id = str(getattr(task, "num"))
+                            platform_payment = compute_ramcom_platform_payment(
+                                parcel_fare=float(getattr(task, "fare")),
+                                ramcom_outer_payment=outer_payment,
+                                cross_platform_sharing_rate_mu2=cross_platform_sharing_rate_mu2,
+                            )
                             accepted_revenues_by_task_id[task_id] = compute_local_platform_revenue_for_cross_completion(
                                 parcel_fare=float(getattr(task, "fare")),
-                                platform_payment=outer_payment,
+                                platform_payment=platform_payment,
                             )
                             accepted_assignments += 1
                             accepted_task_ids.add(task_id)
                             assignment_modes_by_task_id[task_id] = "cross"
                             partner_platform_by_task_id[task_id] = selected_platform
-                            partner_revenue_by_task_id[task_id] = float(outer_payment)
+                            partner_revenue_by_task_id[task_id] = float(platform_payment)
+                            cross_fare_by_task_id[task_id] = float(getattr(task, "fare"))
+                            cross_payment_by_task_id[task_id] = float(platform_payment)
+                            cross_local_revenue_by_task_id[task_id] = accepted_revenues_by_task_id[task_id]
                             trace_entry["branch"] = "outer_success"
+                            trace_entry["platform_payment"] = platform_payment
                             trace_entry["selected_platform"] = selected_platform
                             trace_entry["selected_courier"] = str(getattr(selected_insertion.courier, "num", ""))
                         else:
@@ -496,6 +535,21 @@ def run_ramcom_baseline_environment(
         partner_platform_by_task_id=partner_platform_by_task_id,
         partner_revenue_by_task_id=partner_revenue_by_task_id,
     )
+    cross_payment_total = sum(
+        float(cross_payment_by_task_id[task_id])
+        for task_id in delivered_task_ids
+        if task_id in cross_payment_by_task_id
+    )
+    cross_fare_total = sum(
+        float(cross_fare_by_task_id[task_id])
+        for task_id in delivered_task_ids
+        if task_id in cross_fare_by_task_id
+    )
+    cross_local_revenue_total = sum(
+        float(cross_local_revenue_by_task_id[task_id])
+        for task_id in delivered_task_ids
+        if task_id in cross_local_revenue_by_task_id
+    )
 
     return {
         "method": "RamCOM-CPUL",
@@ -522,5 +576,9 @@ def run_ramcom_baseline_environment(
         "unresolved_parcel_count": max(0, total_tasks - delivered_parcels - len(timed_out_task_ids)),
         "partner_cross_assignment_counts": partner_cross_assignment_counts,
         "partner_cross_revenues": partner_cross_revenues,
+        "cross_payment_total": cross_payment_total,
+        "cross_fare_total": cross_fare_total,
+        "avg_cross_payment_ratio": 0.0 if cross_fare_total <= 0.0 else cross_payment_total / cross_fare_total,
+        "cross_local_revenue_total": cross_local_revenue_total,
         "decision_trace": decision_trace,
     }

@@ -25,7 +25,12 @@ from baselines.gta import (
     should_dispatch_inner_task_impgta,
 )
 from baselines.mra import run_mra_baseline_environment
-from baselines.ramcom import choose_outer_payment_by_expected_revenue, run_ramcom_baseline_environment, worker_acceptance_probability
+from baselines.ramcom import (
+    choose_outer_payment_by_expected_revenue,
+    compute_ramcom_platform_payment,
+    run_ramcom_baseline_environment,
+    worker_acceptance_probability,
+)
 from algorithms.ramcom_runner import build_ramcom_runner
 from env.chengdu import ChengduEnvironment, select_station_pick_tasks
 from experiments.config import ExperimentConfig
@@ -1210,6 +1215,49 @@ class MetricAlignmentTest(unittest.TestCase):
 
         self.assertEqual(result["cross_assignment_count"], 1)
         self.assertEqual(result["partner_cross_assignment_counts"], {"P1": 1})
+
+    def test_ramcom_cross_tr_uses_unified_platform_payment_floor(self) -> None:
+        """RamCOM cross settlement should include the shared platform-payment floor."""
+
+        self.assertAlmostEqual(
+            compute_ramcom_platform_payment(
+                parcel_fare=20.0,
+                ramcom_outer_payment=4.0,
+                cross_platform_sharing_rate_mu2=0.5,
+            ),
+            14.0,
+        )
+
+    def test_ramcom_reports_cross_payment_ratio_diagnostics(self) -> None:
+        """RamCOM should expose delivered cross payment ratio diagnostics."""
+
+        task = SimpleNamespace(num="t1", fare=20.0, s_time=0.0, d_time=100.0, weight=1.0, l_node="p1")
+        outer = SimpleNamespace(num=2, location="outer", re_schedule=[], re_weight=0.0, max_weight=5.0)
+        environment = SimpleNamespace(
+            tasks=[task],
+            local_couriers=[],
+            partner_couriers_by_platform={"P1": [outer]},
+            movement_callback=_complete_routes,
+            station_set=[],
+            travel_model=SimpleNamespace(distance=lambda start, end: 0.0, travel_time=lambda start, end: 0.0),
+            service_radius_km=None,
+            geo_index=None,
+            travel_speed_m_per_s=0.0,
+        )
+
+        def feasible_insertions(task: object, couriers: object, **_kwargs: object) -> list[object]:
+            if couriers == [outer]:
+                return [SimpleNamespace(courier=outer, insertion_index=0, distance_meters=0.0)]
+            return []
+
+        with patch("baselines.ramcom.build_legacy_feasible_insertions", side_effect=feasible_insertions):
+            result = run_ramcom_baseline_environment(environment=environment, random_seed=1)
+
+        self.assertEqual(result["cross_assignment_count"], 1)
+        self.assertAlmostEqual(result["cross_payment_total"], 14.0)
+        self.assertAlmostEqual(result["cross_fare_total"], 20.0)
+        self.assertAlmostEqual(result["avg_cross_payment_ratio"], 0.7)
+        self.assertAlmostEqual(result["cross_local_revenue_total"], 6.0)
 
     def test_ramcom_reports_threshold_payment_and_trace_metadata(self) -> None:
         """RamCOM should expose threshold, acceptance model, payment search, and per-parcel trace."""
