@@ -25,10 +25,10 @@ from env.chengdu import (
     advance_legacy_routes_with_deadline_accounting,
     LegacyCourierSnapshotCache,
     apply_assignment_to_legacy_courier,
-    drain_legacy_routes,
+    bucketize_legacy_tasks_by_batch,
     drain_legacy_routes_with_deadline_accounting,
     framework_movement_callback,
-    group_legacy_tasks_by_batch,
+    get_true_deadline,
     legacy_task_to_parcel,
 )
 
@@ -147,15 +147,36 @@ def run_mra_baseline_environment(
     delivered_task_ids: set[str] = set()
     timed_out_task_ids: set[str] = set()
     accepted_revenues_by_task_id: dict[str, float] = {}
-    batches = group_legacy_tasks_by_batch(tasks, batch_size)
-    first_batch_start = int(float(getattr(min(tasks, key=lambda item: float(getattr(item, "s_time"))), "s_time")))
+    first_batch_start, batch_lookup = bucketize_legacy_tasks_by_batch(tasks, batch_size)
+    last_batch_index = max(batch_lookup) if batch_lookup else -1
+    current_time = first_batch_start
     decision_epoch_count = 0
 
-    total_batches = len(batches)
-    for batch_index, bucket in enumerate(batches, start=1):
-        now = first_batch_start + (batch_index - 1) * batch_size
+    total_batches = last_batch_index + 1
+    for zero_based_batch_index in range(total_batches):
+        batch_index = zero_based_batch_index + 1
+        bucket = batch_lookup.get(zero_based_batch_index, [])
+        batch_end_time = first_batch_start + (zero_based_batch_index + 1) * batch_size
+        advance_seconds = max(0, batch_end_time - current_time)
+        if advance_seconds > 0:
+            movement_started = perf_counter()
+            advance_legacy_routes_with_deadline_accounting(
+                local_couriers=local_couriers,
+                partner_couriers_by_platform={},
+                station_set=environment.station_set,
+                movement_callback=movement,
+                step_seconds=advance_seconds,
+                current_time=current_time,
+                accepted_task_ids=accepted_task_ids,
+                delivered_task_ids=delivered_task_ids,
+                timed_out_task_ids=timed_out_task_ids,
+            )
+            timing.movement_time_seconds += perf_counter() - movement_started
+            current_time = batch_end_time
         unresolved = list(backlog) + list(bucket)
-        remaining = list(unresolved)
+        remaining = [
+            task for task in unresolved if get_true_deadline(task) >= current_time
+        ]
         while remaining:
             round_started = perf_counter()
             routing_before = timing.routing_time_seconds
@@ -167,7 +188,7 @@ def run_mra_baseline_environment(
                     task=task,
                     couriers=local_couriers,
                     travel_model=timed_travel_model,
-                    now=now,
+                    now=current_time,
                     service_radius_meters=service_radius_meters,
                     courier_id_prefix="mra",
                     timing=timing,
@@ -247,19 +268,6 @@ def run_mra_baseline_environment(
             decision_epoch_count += 1
 
         backlog = remaining
-        movement_started = perf_counter()
-        advance_legacy_routes_with_deadline_accounting(
-            local_couriers=local_couriers,
-            partner_couriers_by_platform={},
-            station_set=environment.station_set,
-            movement_callback=movement,
-            step_seconds=batch_size,
-            current_time=now,
-            accepted_task_ids=accepted_task_ids,
-            delivered_task_ids=delivered_task_ids,
-            timed_out_task_ids=timed_out_task_ids,
-        )
-        timing.movement_time_seconds += perf_counter() - movement_started
         if progress_callback is not None:
             progress_callback(
                 {
@@ -279,7 +287,7 @@ def run_mra_baseline_environment(
             station_set=environment.station_set,
             step_seconds=60,
             movement_callback=movement,
-            current_time=first_batch_start + len(batches) * batch_size,
+            current_time=current_time,
             accepted_task_ids=accepted_task_ids,
             delivered_task_ids=delivered_task_ids,
             timed_out_task_ids=timed_out_task_ids,

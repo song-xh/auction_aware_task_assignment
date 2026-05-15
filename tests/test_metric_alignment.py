@@ -749,7 +749,7 @@ class MetricAlignmentTest(unittest.TestCase):
     def test_basegta_uses_delivered_count_for_cr(self) -> None:
         """BaseGTA should derive delivered count from post-drain route state, not accepts."""
 
-        task = SimpleNamespace(num="t1", fare=10.0, s_time=0.0, d_time=10.0, weight=1.0, l_node="p1")
+        task = SimpleNamespace(num="t1", fare=10.0, s_time=0.0, d_time=60.0, weight=1.0, l_node="p1")
         courier = SimpleNamespace(num=1, location="start", re_schedule=[], re_weight=0.0, max_weight=5.0)
         environment = SimpleNamespace(
             tasks=[task],
@@ -766,7 +766,7 @@ class MetricAlignmentTest(unittest.TestCase):
                 "baselines.gta.select_available_courier_for_task",
                 return_value=GTABid(platform_id="", courier=courier, dispatch_cost=1.0),
             ),
-            patch("baselines.gta.drain_legacy_routes", return_value=1),
+            patch("baselines.gta.drain_legacy_routes_with_deadline_accounting"),
         ):
             result = run_basegta_baseline_environment(environment=environment)
 
@@ -1094,13 +1094,13 @@ class MetricAlignmentTest(unittest.TestCase):
         )
 
         with (
-            patch("baselines.mra.group_legacy_tasks_by_batch", return_value=[[task]]),
+            patch("baselines.mra.bucketize_legacy_tasks_by_batch", return_value=(0, {0: [task]})),
             patch(
                 "baselines.mra.build_legacy_feasible_insertions",
                 return_value=[SimpleNamespace(courier=courier, insertion_index=0, distance_meters=1.0)],
             ),
             patch("baselines.mra.compute_mra_bid", return_value=1.0),
-            patch("baselines.mra.drain_legacy_routes", return_value=1),
+            patch("baselines.mra.drain_legacy_routes_with_deadline_accounting"),
         ):
             result = run_mra_baseline_environment(environment=environment, batch_size=30)
 
