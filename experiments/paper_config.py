@@ -36,6 +36,16 @@ PAPER_SUITE_PRESETS: dict[str, dict[str, dict[str, list[float]]]] = {
             "deadline_delay": [5, 10, 15, 20, 30, 60],
             "deadline_noise": [-20, -15, -10, -5, 0, 5, 10, 15, 20],
         },
+        "test": {
+            "num_parcels": [1000, 2000, 3000, 4000, 5000],
+            "local_couriers": [100, 200, 300, 400, 500],
+            "service_radius": [0.5, 1.0, 1.5, 2.0, 2.5],
+            "platforms": [2, 4, 8, 12, 16],
+            "courier_capacity": [25, 50, 75, 100, 125],
+            "courier_alpha": [0.1, 0.3, 0.5, 0.7, 0.9],
+            "deadline_delay": [5, 10, 15, 20, 30, 60],
+            "deadline_noise": [-20, -15, -10, -5, 0, 5, 10, 15, 20],
+        },
         "ny": {
             "num_parcels": [500, 2000, 5000, 10000, 20000],
             "local_couriers": [100, 200, 300, 400, 500],
