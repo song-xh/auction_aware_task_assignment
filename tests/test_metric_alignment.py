@@ -1185,6 +1185,7 @@ class MetricAlignmentTest(unittest.TestCase):
             task,
             outer_worker_histories=[[], []],
             reservation_payments=[4.0, 8.0],
+            max_outer_payment_ratio=1.0,
         )
 
         self.assertEqual(payment, 4.0)
@@ -1215,7 +1216,11 @@ class MetricAlignmentTest(unittest.TestCase):
             patch("baselines.ramcom.build_legacy_feasible_insertions", side_effect=feasible_insertions),
             patch("baselines.ramcom.drain_legacy_routes", return_value=1),
         ):
-            result = run_ramcom_baseline_environment(environment=environment, random_seed=1)
+            result = run_ramcom_baseline_environment(
+                environment=environment,
+                random_seed=1,
+                max_outer_payment_ratio=1.0,
+            )
 
         self.assertEqual(result["cross_assignment_count"], 1)
         self.assertEqual(result["partner_cross_assignment_counts"], {"P1": 1})
@@ -1249,6 +1254,14 @@ class MetricAlignmentTest(unittest.TestCase):
         )
         self.assertLessEqual(capped.payment, 10.0 + 1e-9)
 
+        tight = estimate_ramcom_outer_payment(
+            request=request,
+            outer_worker_histories=outer_worker_histories,
+            reservation_payments=reservation_payments,
+            max_outer_payment_ratio=0.2,
+        )
+        self.assertLessEqual(tight.payment, 4.0 + 1e-9)
+
         uncapped = estimate_ramcom_outer_payment(
             request=request,
             outer_worker_histories=outer_worker_histories,
@@ -1256,6 +1269,13 @@ class MetricAlignmentTest(unittest.TestCase):
             max_outer_payment_ratio=1.0,
         )
         self.assertGreater(uncapped.payment, capped.payment - 1e-9)
+
+    def test_default_ramcom_max_outer_payment_ratio_is_tight(self) -> None:
+        """Default cap should be 0.2 so RAMCOM cross retains ~0.5*fare under μ2=0.3."""
+
+        from capa.config import DEFAULT_RAMCOM_MAX_OUTER_PAYMENT_RATIO
+
+        self.assertAlmostEqual(DEFAULT_RAMCOM_MAX_OUTER_PAYMENT_RATIO, 0.2)
 
     def test_build_capa_runner_overrides_dispatches_revenue_params_to_baselines(self) -> None:
         """ζ / μ2 CLI overrides must reach all baseline runners, not just CAPA."""

@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 DEFAULT_CAPA_BATCH_SIZE = 20
 # 算法 1 中的批大小阈值 Δb，表示将到达包裹流累积成一个 batch 的时间窗口。
 
-DEFAULT_CHENGDU_DEADLINE_SECONDS = 240
+DEFAULT_CHENGDU_DEADLINE_SECONDS = 300
 # 成都实验统一 pickup deadline，读取数据后按 s_time + deadline_seconds 重写，避免数据集 d_time 污染。
 
 DEFAULT_UTILITY_BALANCE_GAMMA = 0.5
@@ -112,11 +112,14 @@ DEFAULT_MRA_SHARING_RATE = 0.5
 DEFAULT_RAMCOM_RANDOM_SEED = 1
 # RamCOM 基线的默认随机种子；非 CAPA 论文主参数。
 
-DEFAULT_RAMCOM_MAX_OUTER_PAYMENT_RATIO = 0.5
+DEFAULT_RAMCOM_MAX_OUTER_PAYMENT_RATIO = 0.2
 # RAMCOM 的 outer_payment 相对 fare 的上限比例 κ；用于限制 outer_payment ≤ κ·fare，
 # 防止 reservation/历史抽样把 cooperative payment 推到接近 fare、本地平台跨平台
-# 收益（fare − outer_payment − μ2·fare）被压成接近零。κ=0.5 时，配合 μ2=0.3
-# 大致让本地平台跨平台保留 ≈ 0.2·fare 起步。
+# 收益（fare − outer_payment − μ2·fare）被压成接近零。
+# κ=0.2 + 默认 μ2=0.3 时，platform_payment ≈ (κ+μ2)·fare = 0.5·fare，
+# 本地平台跨平台保留 ≈ 0.5·fare；配合 ζ=0.5 的本地段 0.5·fare，
+# RAMCOM 的 cross 段和 local 段每单贡献量级一致，足以让 RAMCOM TR 超过 MRA。
+# 详见 docs/ramcom_cap_tuning.md 的 n=20000 估算。
 
 
 def build_default_capa_config(batch_size: int = DEFAULT_CAPA_BATCH_SIZE) -> "CAPAConfig":
