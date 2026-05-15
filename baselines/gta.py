@@ -354,17 +354,23 @@ def count_available_couriers(couriers: Sequence[Any], now: int, window_seconds: 
     return count
 
 
-def count_available_capacity_slots(couriers: Sequence[Any], now: int, window_seconds: int = 0) -> float:
-    """Count residual CPUL parcel-capacity supply available inside the prediction window.
+def available_capacity_weight_sum(couriers: Sequence[Any], now: int, window_seconds: int = 0) -> float:
+    """Return total residual capacity *weight* across couriers ready inside the window.
+
+    Capacity is denominated in parcel weight (the Chengdu dataset's `weight`
+    column, summed across accepted tasks via `re_weight`), not in parcel count.
+    `max_weight - re_weight` is therefore the weight headroom for one courier.
 
     Args:
-        couriers: Legacy courier objects with `max_weight`, `re_weight`, and route state.
+        couriers: Legacy courier objects exposing `max_weight`, `re_weight`,
+            and route-readiness state.
         now: Current simulation time in seconds.
-        window_seconds: Prediction horizon used by ImpGTA.
+        window_seconds: Prediction horizon (ImpGTA-only). Couriers becoming
+            ready after `now + window_seconds` are excluded.
 
     Returns:
-        Total residual parcel capacity of couriers that are idle now or become
-        ready inside the prediction window.
+        Sum of `max_weight - re_weight` over eligible couriers (lower-bounded
+        at 0 per courier). Same physical units as parcel weight.
     """
 
     window_end = float(now + max(0, window_seconds))
@@ -681,7 +687,7 @@ def _run_gta_environment(
             if local_bid is not None:
                 if algorithm == "basegta" or should_dispatch_inner_task_impgta(
                     task=task,
-                    available_capacity_weight=count_available_capacity_slots(
+                    available_capacity_weight=available_capacity_weight_sum(
                         local_couriers,
                         current_time,
                         prediction_window_seconds or 0,
@@ -747,7 +753,7 @@ def _run_gta_environment(
                             dispatch_cost=partner_bid.dispatch_cost,
                             cross_platform_sharing_rate_mu2=cross_platform_sharing_rate_mu2,
                         ),
-                        available_capacity_weight=count_available_capacity_slots(
+                        available_capacity_weight=available_capacity_weight_sum(
                             partner_couriers,
                             current_time,
                             prediction_window_seconds or 0,

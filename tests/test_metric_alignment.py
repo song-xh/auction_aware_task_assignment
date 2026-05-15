@@ -16,6 +16,7 @@ from capa.utility import DistanceMatrixTravelModel, compute_local_platform_reven
 from baselines.greedy import run_greedy_baseline_environment
 from baselines.gta import (
     GTABid,
+    available_capacity_weight_sum,
     estimate_impgta_outer_task_value,
     future_tasks_within_window,
     run_basegta_baseline_environment,
@@ -286,14 +287,14 @@ class MetricAlignmentTest(unittest.TestCase):
     def test_impgta_available_supply_counts_capacity_slots(self) -> None:
         """ImpGTA's CPUL adaptation should compare predicted tasks to residual courier capacity."""
 
-        from baselines.gta import count_available_capacity_slots
+        from baselines.gta import available_capacity_weight_sum
 
         couriers = [
             SimpleNamespace(max_weight=50.0, re_weight=10.0, re_schedule=[], location="a"),
             SimpleNamespace(max_weight=25.0, re_weight=20.0, re_schedule=[], location="b"),
         ]
 
-        self.assertEqual(count_available_capacity_slots(couriers, now=0), 45)
+        self.assertEqual(available_capacity_weight_sum(couriers, now=0), 45)
 
     def test_impgta_inner_condition_uses_capacity_not_raw_worker_count(self) -> None:
         """A high-capacity courier should satisfy ImpGTA supply even when one worker faces many future tasks."""
@@ -1269,6 +1270,89 @@ class MetricAlignmentTest(unittest.TestCase):
             max_outer_payment_ratio=1.0,
         )
         self.assertGreater(uncapped.payment, capped.payment - 1e-9)
+
+    def test_courier_capacity_is_measured_in_parcel_weight_sum(self) -> None:
+        """Courier capacity must compare against Σ task.weight, not task count.
+
+        Three parcels each weighing 2.0 should fit in capacity 6.0 but a fourth
+        2.0-weight parcel must be rejected; meanwhile capacity 6.0 must NOT
+        admit a single 7.0-weight parcel, even though that is a single parcel.
+        """
+
+        from capa.cama import is_feasible_local_match
+        from capa.models import Courier, Parcel
+        from capa.utility import DistanceMatrixTravelModel
+
+        travel_model = DistanceMatrixTravelModel(distances={}, speed=1.0)
+        courier = Courier(
+            courier_id="c1",
+            current_location="depot",
+            depot_location="depot",
+            capacity=6.0,
+            current_load=0.0,
+        )
+
+        def parcel(pid: str, weight: float) -> Parcel:
+            return Parcel(
+                parcel_id=pid,
+                location="depot",
+                arrival_time=0,
+                deadline=1_000_000,
+                weight=weight,
+                fare=1.0,
+            )
+
+        for pid in ("p1", "p2", "p3"):
+            self.assertTrue(
+                is_feasible_local_match(parcel(pid, 2.0), courier, travel_model, now=0)
+            )
+            courier.current_load += 2.0
+        self.assertAlmostEqual(courier.current_load, 6.0)
+
+        self.assertFalse(
+            is_feasible_local_match(parcel("p4", 2.0), courier, travel_model, now=0),
+            "fourth 2.0-weight parcel must be rejected by weight-sum capacity check",
+        )
+
+        fresh = Courier(
+            courier_id="c2",
+            current_location="depot",
+            depot_location="depot",
+            capacity=6.0,
+            current_load=0.0,
+        )
+        self.assertFalse(
+            is_feasible_local_match(parcel("heavy", 7.0), fresh, travel_model, now=0),
+            "single 7.0-weight parcel must not fit in capacity 6.0",
+        )
+
+    def test_apply_assignment_accumulates_legacy_re_weight_by_task_weight(self) -> None:
+        """Legacy courier `re_weight` must grow by task.weight, not by parcel count."""
+
+        from env.chengdu import apply_assignment_to_legacy_courier
+
+        courier = SimpleNamespace(
+            re_schedule=[],
+            re_weight=0.5,
+            batch_take=0,
+        )
+        task_a = SimpleNamespace(weight=1.25, l_node="a")
+        task_b = SimpleNamespace(weight=0.75, l_node="b")
+        apply_assignment_to_legacy_courier(task_a, courier, insertion_index=0)
+        apply_assignment_to_legacy_courier(task_b, courier, insertion_index=1)
+        self.assertAlmostEqual(courier.re_weight, 0.5 + 1.25 + 0.75)
+        self.assertEqual(courier.batch_take, 2)
+
+    def test_available_capacity_weight_sum_returns_weight_units(self) -> None:
+        """`available_capacity_weight_sum` should return Σ(max_weight − re_weight)."""
+
+        couriers = [
+            SimpleNamespace(max_weight=10.0, re_weight=3.5, re_schedule=[], location="depot"),
+            SimpleNamespace(max_weight=8.0, re_weight=8.0, re_schedule=[], location="depot"),
+            SimpleNamespace(max_weight=12.0, re_weight=0.0, re_schedule=[], location="depot"),
+        ]
+        total = available_capacity_weight_sum(couriers, now=0, window_seconds=0)
+        self.assertAlmostEqual(total, (10.0 - 3.5) + (8.0 - 8.0) + (12.0 - 0.0))
 
     def test_default_ramcom_max_outer_payment_ratio_is_tight(self) -> None:
         """Default cap should be 0.2 so RAMCOM cross retains ~0.5*fare under μ2=0.3."""
