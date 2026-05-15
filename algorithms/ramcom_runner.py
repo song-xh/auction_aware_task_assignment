@@ -8,7 +8,13 @@ from pathlib import Path
 from typing import Any, Callable, Mapping
 
 from baselines.ramcom import run_ramcom_baseline_environment
-from capa.config import DEFAULT_CAPA_BATCH_SIZE, DEFAULT_RAMCOM_RANDOM_SEED
+from capa.config import (
+    DEFAULT_CAPA_BATCH_SIZE,
+    DEFAULT_CROSS_PLATFORM_SHARING_RATE_MU2,
+    DEFAULT_LOCAL_PAYMENT_RATIO_ZETA,
+    DEFAULT_RAMCOM_MAX_OUTER_PAYMENT_RATIO,
+    DEFAULT_RAMCOM_RANDOM_SEED,
+)
 
 from .base import AlgorithmRunner
 from .summary_utils import build_algorithm_summary
@@ -21,11 +27,17 @@ class RamCOMAlgorithmRunner(AlgorithmRunner):
         self,
         batch_size: int = DEFAULT_CAPA_BATCH_SIZE,
         random_seed: int = DEFAULT_RAMCOM_RANDOM_SEED,
+        local_payment_ratio_zeta: float = DEFAULT_LOCAL_PAYMENT_RATIO_ZETA,
+        cross_platform_sharing_rate_mu2: float = DEFAULT_CROSS_PLATFORM_SHARING_RATE_MU2,
+        max_outer_payment_ratio: float = DEFAULT_RAMCOM_MAX_OUTER_PAYMENT_RATIO,
         baseline_runner: Callable[..., dict[str, Any]] | None = None,
     ) -> None:
-        """Store the batch size, random seed, and optional injected RamCOM runner."""
+        """Store batch size, seed, revenue parameters, and optional injected runner."""
         self._batch_size = batch_size
         self._random_seed = random_seed
+        self._local_payment_ratio_zeta = float(local_payment_ratio_zeta)
+        self._cross_platform_sharing_rate_mu2 = float(cross_platform_sharing_rate_mu2)
+        self._max_outer_payment_ratio = float(max_outer_payment_ratio)
         self._baseline_runner = baseline_runner or run_ramcom_baseline_environment
 
     def run(
@@ -40,6 +52,9 @@ class RamCOMAlgorithmRunner(AlgorithmRunner):
             environment=environment,
             random_seed=self._random_seed,
             batch_size=self._batch_size,
+            local_payment_ratio=self._local_payment_ratio_zeta,
+            cross_platform_sharing_rate_mu2=self._cross_platform_sharing_rate_mu2,
+            max_outer_payment_ratio=self._max_outer_payment_ratio,
             progress_callback=progress_callback,
         )
         finished_at = datetime.now().astimezone()
@@ -71,6 +86,11 @@ class RamCOMAlgorithmRunner(AlgorithmRunner):
             extra_fields={
                 "random_seed": self._random_seed,
                 "batch_size": self._batch_size,
+                "config": {
+                    "local_payment_ratio_zeta": self._local_payment_ratio_zeta,
+                    "cross_platform_sharing_rate_mu2": self._cross_platform_sharing_rate_mu2,
+                    "max_outer_payment_ratio": self._max_outer_payment_ratio,
+                },
                 "ramcom_config": {
                     "theta": metrics.get("theta"),
                     "k": metrics.get("k"),
@@ -92,11 +112,17 @@ class RamCOMAlgorithmRunner(AlgorithmRunner):
 def build_ramcom_runner(
     batch_size: int = DEFAULT_CAPA_BATCH_SIZE,
     random_seed: int = DEFAULT_RAMCOM_RANDOM_SEED,
+    local_payment_ratio_zeta: float = DEFAULT_LOCAL_PAYMENT_RATIO_ZETA,
+    cross_platform_sharing_rate_mu2: float = DEFAULT_CROSS_PLATFORM_SHARING_RATE_MU2,
+    max_outer_payment_ratio: float = DEFAULT_RAMCOM_MAX_OUTER_PAYMENT_RATIO,
     baseline_runner: Callable[..., dict[str, Any]] | None = None,
 ) -> RamCOMAlgorithmRunner:
     """Build the unified RamCOM runner."""
     return RamCOMAlgorithmRunner(
         batch_size=batch_size,
         random_seed=random_seed,
+        local_payment_ratio_zeta=local_payment_ratio_zeta,
+        cross_platform_sharing_rate_mu2=cross_platform_sharing_rate_mu2,
+        max_outer_payment_ratio=max_outer_payment_ratio,
         baseline_runner=baseline_runner,
     )

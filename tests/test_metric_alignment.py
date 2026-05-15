@@ -34,7 +34,11 @@ from baselines.ramcom import (
 from algorithms.ramcom_runner import build_ramcom_runner
 from env.chengdu import ChengduEnvironment, select_station_pick_tasks
 from experiments.config import ExperimentConfig
-from experiments.paper_chengdu import build_fixed_config_from_args, build_paper_runner_overrides_from_fixed_config
+from experiments.paper_chengdu import (
+    build_capa_runner_overrides_from_args,
+    build_fixed_config_from_args,
+    build_paper_runner_overrides_from_fixed_config,
+)
 from experiments.seeding import build_environment_seed, clone_environment_from_seed
 from runner import build_algorithm_kwargs
 
@@ -1252,6 +1256,117 @@ class MetricAlignmentTest(unittest.TestCase):
             max_outer_payment_ratio=1.0,
         )
         self.assertGreater(uncapped.payment, capped.payment - 1e-9)
+
+    def test_build_capa_runner_overrides_dispatches_revenue_params_to_baselines(self) -> None:
+        """ζ / μ2 CLI overrides must reach all baseline runners, not just CAPA."""
+
+        args = SimpleNamespace(
+            utility_balance_gamma=None,
+            threshold_omega=None,
+            local_payment_ratio_zeta=0.6,
+            local_sharing_rate_mu1=None,
+            cross_platform_sharing_rate_mu2=0.25,
+        )
+        overrides = build_capa_runner_overrides_from_args(args)
+        self.assertIn("capa", overrides)
+        self.assertEqual(overrides["capa"].get("local_payment_ratio_zeta"), 0.6)
+        self.assertEqual(overrides["capa"].get("cross_platform_sharing_rate_mu2"), 0.25)
+        self.assertIn("mra", overrides)
+        self.assertEqual(overrides["mra"], {"local_payment_ratio_zeta": 0.6})
+        for baseline in ("basegta", "impgta", "ramcom"):
+            self.assertIn(baseline, overrides)
+            self.assertEqual(overrides[baseline].get("local_payment_ratio_zeta"), 0.6)
+            self.assertEqual(overrides[baseline].get("cross_platform_sharing_rate_mu2"), 0.25)
+
+    def test_build_capa_runner_overrides_returns_empty_when_no_cli_args(self) -> None:
+        """Without any revenue CLI flag, overrides dict should remain empty."""
+
+        args = SimpleNamespace(
+            utility_balance_gamma=None,
+            threshold_omega=None,
+            local_payment_ratio_zeta=None,
+            local_sharing_rate_mu1=None,
+            cross_platform_sharing_rate_mu2=None,
+        )
+        self.assertEqual(build_capa_runner_overrides_from_args(args), {})
+
+    def test_baseline_runners_forward_revenue_params(self) -> None:
+        """Each baseline runner must forward ζ / μ2 to its underlying baseline."""
+
+        from algorithms.basegta_runner import build_basegta_runner
+        from algorithms.impgta_runner import build_impgta_runner
+        from algorithms.mra_runner import build_mra_runner
+
+        environment = SimpleNamespace(
+            tasks=[],
+            local_couriers=[],
+            partner_couriers_by_platform={},
+            movement_callback=_complete_routes,
+            station_set=[],
+            travel_model=SimpleNamespace(distance=lambda start, end: 0.0, travel_time=lambda start, end: 0.0),
+            service_radius_km=None,
+            geo_index=None,
+            travel_speed_m_per_s=0.0,
+        )
+
+        captured: dict[str, dict[str, float]] = {}
+
+        def fake_runner(name: str):
+            def _runner(**kwargs: object) -> dict[str, object]:
+                captured[name] = {
+                    "local_payment_ratio": float(kwargs.get("local_payment_ratio", -1)),
+                    "cross_platform_sharing_rate_mu2": float(kwargs.get("cross_platform_sharing_rate_mu2", -1)),
+                }
+                return {
+                    "TR": 0.0,
+                    "CR": 0.0,
+                    "BPT": 0.0,
+                    "delivered_parcels": 0,
+                    "accepted_assignments": 0,
+                    "local_assignment_count": 0,
+                    "cross_assignment_count": 0,
+                    "unresolved_parcel_count": 0,
+                    "partner_cross_assignment_counts": {},
+                    "partner_cross_revenues": {},
+                }
+            return _runner
+
+        basegta = build_basegta_runner(
+            local_payment_ratio_zeta=0.6,
+            cross_platform_sharing_rate_mu2=0.2,
+            baseline_runner=fake_runner("basegta"),
+        )
+        basegta.run(environment=environment)
+        self.assertAlmostEqual(captured["basegta"]["local_payment_ratio"], 0.6)
+        self.assertAlmostEqual(captured["basegta"]["cross_platform_sharing_rate_mu2"], 0.2)
+
+        impgta = build_impgta_runner(
+            local_payment_ratio_zeta=0.55,
+            cross_platform_sharing_rate_mu2=0.15,
+            baseline_runner=fake_runner("impgta"),
+        )
+        impgta.run(environment=environment)
+        self.assertAlmostEqual(captured["impgta"]["local_payment_ratio"], 0.55)
+        self.assertAlmostEqual(captured["impgta"]["cross_platform_sharing_rate_mu2"], 0.15)
+
+        def fake_mra(**kwargs: object) -> dict[str, object]:
+            captured["mra"] = {"local_payment_ratio": float(kwargs.get("local_payment_ratio", -1))}
+            return {
+                "TR": 0.0,
+                "CR": 0.0,
+                "BPT": 0.0,
+                "delivered_parcels": 0,
+                "accepted_assignments": 0,
+                "local_assignment_count": 0,
+                "cross_assignment_count": 0,
+                "unresolved_parcel_count": 0,
+                "partner_cross_assignment_counts": {},
+                "partner_cross_revenues": {},
+            }
+
+        mra = build_mra_runner(local_payment_ratio_zeta=0.7, baseline_runner=fake_mra)
+        mra.run(environment=environment)
+        self.assertAlmostEqual(captured["mra"]["local_payment_ratio"], 0.7)
 
     def test_run_ramcom_baseline_environment_reports_revenue_parameters(self) -> None:
         """RamCOM metrics should echo the ζ / μ2 / κ parameters actually used."""

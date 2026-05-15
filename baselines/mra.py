@@ -307,4 +307,5 @@ def run_mra_baseline_environment(
         "unresolved_parcel_count": max(0, total_tasks - delivered_parcels - len(timed_out_task_ids)),
         "partner_cross_assignment_counts": {},
         "partner_cross_revenues": {},
+        "local_payment_ratio_zeta": float(local_payment_ratio),
     }

@@ -61,8 +61,8 @@ DEFAULT_CHENGDU_PAPER_FIXED_CONFIG: dict[str, Any] = {
     "task_window_start_seconds": None,
     "task_window_end_seconds": None,
     "task_sampling_seed": 1,
-    "partner_history_task_count_start": 50000,
-    "partner_history_task_count_step": 2000,
+    "partner_history_task_count_start": 5000,
+    "partner_history_task_count_step": 200,
     "courier_alpha": DEFAULT_COURIER_ALPHA,
     "courier_beta": None,
     "courier_service_score": DEFAULT_COURIER_SERVICE_SCORE,
@@ -808,9 +808,14 @@ def build_fixed_config_from_args(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def build_capa_runner_overrides_from_args(args: argparse.Namespace) -> dict[str, dict[str, Any]]:
-    """Translate optional CLI CAPA parameter overrides into runner override payloads."""
+    """Translate optional CLI revenue-parameter overrides into per-algorithm runner payloads.
 
-    overrides = {
+    Despite the function name (kept for backwards compatibility with existing
+    callers), this now also dispatches ζ / μ2 overrides to the baseline runners
+    that consume them, so the CLI flags are no longer CAPA-only.
+    """
+
+    capa_overrides = {
         key: value
         for key, value in {
             "utility_balance_gamma": args.utility_balance_gamma,
@@ -821,7 +826,29 @@ def build_capa_runner_overrides_from_args(args: argparse.Namespace) -> dict[str,
         }.items()
         if value is not None
     }
-    return {} if not overrides else {"capa": overrides}
+
+    zeta_overrides = (
+        {"local_payment_ratio_zeta": args.local_payment_ratio_zeta}
+        if args.local_payment_ratio_zeta is not None
+        else {}
+    )
+    mu2_overrides = (
+        {"cross_platform_sharing_rate_mu2": args.cross_platform_sharing_rate_mu2}
+        if args.cross_platform_sharing_rate_mu2 is not None
+        else {}
+    )
+
+    per_algorithm: dict[str, dict[str, Any]] = {}
+    if capa_overrides:
+        per_algorithm["capa"] = capa_overrides
+    mra_overrides = dict(zeta_overrides)
+    if mra_overrides:
+        per_algorithm["mra"] = mra_overrides
+    cross_baseline_overrides = {**zeta_overrides, **mu2_overrides}
+    for baseline in ("basegta", "impgta", "ramcom"):
+        if cross_baseline_overrides:
+            per_algorithm[baseline] = dict(cross_baseline_overrides)
+    return per_algorithm
 
 
 def build_paper_runner_overrides_from_fixed_config(

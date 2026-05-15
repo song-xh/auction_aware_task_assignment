@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping
 
 from baselines.mra import run_mra_baseline_environment
-from capa.config import DEFAULT_CAPA_BATCH_SIZE
+from capa.config import DEFAULT_CAPA_BATCH_SIZE, DEFAULT_LOCAL_PAYMENT_RATIO_ZETA
 
 from .base import AlgorithmRunner
 from .summary_utils import build_algorithm_summary
@@ -20,10 +20,12 @@ class MRAAlgorithmRunner(AlgorithmRunner):
     def __init__(
         self,
         batch_size: int = DEFAULT_CAPA_BATCH_SIZE,
+        local_payment_ratio_zeta: float = DEFAULT_LOCAL_PAYMENT_RATIO_ZETA,
         baseline_runner: Callable[..., dict[str, Any]] | None = None,
     ) -> None:
-        """Store the batch size and optional injected MRA baseline runner."""
+        """Store the batch size, payment parameters, and optional injected MRA runner."""
         self._batch_size = batch_size
+        self._local_payment_ratio_zeta = float(local_payment_ratio_zeta)
         self._baseline_runner = baseline_runner or run_mra_baseline_environment
 
     def run(
@@ -37,6 +39,7 @@ class MRAAlgorithmRunner(AlgorithmRunner):
         metrics = self._baseline_runner(
             environment=environment,
             batch_size=self._batch_size,
+            local_payment_ratio=self._local_payment_ratio_zeta,
             progress_callback=progress_callback,
         )
         finished_at = datetime.now().astimezone()
@@ -59,7 +62,12 @@ class MRAAlgorithmRunner(AlgorithmRunner):
             partner_cross_revenues=metrics.get("partner_cross_revenues", {}),
             started_at=started_at,
             finished_at=finished_at,
-            extra_fields={"batch_size": self._batch_size},
+            extra_fields={
+                "batch_size": self._batch_size,
+                "config": {
+                    "local_payment_ratio_zeta": self._local_payment_ratio_zeta,
+                },
+            },
         )
         if output_dir is not None:
             output_dir.mkdir(parents=True, exist_ok=True)
@@ -70,7 +78,12 @@ class MRAAlgorithmRunner(AlgorithmRunner):
 
 def build_mra_runner(
     batch_size: int = DEFAULT_CAPA_BATCH_SIZE,
+    local_payment_ratio_zeta: float = DEFAULT_LOCAL_PAYMENT_RATIO_ZETA,
     baseline_runner: Callable[..., dict[str, Any]] | None = None,
 ) -> MRAAlgorithmRunner:
     """Build the unified MRA runner."""
-    return MRAAlgorithmRunner(batch_size=batch_size, baseline_runner=baseline_runner)
+    return MRAAlgorithmRunner(
+        batch_size=batch_size,
+        local_payment_ratio_zeta=local_payment_ratio_zeta,
+        baseline_runner=baseline_runner,
+    )

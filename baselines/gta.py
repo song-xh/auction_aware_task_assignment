@@ -831,6 +831,8 @@ def _run_gta_environment(
         "unresolved_parcel_count": max(0, total_task_count - delivered_parcels - len(timed_out_task_ids)),
         "partner_cross_assignment_counts": partner_cross_assignment_counts,
         "partner_cross_revenues": partner_cross_revenues,
+        "local_payment_ratio_zeta": float(local_payment_ratio),
+        "cross_platform_sharing_rate_mu2": float(cross_platform_sharing_rate_mu2),
     }
 
 
