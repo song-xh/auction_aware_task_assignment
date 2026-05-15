@@ -25,7 +25,7 @@ METRIC_LABEL = {
 }
 
 XLABEL_OVERRIDE = {
-    "num_parcels":     r"Number of Parcels $|P|$",
+    "num_parcels":     r"Number of Parcels $|\Gamma|$",
     "local_couriers":  r"Number of Couriers $|C|$",
     "service_radius":  r"Service Radius (km)",
     "platforms":       r"Number of Platforms",
@@ -81,6 +81,17 @@ def _apply_rc() -> None:
     plt.rcParams["mathtext.default"] = "rm"
     plt.rcParams["pdf.fonttype"] = 42
     plt.rcParams["ps.fonttype"] = 42
+    plt.rcParams["axes.unicode_minus"] = False
+    plt.rcParams["xtick.labelsize"] = 18
+    plt.rcParams["ytick.labelsize"] = 18
+    plt.rcParams["legend.fontsize"] = 12
+    # Force every text element (axis labels, tick labels, math symbols, legends)
+    # through the Times-family serif chain configured above. Without this,
+    # matplotlib backends sometimes fall back to DejaVu Sans for tick labels
+    # even when font.family=serif is set globally.
+    plt.rcParams["mathtext.rm"] = "serif"
+    plt.rcParams["mathtext.it"] = "serif:italic"
+    plt.rcParams["mathtext.bf"] = "serif:bold"
 
 
 def _pick_scale(values: Sequence[float]) -> tuple[float, str]:
@@ -151,12 +162,12 @@ def save_default_comparison_plots(summary: dict[str, Any], output_dir: Path) -> 
         ax = plt.gca()
         for spine in ax.spines.values():
             spine.set_linewidth(1.5)
-        divisor, suffix = _pick_scale(values)
-        ax.bar(labels, [v / divisor for v in values], color=colors, edgecolor="black")
+        ax.bar(labels, [float(v) for v in values], color=colors, edgecolor="black")
         ax.set_xlabel("Algorithm", fontsize=20)
-        ax.set_ylabel(METRIC_LABEL.get(metric_name, metric_name) + suffix, fontsize=20)
+        ax.set_ylabel(METRIC_LABEL.get(metric_name, metric_name), fontsize=20)
         plt.xticks(fontsize=16, rotation=20)
         plt.yticks(fontsize=18)
+        _apply_scientific_y_formatter(ax)
         figure.savefig(output_dir / f"default_{metric_name.lower()}_comparison.png",
                        bbox_inches="tight", dpi=300)
         plt.close(figure)
@@ -181,20 +192,27 @@ def _save_line_plot(
     for spine in ax.spines.values():
         spine.set_linewidth(1.5)
 
-    all_y: list[float] = []
-    for _, ys in series:
-        all_y.extend(float(v) for v in ys if v is not None)
-    divisor, suffix = _pick_scale(all_y)
-
-    x_index = list(range(1, len(x_values) + 1))
+    numeric_x, use_numeric_axis = _coerce_numeric_x(x_values)
+    x_positions = numeric_x if use_numeric_axis else list(range(1, len(x_values) + 1))
+    # Use a log x-axis when the sweep spans more than one decade and every
+    # value is strictly positive. Otherwise linear spacing already reflects
+    # the magnitudes adequately.
+    use_log_x = (
+        use_numeric_axis
+        and all(v > 0 for v in x_positions)
+        and len(x_positions) >= 2
+        and (max(x_positions) / min(x_positions)) >= 10.0
+    )
+    if use_log_x:
+        ax.set_xscale("log")
     for algo_name, ys in series:
         style = ALGORITHM_STYLE.get(algo_name, {
             "label": algo_name, "marker": "o", "color": "gray",
             "linestyle": "-", "markersize": 10,
         })
         ax.plot(
-            x_index,
-            [float(v) / divisor for v in ys],
+            x_positions,
+            [float(v) for v in ys],
             label=style["label"],
             marker=style["marker"],
             markerfacecolor="none",
@@ -205,15 +223,37 @@ def _save_line_plot(
         )
 
     xlabel = XLABEL_OVERRIDE.get(x_label, x_label)
-    ylabel = METRIC_LABEL.get(metric_name, metric_name) + suffix
+    ylabel = METRIC_LABEL.get(metric_name, metric_name)
     ax.set_xlabel(xlabel, fontsize=20)
     ax.set_ylabel(ylabel, fontsize=20)
 
-    tick_labels = [_format_xtick(v) for v in x_values]
-    ax.set_xticks(x_index)
-    ax.set_xticklabels(tick_labels, fontsize=18)
+    tick_labels = [_format_tick_scientific(v) for v in x_values]
+    ax.set_xticks(x_positions)
+    rotation = 0 if use_log_x else 20
+    ha = "center" if use_log_x else "right"
+    ax.set_xticklabels(
+        tick_labels,
+        fontsize=16,
+        rotation=rotation,
+        ha=ha,
+        rotation_mode="anchor" if rotation else "default",
+    )
+    if use_log_x:
+        ax.minorticks_off()
     ax.tick_params(axis="y", labelsize=18)
-    ax.set_xlim(min(x_index), max(x_index))
+    _apply_scientific_y_formatter(ax)
+    if x_positions:
+        x_lo, x_hi = min(x_positions), max(x_positions)
+        if x_lo == x_hi:
+            x_lo, x_hi = x_lo - 1, x_hi + 1
+        if use_log_x:
+            pad = (x_hi / x_lo) ** 0.04
+            ax.set_xlim(x_lo / pad, x_hi * pad)
+        elif use_numeric_axis:
+            pad = (x_hi - x_lo) * 0.03
+            ax.set_xlim(x_lo - pad, x_hi + pad)
+        else:
+            ax.set_xlim(x_lo, x_hi)
 
     if len(series) > 1:
         ax.legend(loc="best", fontsize=12, ncol=2, frameon=False)
@@ -225,6 +265,63 @@ def _save_line_plot(
     except Exception:
         pass
     plt.close(figure)
+
+
+def _apply_scientific_y_formatter(ax: Any) -> None:
+    """Force the y-axis to render every tick label in scientific notation.
+
+    Uses `ScalarFormatter(useMathText=True)` with the scientific power limits
+    pinned to `(0, 0)` so even values within the default `[10^-3, 10^3]` band
+    are rendered as `a×10^b` rather than plain decimals. The exponent is shown
+    as a regular tick label, not as a corner annotation.
+    """
+
+    from matplotlib.ticker import ScalarFormatter
+
+    formatter = ScalarFormatter(useMathText=True, useOffset=False)
+    formatter.set_scientific(True)
+    formatter.set_powerlimits((0, 0))
+    ax.yaxis.set_major_formatter(formatter)
+    ax.ticklabel_format(axis="y", style="sci", scilimits=(0, 0), useMathText=True)
+
+
+def _format_tick_scientific(value: Any) -> str:
+    """Render one tick value as `a×10^b` (or just `0` for the zero crossing).
+
+    Used for x-axis tick labels because they are set manually via
+    `set_xticklabels`, which bypasses matplotlib's `ScalarFormatter`.
+    """
+
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    if f == 0.0 or not math.isfinite(f):
+        return "0" if f == 0.0 else str(value)
+    exponent = int(math.floor(math.log10(abs(f))))
+    mantissa = f / (10 ** exponent)
+    if abs(mantissa - round(mantissa)) < 1e-9:
+        mantissa_str = f"{int(round(mantissa))}"
+    else:
+        mantissa_str = f"{mantissa:.1f}".rstrip("0").rstrip(".")
+    return rf"${mantissa_str}\times10^{{{exponent}}}$"
+
+
+def _coerce_numeric_x(x_values: Sequence[Any]) -> tuple[list[float], bool]:
+    """Try to interpret sweep x-values as numeric for adaptive axis spacing.
+
+    Returns the converted list and a flag indicating whether numeric placement
+    should actually be used. If any value cannot be converted to float (e.g.
+    categorical sweeps) we fall back to evenly spaced indices upstream.
+    """
+
+    coerced: list[float] = []
+    for value in x_values:
+        try:
+            coerced.append(float(value))
+        except (TypeError, ValueError):
+            return [], False
+    return coerced, True
 
 
 def _format_xtick(v: Any) -> str:
