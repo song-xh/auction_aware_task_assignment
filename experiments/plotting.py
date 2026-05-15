@@ -21,7 +21,7 @@ ALGORITHM_STYLE: dict[str, dict[str, Any]] = {
 METRIC_LABEL = {
     "TR":  "Total Revenue",
     "CR":  "Completion Rate",
-    "BPT": "Balance Per Task",
+    "BPT": "Batch Process Time",
 }
 
 XLABEL_OVERRIDE = {
@@ -31,6 +31,23 @@ XLABEL_OVERRIDE = {
     "platforms":       r"Number of Platforms",
     "courier_capacity": r"Courier Capacity",
 }
+
+
+def visible_algorithms_for_metric(metric_name: str, algorithms: Sequence[str]) -> list[str]:
+    """Return algorithms that should be visible for one paper metric plot.
+
+    Args:
+        metric_name: Paper metric identifier, e.g. `TR`, `CR`, or `BPT`.
+        algorithms: Candidate algorithm names in display order.
+
+    Returns:
+        Ordered algorithm names after applying review-requested filtering.
+    """
+
+    hidden = {"basegta"}
+    if metric_name == "BPT":
+        hidden.add("mra")
+    return [algorithm for algorithm in algorithms if algorithm not in hidden]
 
 
 def _apply_rc() -> None:
@@ -102,9 +119,10 @@ def save_comparison_plots(summary: dict[str, Any], output_dir: Path) -> None:
     runs = list(summary.get("runs", []))
     x_values = [run[sweep_parameter] for run in runs]
     for metric_name in PLOT_METRICS:
+        visible_algorithms = visible_algorithms_for_metric(metric_name, algorithms)
         series = [
             (algorithm, [run[algorithm]["metrics"][metric_name] for run in runs])
-            for algorithm in algorithms
+            for algorithm in visible_algorithms
         ]
         _save_line_plot(
             x_values=x_values,
@@ -125,9 +143,10 @@ def save_default_comparison_plots(summary: dict[str, Any], output_dir: Path) -> 
     if not algorithms:
         return
     for metric_name in PLOT_METRICS:
-        values = [results[algorithm]["metrics"][metric_name] for algorithm in algorithms]
-        labels = [ALGORITHM_STYLE.get(a, {}).get("label", a) for a in algorithms]
-        colors = [ALGORITHM_STYLE.get(a, {}).get("color", "gray") for a in algorithms]
+        visible_algorithms = visible_algorithms_for_metric(metric_name, algorithms)
+        values = [results[algorithm]["metrics"][metric_name] for algorithm in visible_algorithms]
+        labels = [ALGORITHM_STYLE.get(a, {}).get("label", a) for a in visible_algorithms]
+        colors = [ALGORITHM_STYLE.get(a, {}).get("color", "gray") for a in visible_algorithms]
         figure = plt.figure(figsize=(6, 5))
         ax = plt.gca()
         for spine in ax.spines.values():
