@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
 from capa.config import (
+    DEFAULT_CHENGDU_DEADLINE_SECONDS,
     DEFAULT_COURIER_ALPHA,
     DEFAULT_COURIER_SERVICE_SCORE,
     DEFAULT_PLATFORM_QUALITY_START,
@@ -58,6 +59,7 @@ class ChengduEnvironmentSeed:
     movement_callback: Any | None = None
     service_radius_km: float | None = None
     courier_capacity: float | None = None
+    deadline_seconds: int = DEFAULT_CHENGDU_DEADLINE_SECONDS
     task_window_start_seconds: float | None = None
     task_window_end_seconds: float | None = None
     task_sampling_seed: int = 1
@@ -103,6 +105,7 @@ def build_environment_seed(environment: ChengduEnvironment) -> ChengduEnvironmen
         movement_callback=environment.movement_callback,
         service_radius_km=environment.service_radius_km,
         courier_capacity=environment.courier_capacity,
+        deadline_seconds=environment.deadline_seconds,
         task_window_start_seconds=environment.task_window_start_seconds,
         task_window_end_seconds=environment.task_window_end_seconds,
         task_sampling_seed=environment.task_sampling_seed,
@@ -141,6 +144,7 @@ def clone_environment_from_seed(seed: ChengduEnvironmentSeed) -> ChengduEnvironm
         movement_callback=seed.movement_callback,
         service_radius_km=seed.service_radius_km,
         courier_capacity=seed.courier_capacity,
+        deadline_seconds=seed.deadline_seconds,
         task_window_start_seconds=seed.task_window_start_seconds,
         task_window_end_seconds=seed.task_window_end_seconds,
         task_sampling_seed=seed.task_sampling_seed,
@@ -186,6 +190,7 @@ def save_environment_seed(seed: ChengduEnvironmentSeed, output_path: Path) -> No
         "platform_qualities": dict(seed.platform_qualities),
         "service_radius_km": seed.service_radius_km,
         "courier_capacity": seed.courier_capacity,
+        "deadline_seconds": seed.deadline_seconds,
         "task_window_start_seconds": seed.task_window_start_seconds,
         "task_window_end_seconds": seed.task_window_end_seconds,
         "task_sampling_seed": seed.task_sampling_seed,
@@ -238,6 +243,7 @@ def load_environment_seed(
         movement_callback=framework_movement_callback if movement_callback is None else movement_callback,
         service_radius_km=payload["service_radius_km"],
         courier_capacity=payload["courier_capacity"],
+        deadline_seconds=int(payload.get("deadline_seconds", DEFAULT_CHENGDU_DEADLINE_SECONDS)),
         task_window_start_seconds=payload.get("task_window_start_seconds"),
         task_window_end_seconds=payload.get("task_window_end_seconds"),
         task_sampling_seed=int(payload.get("task_sampling_seed", 1)),

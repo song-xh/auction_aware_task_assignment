@@ -8,6 +8,7 @@ from typing import Any
 
 from capa.config import (
     DEFAULT_CAPA_BATCH_SIZE,
+    DEFAULT_CHENGDU_DEADLINE_SECONDS,
     DEFAULT_COURIER_ALPHA,
     DEFAULT_COURIER_SERVICE_SCORE,
     DEFAULT_IMPGTA_WINDOW_SECONDS,
@@ -61,6 +62,7 @@ class ExperimentConfig:
     prediction_sampling_seed: int = 1
     service_radius_km: float | None = None
     courier_capacity: float | None = None
+    deadline_seconds: int = DEFAULT_CHENGDU_DEADLINE_SECONDS
     task_window_start_seconds: float | None = None
     task_window_end_seconds: float | None = None
     task_sampling_seed: int = 1
@@ -105,6 +107,7 @@ class ExperimentConfig:
             "prediction_sampling_seed": self.prediction_sampling_seed,
             "service_radius_km": self.service_radius_km,
             "courier_capacity": self.courier_capacity,
+            "deadline_seconds": self.deadline_seconds,
             "task_window_start_seconds": self.task_window_start_seconds,
             "task_window_end_seconds": self.task_window_end_seconds,
             "task_sampling_seed": self.task_sampling_seed,
@@ -150,6 +153,7 @@ class ExperimentConfig:
             kwargs["service_radius_km"] = self.service_radius_km
         if self.courier_capacity is not None:
             kwargs["courier_capacity"] = self.courier_capacity
+        kwargs["deadline_seconds"] = self.deadline_seconds
         if self.task_window_start_seconds is not None:
             kwargs["task_window_start_seconds"] = self.task_window_start_seconds
         if self.task_window_end_seconds is not None:

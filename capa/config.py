@@ -12,6 +12,9 @@ if TYPE_CHECKING:
 DEFAULT_CAPA_BATCH_SIZE = 30
 # 算法 1 中的批大小阈值 Δb，表示将到达包裹流累积成一个 batch 的时间窗口。
 
+DEFAULT_CHENGDU_DEADLINE_SECONDS = 3600
+# 成都实验统一 pickup deadline，读取数据后按 s_time + deadline_seconds 重写，避免数据集 d_time 污染。
+
 DEFAULT_UTILITY_BALANCE_GAMMA = 0.5
 # Eq.(6) 中的平衡系数 γ，用于权衡容量比 Δwτ 与绕路比 Δdτ 对局部匹配效用 u(τ,c) 的影响。
 

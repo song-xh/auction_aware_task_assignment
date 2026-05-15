@@ -9,6 +9,7 @@ from capa.models import CAPAConfig
 from env.chengdu import (
     ChengduBatchRuntime,
     ChengduEnvironment,
+    apply_configured_deadline,
     get_model_deadline,
     get_model_release_time,
     get_true_deadline,
@@ -21,7 +22,7 @@ from experiments.deadline_disturbance import (
     derive_deadline_delay_environment,
     derive_deadline_noise_environment,
 )
-from experiments.seeding import build_environment_seed
+from experiments.seeding import build_environment_seed, clone_environment_from_seed
 
 
 def test_observed_time_helpers_preserve_true_deadline() -> None:
@@ -38,6 +39,18 @@ def test_observed_time_helpers_preserve_true_deadline() -> None:
     assert get_model_release_time(task) == 15.0
     assert get_model_deadline(task) == 80.0
     assert get_true_deadline(task) == 100.0
+
+
+def test_apply_configured_deadline_replaces_dataset_deadline_and_preserves_raw_value() -> None:
+    """Configured deadlines should replace dataset d_time without losing audit data."""
+
+    task = SimpleNamespace(num="t1", s_time=100.0, d_time=9999.0)
+
+    apply_configured_deadline([task], deadline_seconds=300)
+
+    assert task.dataset_d_time == 9999.0
+    assert task.d_time == 400.0
+    assert get_true_deadline(task) == 400.0
 
 
 def test_legacy_task_to_parcel_can_use_observed_deadline() -> None:
@@ -124,6 +137,28 @@ def test_derive_deadline_delay_environment_mutates_only_clone() -> None:
     assert not hasattr(task, "observed_s_time")
     assert derived.tasks[0].observed_s_time == 15.0
     assert derived.tasks[0].d_time == 100.0
+
+
+def test_environment_seed_and_snapshot_preserve_configured_deadline_seconds() -> None:
+    """Environment clones and snapshots should carry the configured deadline parameter."""
+
+    environment = ChengduEnvironment(
+        tasks=[],
+        local_couriers=[],
+        partner_couriers_by_platform={},
+        station_set=[],
+        travel_model=None,
+        platform_base_prices={},
+        platform_sharing_rates={},
+        platform_qualities={},
+        deadline_seconds=900,
+    )
+    seed = build_environment_seed(environment)
+    clone = clone_environment_from_seed(seed)
+
+    assert seed.deadline_seconds == 900
+    assert clone.deadline_seconds == 900
+    assert clone.snapshot_for_algorithm()["deadline_seconds"] == 900
 
 
 def test_apply_deadline_noise_uses_slack_and_preserves_true_deadline() -> None:

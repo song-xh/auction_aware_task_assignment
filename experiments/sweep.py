@@ -10,6 +10,7 @@ from typing import Any, Callable, Sequence
 from algorithms.registry import build_algorithm_runner
 from capa.config import (
     DEFAULT_CAPA_BATCH_SIZE,
+    DEFAULT_CHENGDU_DEADLINE_SECONDS,
     DEFAULT_COURIER_ALPHA,
     DEFAULT_COURIER_SERVICE_SCORE,
     DEFAULT_IMPGTA_WINDOW_SECONDS,
@@ -65,6 +66,7 @@ def run_parameter_sweep(
         prediction_sampling_seed=fixed_config.get("prediction_sampling_seed", 1),
         service_radius_km=fixed_config.get("service_radius_km"),
         courier_capacity=fixed_config.get("courier_capacity"),
+        deadline_seconds=fixed_config.get("deadline_seconds", DEFAULT_CHENGDU_DEADLINE_SECONDS),
         task_window_start_seconds=fixed_config.get("task_window_start_seconds"),
         task_window_end_seconds=fixed_config.get("task_window_end_seconds"),
         task_sampling_seed=fixed_config.get("task_sampling_seed", 1),
@@ -189,6 +191,7 @@ def _run_sweep_point(
         prediction_sampling_seed=fixed_config.get("prediction_sampling_seed", 1),
         service_radius_km=fixed_config.get("service_radius_km"),
         courier_capacity=fixed_config.get("courier_capacity"),
+        deadline_seconds=fixed_config.get("deadline_seconds", DEFAULT_CHENGDU_DEADLINE_SECONDS),
         task_window_start_seconds=fixed_config.get("task_window_start_seconds"),
         task_window_end_seconds=fixed_config.get("task_window_end_seconds"),
         task_sampling_seed=fixed_config.get("task_sampling_seed", 1),

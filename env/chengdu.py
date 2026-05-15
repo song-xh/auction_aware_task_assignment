@@ -13,6 +13,7 @@ from typing import Any, Callable, Dict, Iterable, List, Mapping, MutableSequence
 
 from capa.cama import build_local_candidate_shortlist, is_feasible_local_match, run_cama
 from capa.config import (
+    DEFAULT_CHENGDU_DEADLINE_SECONDS,
     DEFAULT_COURIER_ALPHA,
     DEFAULT_COURIER_BETA,
     DEFAULT_COURIER_SERVICE_SCORE,
@@ -69,6 +70,7 @@ class ChengduEnvironment:
     movement_callback: Callable[[MutableSequence[Any], MutableSequence[Any], int, Sequence[Any]], None] | None = None
     service_radius_km: float | None = None
     courier_capacity: float | None = None
+    deadline_seconds: int = DEFAULT_CHENGDU_DEADLINE_SECONDS
     task_window_start_seconds: float | None = None
     task_window_end_seconds: float | None = None
     task_sampling_seed: int = 1
@@ -91,6 +93,7 @@ class ChengduEnvironment:
         couriers_per_platform: int,
         service_radius_km: float | None = None,
         courier_capacity: float | None = None,
+        deadline_seconds: int = DEFAULT_CHENGDU_DEADLINE_SECONDS,
         task_window_start_seconds: float | None = None,
         task_window_end_seconds: float | None = None,
         task_sampling_seed: int = 1,
@@ -111,6 +114,7 @@ class ChengduEnvironment:
             couriers_per_platform=couriers_per_platform,
             service_radius_km=service_radius_km,
             courier_capacity=courier_capacity,
+            deadline_seconds=deadline_seconds,
             task_window_start_seconds=task_window_start_seconds,
             task_window_end_seconds=task_window_end_seconds,
             task_sampling_seed=task_sampling_seed,
@@ -147,6 +151,7 @@ class ChengduEnvironment:
             "platform_qualities": dict(self.platform_qualities),
             "service_radius_km": self.service_radius_km,
             "courier_capacity": self.courier_capacity,
+            "deadline_seconds": self.deadline_seconds,
             "task_window_start_seconds": self.task_window_start_seconds,
             "task_window_end_seconds": self.task_window_end_seconds,
             "task_sampling_seed": self.task_sampling_seed,
@@ -433,6 +438,23 @@ def get_model_deadline(task: Any) -> float:
     """
 
     return float(getattr(task, "observed_d_time", get_true_deadline(task)))
+
+
+def apply_configured_deadline(tasks: Sequence[Any], deadline_seconds: int | float) -> None:
+    """Replace each task deadline with `s_time + deadline_seconds`.
+
+    Args:
+        tasks: Legacy Chengdu tasks to mutate in place.
+        deadline_seconds: Fixed pickup deadline slack applied from each task's
+            true request time.
+    """
+
+    if float(deadline_seconds) <= 0:
+        raise ValueError("deadline_seconds must be positive.")
+    for task in tasks:
+        if not hasattr(task, "dataset_d_time"):
+            setattr(task, "dataset_d_time", float(getattr(task, "d_time")))
+        setattr(task, "d_time", float(getattr(task, "s_time")) + float(deadline_seconds))
 
 
 def sort_legacy_tasks(tasks: Sequence[Any]) -> list[Any]:
@@ -2137,6 +2159,7 @@ def build_framework_chengdu_environment(
     couriers_per_platform: int,
     service_radius_km: float | None = None,
     courier_capacity: float | None = None,
+    deadline_seconds: int = DEFAULT_CHENGDU_DEADLINE_SECONDS,
     task_window_start_seconds: float | None = None,
     task_window_end_seconds: float | None = None,
     task_sampling_seed: int = 1,
@@ -2154,6 +2177,8 @@ def build_framework_chengdu_environment(
 
     resolved_alpha, resolved_beta = validate_courier_preference(courier_alpha, courier_beta)
     pick_task_set, delivery_task_set = readTask()
+    apply_configured_deadline(pick_task_set, deadline_seconds)
+    apply_configured_deadline(delivery_task_set, deadline_seconds)
     required_couriers = local_courier_count + (cooperating_platform_count * couriers_per_platform)
     ordered_pick = sort_legacy_tasks(pick_task_set)
     ordered_delivery = sort_legacy_tasks(delivery_task_set)
@@ -2253,6 +2278,7 @@ def build_framework_chengdu_environment(
         movement_callback=framework_movement_callback,
         service_radius_km=service_radius_km,
         courier_capacity=normalized_capacity,
+        deadline_seconds=int(deadline_seconds),
         task_window_start_seconds=task_window_start_seconds,
         task_window_end_seconds=task_window_end_seconds,
         task_sampling_seed=task_sampling_seed,

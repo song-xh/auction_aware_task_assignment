@@ -15,6 +15,7 @@ from typing import Any, Sequence
 from algorithms.registry import build_algorithm_runner
 from capa.config import (
     DEFAULT_CAPA_BATCH_SIZE,
+    DEFAULT_CHENGDU_DEADLINE_SECONDS,
     DEFAULT_COURIER_ALPHA,
     DEFAULT_COURIER_SERVICE_SCORE,
     DEFAULT_DETOUR_FAVORING_CAPA_RUNNER_KWARGS,
@@ -51,6 +52,7 @@ DEFAULT_CHENGDU_PAPER_FIXED_CONFIG: dict[str, Any] = {
     "platforms": 4,
     "couriers_per_platform": 500,
     "courier_capacity": 50.0,
+    "deadline_seconds": DEFAULT_CHENGDU_DEADLINE_SECONDS,
     "service_radius_km": 1.0,
     "batch_size": DEFAULT_CAPA_BATCH_SIZE,
     "prediction_window_seconds": DEFAULT_IMPGTA_WINDOW_SECONDS,
@@ -217,6 +219,7 @@ def run_chengdu_paper_point(
             prediction_sampling_seed=int(fixed_config["prediction_sampling_seed"]),
             service_radius_km=float(fixed_config["service_radius_km"]) if fixed_config["service_radius_km"] is not None else None,
             courier_capacity=float(fixed_config["courier_capacity"]) if fixed_config["courier_capacity"] is not None else None,
+            deadline_seconds=int(fixed_config["deadline_seconds"]),
             task_window_start_seconds=float(fixed_config["task_window_start_seconds"]) if fixed_config["task_window_start_seconds"] is not None else None,
             task_window_end_seconds=float(fixed_config["task_window_end_seconds"]) if fixed_config["task_window_end_seconds"] is not None else None,
             task_sampling_seed=int(fixed_config["task_sampling_seed"]),
@@ -337,6 +340,8 @@ def run_chengdu_paper_split_experiment(
             str(fixed_config["couriers_per_platform"]),
             "--courier-capacity",
             str(fixed_config["courier_capacity"]),
+            "--deadline-seconds",
+            str(fixed_config["deadline_seconds"]),
             "--service-radius-km",
             str(fixed_config["service_radius_km"]),
             "--batch-size",
@@ -635,6 +640,7 @@ def run_chengdu_default_comparison(
         couriers_per_platform=int(fixed_config["couriers_per_platform"]),
         service_radius_km=fixed_config["service_radius_km"],
         courier_capacity=fixed_config["courier_capacity"],
+        deadline_seconds=int(fixed_config["deadline_seconds"]),
         task_window_start_seconds=fixed_config["task_window_start_seconds"],
         task_window_end_seconds=fixed_config["task_window_end_seconds"],
         task_sampling_seed=int(fixed_config["task_sampling_seed"]),
@@ -703,6 +709,7 @@ def build_script_parser(description: str) -> argparse.ArgumentParser:
     parser.add_argument("--platforms", type=int, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["platforms"])
     parser.add_argument("--couriers-per-platform", type=int, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["couriers_per_platform"])
     parser.add_argument("--courier-capacity", type=float, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["courier_capacity"])
+    parser.add_argument("--deadline-seconds", type=int, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["deadline_seconds"])
     parser.add_argument("--service-radius-km", type=float, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["service_radius_km"])
     parser.add_argument("--batch-size", type=int, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["batch_size"])
     parser.add_argument("--prediction-window-seconds", type=int, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["prediction_window_seconds"])
@@ -753,6 +760,11 @@ def build_fixed_config_from_args(args: argparse.Namespace) -> dict[str, Any]:
         "platforms": args.platforms,
         "couriers_per_platform": args.couriers_per_platform,
         "courier_capacity": args.courier_capacity,
+        "deadline_seconds": getattr(
+            args,
+            "deadline_seconds",
+            DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["deadline_seconds"],
+        ),
         "service_radius_km": args.service_radius_km,
         "batch_size": args.batch_size,
         "prediction_window_seconds": args.prediction_window_seconds,
@@ -958,16 +970,21 @@ def _canonical_environment_kwargs_for_axis(
         "couriers_per_platform": int(fixed_config["couriers_per_platform"]),
         "service_radius_km": fixed_config["service_radius_km"],
         "courier_capacity": fixed_config["courier_capacity"],
-        "task_window_start_seconds": fixed_config["task_window_start_seconds"],
-        "task_window_end_seconds": fixed_config["task_window_end_seconds"],
-        "task_sampling_seed": int(fixed_config["task_sampling_seed"]),
-        "partner_history_task_count_start": int(fixed_config["partner_history_task_count_start"]),
-        "partner_history_task_count_step": int(fixed_config["partner_history_task_count_step"]),
-        "courier_alpha": float(fixed_config["courier_alpha"]),
-        "courier_beta": float(fixed_config["courier_beta"]) if fixed_config["courier_beta"] is not None else None,
-        "courier_service_score": float(fixed_config["courier_service_score"]),
-        "platform_quality_start": float(fixed_config["platform_quality_start"]),
-        "platform_quality_step": float(fixed_config["platform_quality_step"]),
+        "deadline_seconds": int(fixed_config.get("deadline_seconds", DEFAULT_CHENGDU_DEADLINE_SECONDS)),
+        "task_window_start_seconds": fixed_config.get("task_window_start_seconds"),
+        "task_window_end_seconds": fixed_config.get("task_window_end_seconds"),
+        "task_sampling_seed": int(fixed_config.get("task_sampling_seed", 1)),
+        "partner_history_task_count_start": int(fixed_config.get("partner_history_task_count_start", 0)),
+        "partner_history_task_count_step": int(fixed_config.get("partner_history_task_count_step", 0)),
+        "courier_alpha": float(fixed_config.get("courier_alpha", DEFAULT_COURIER_ALPHA)),
+        "courier_beta": (
+            float(fixed_config["courier_beta"])
+            if fixed_config.get("courier_beta") is not None
+            else None
+        ),
+        "courier_service_score": float(fixed_config.get("courier_service_score", DEFAULT_COURIER_SERVICE_SCORE)),
+        "platform_quality_start": float(fixed_config.get("platform_quality_start", DEFAULT_PLATFORM_QUALITY_START)),
+        "platform_quality_step": float(fixed_config.get("platform_quality_step", DEFAULT_PLATFORM_QUALITY_STEP)),
     }
     if axis == "num_parcels":
         kwargs["num_parcels"] = max(int(value) for value in axis_values)
