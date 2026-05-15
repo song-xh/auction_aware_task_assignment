@@ -54,12 +54,12 @@ def _apply_rc() -> None:
     """Configure matplotlib to render every text element (axis labels, ticks,
     legends, math symbols) in Times New Roman.
 
-    Cross-platform fallback chain: real ``Times New Roman`` (Win/macOS) →
-    ``Tinos`` (Google open-source Times-metric clone, Linux) → ``Nimbus Roman``
-    (URW PostScript Times clone) → ``DejaVu Serif`` (matplotlib bundled).
+    Cross-platform fallback chain: real ``Times New Roman`` (Win/macOS/core
+    fonts) → ``Nimbus Roman`` (URW PostScript Times clone) → ``Liberation
+    Serif`` → ``DejaVu Serif`` (matplotlib bundled).
 
     Math symbols use the ``stix`` fontset, which is metric-compatible with Times
-    and ensures characters like ``|P|``, ``×10⁵``, Greek letters, etc. share the
+    and ensures characters like ``|Γ|``, ``×10⁵``, Greek letters, etc. share the
     same look as the surrounding text — so the entire plot is visually
     Times-family even when the literal ``Times New Roman`` file is absent.
     """
@@ -68,14 +68,12 @@ def _apply_rc() -> None:
 
     serif_chain = [
         "Times New Roman",
-        "Tinos",
         "Nimbus Roman",
-        "Nimbus Roman No9 L",
         "Liberation Serif",
         "DejaVu Serif",
         "serif",
     ]
-    plt.rcParams["font.family"] = "serif"
+    plt.rcParams["font.family"] = serif_chain
     plt.rcParams["font.serif"] = serif_chain
     plt.rcParams["mathtext.fontset"] = "stix"
     plt.rcParams["mathtext.default"] = "rm"
@@ -187,24 +185,17 @@ def _save_line_plot(
         return
 
     _apply_rc()
-    figure = plt.figure(figsize=(6, 5))
+    figure = plt.figure(figsize=(7, 5))
     ax = plt.gca()
     for spine in ax.spines.values():
         spine.set_linewidth(1.5)
 
     numeric_x, use_numeric_axis = _coerce_numeric_x(x_values)
-    x_positions = numeric_x if use_numeric_axis else list(range(1, len(x_values) + 1))
-    # Use a log x-axis when the sweep spans more than one decade and every
-    # value is strictly positive. Otherwise linear spacing already reflects
-    # the magnitudes adequately.
-    use_log_x = (
-        use_numeric_axis
-        and all(v > 0 for v in x_positions)
-        and len(x_positions) >= 2
-        and (max(x_positions) / min(x_positions)) >= 10.0
+    x_positions, x_exponent = (
+        _scale_by_smallest_scientific_exponent(numeric_x)
+        if use_numeric_axis
+        else (list(range(1, len(x_values) + 1)), 0)
     )
-    if use_log_x:
-        ax.set_xscale("log")
     for algo_name, ys in series:
         style = ALGORITHM_STYLE.get(algo_name, {
             "label": algo_name, "marker": "o", "color": "gray",
@@ -227,33 +218,33 @@ def _save_line_plot(
     ax.set_xlabel(xlabel, fontsize=20)
     ax.set_ylabel(ylabel, fontsize=20)
 
-    tick_labels = [_format_tick_scientific(v) for v in x_values]
     ax.set_xticks(x_positions)
-    rotation = 0 if use_log_x else 20
-    ha = "center" if use_log_x else "right"
-    ax.set_xticklabels(
-        tick_labels,
-        fontsize=16,
-        rotation=rotation,
-        ha=ha,
-        rotation_mode="anchor" if rotation else "default",
-    )
-    if use_log_x:
-        ax.minorticks_off()
+    if use_numeric_axis:
+        ax.xaxis.set_major_formatter(_make_shared_exponent_formatter(x_exponent))
+        ax.tick_params(axis="x", labelsize=18)
+        for label in ax.get_xticklabels():
+            label.set_rotation(0)
+            label.set_horizontalalignment("center")
+            label.set_rotation_mode("default")
+    else:
+        ax.set_xticklabels(
+            [_format_xtick(v) for v in x_values],
+            fontsize=16,
+            rotation=20,
+            ha="right",
+            rotation_mode="anchor",
+        )
     ax.tick_params(axis="y", labelsize=18)
     _apply_scientific_y_formatter(ax)
     if x_positions:
         x_lo, x_hi = min(x_positions), max(x_positions)
         if x_lo == x_hi:
             x_lo, x_hi = x_lo - 1, x_hi + 1
-        if use_log_x:
-            pad = (x_hi / x_lo) ** 0.04
-            ax.set_xlim(x_lo / pad, x_hi * pad)
-        elif use_numeric_axis:
-            pad = (x_hi - x_lo) * 0.03
-            ax.set_xlim(x_lo - pad, x_hi + pad)
+        if use_numeric_axis:
+            ax.set_xlim(x_lo, x_hi)
         else:
             ax.set_xlim(x_lo, x_hi)
+        ax.margins(x=0)
 
     if len(series) > 1:
         ax.legend(loc="best", fontsize=12, ncol=2, frameon=False)
@@ -276,35 +267,114 @@ def _apply_scientific_y_formatter(ax: Any) -> None:
     as a regular tick label, not as a corner annotation.
     """
 
+    _apply_scientific_axis_formatter(ax, "y")
+    ax.ticklabel_format(axis="y", style="sci", scilimits=(0, 0), useMathText=True)
+
+
+def _apply_scientific_axis_formatter(ax: Any, axis: str) -> None:
+    """Apply a shared scientific multiplier formatter to one numeric axis.
+
+    Args:
+        ax: Matplotlib axes object whose numeric axis should be formatted.
+        axis: Axis selector, either `"x"` or `"y"`.
+
+    Returns:
+        None. The selected axis uses `ScalarFormatter` with a single scientific
+        exponent offset at the edge of the plot.
+    """
+
     from matplotlib.ticker import ScalarFormatter
+
+    if axis not in {"x", "y"}:
+        raise ValueError(f"Unsupported axis for scientific formatting: {axis}")
 
     formatter = ScalarFormatter(useMathText=True, useOffset=False)
     formatter.set_scientific(True)
     formatter.set_powerlimits((0, 0))
-    ax.yaxis.set_major_formatter(formatter)
-    ax.ticklabel_format(axis="y", style="sci", scilimits=(0, 0), useMathText=True)
+    target_axis = ax.xaxis if axis == "x" else ax.yaxis
+    target_axis.set_major_formatter(formatter)
+    target_axis.get_offset_text().set_fontsize(16 if axis == "x" else 18)
 
 
-def _format_tick_scientific(value: Any) -> str:
-    """Render one tick value as `a×10^b` (or just `0` for the zero crossing).
+def _make_shared_exponent_formatter(exponent: int) -> Any:
+    """Create a matplotlib formatter with one shared scientific exponent.
 
-    Used for x-axis tick labels because they are set manually via
-    `set_xticklabels`, which bypasses matplotlib's `ScalarFormatter`.
+    Args:
+        exponent: Base-10 exponent factored out of the original coordinates.
+
+    Returns:
+        Matplotlib formatter that prints scaled tick labels and exposes the
+        shared multiplier through `get_offset()`.
     """
 
-    try:
-        f = float(value)
-    except (TypeError, ValueError):
-        return str(value)
-    if f == 0.0 or not math.isfinite(f):
-        return "0" if f == 0.0 else str(value)
-    exponent = int(math.floor(math.log10(abs(f))))
-    mantissa = f / (10 ** exponent)
-    if abs(mantissa - round(mantissa)) < 1e-9:
-        mantissa_str = f"{int(round(mantissa))}"
-    else:
-        mantissa_str = f"{mantissa:.1f}".rstrip("0").rstrip(".")
-    return rf"${mantissa_str}\times10^{{{exponent}}}$"
+    from matplotlib.ticker import Formatter
+
+    class SharedExponentFormatter(Formatter):
+        """Format scaled tick values with one shared scientific offset."""
+
+        def __call__(self, value: float, pos: int | None = None) -> str:
+            """Return the mantissa tick label for one scaled coordinate.
+
+            Args:
+                value: Scaled coordinate value at the tick.
+                pos: Optional tick position supplied by matplotlib.
+
+            Returns:
+                Compact numeric label without the shared exponent.
+            """
+
+            return _format_scaled_tick(value)
+
+        def get_offset(self) -> str:
+            """Return the shared scientific multiplier at the axis edge.
+
+            Args:
+                None.
+
+            Returns:
+                MathText multiplier such as `$\times10^{3}$`, or an empty
+                string when no exponent was factored out.
+            """
+
+            if exponent == 0:
+                return ""
+            return rf"$\times10^{{{exponent}}}$"
+
+    return SharedExponentFormatter()
+
+
+def _scale_by_smallest_scientific_exponent(values: Sequence[float]) -> tuple[list[float], int]:
+    """Scale coordinates by the exponent of the smallest nonzero magnitude.
+
+    Args:
+        values: Numeric coordinate values.
+
+    Returns:
+        A pair of scaled coordinates and the base-10 exponent that was factored
+        out. For example, `[1000, 20000]` returns `([1, 20], 3)`.
+    """
+
+    finite = [abs(value) for value in values if math.isfinite(value) and value != 0]
+    if not finite:
+        return list(values), 0
+    exponent = int(math.floor(math.log10(min(finite))))
+    divisor = 10 ** exponent
+    return [value / divisor for value in values], exponent
+
+
+def _format_scaled_tick(value: float) -> str:
+    """Format a scaled coordinate tick compactly.
+
+    Args:
+        value: Scaled coordinate value.
+
+    Returns:
+        Integer-looking values without decimals, otherwise a compact decimal.
+    """
+
+    if abs(value - round(value)) < 1e-9:
+        return str(int(round(value)))
+    return f"{value:g}"
 
 
 def _coerce_numeric_x(x_values: Sequence[Any]) -> tuple[list[float], bool]:

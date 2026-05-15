@@ -37,7 +37,7 @@ PAPER_SUITE_PRESETS: dict[str, dict[str, dict[str, list[float]]]] = {
             "deadline_noise": [-20, -15, -10, -5, 0, 5, 10, 15, 20],
         },
         "test": {
-            "num_parcels": [1000, 2000, 3000, 4000, 5000],
+            "num_parcels": [1000, 2000, 5000, 10000, 20000],
             "local_couriers": [100, 200, 300, 400, 500],
             "service_radius": [0.5, 1.0, 1.5, 2.0, 2.5],
             "platforms": [2, 4, 8, 12, 16],
