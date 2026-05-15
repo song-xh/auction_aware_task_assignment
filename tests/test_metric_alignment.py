@@ -1228,6 +1228,80 @@ class MetricAlignmentTest(unittest.TestCase):
             14.0,
         )
 
+    def test_estimate_ramcom_outer_payment_respects_max_ratio_cap(self) -> None:
+        """`estimate_ramcom_outer_payment` should never return a value above the cap."""
+
+        from baselines.ramcom import estimate_ramcom_outer_payment
+
+        request = SimpleNamespace(fare=20.0)
+        outer_worker_histories = [[18.0, 19.5]]
+        reservation_payments = [16.0]
+
+        capped = estimate_ramcom_outer_payment(
+            request=request,
+            outer_worker_histories=outer_worker_histories,
+            reservation_payments=reservation_payments,
+            max_outer_payment_ratio=0.5,
+        )
+        self.assertLessEqual(capped.payment, 10.0 + 1e-9)
+
+        uncapped = estimate_ramcom_outer_payment(
+            request=request,
+            outer_worker_histories=outer_worker_histories,
+            reservation_payments=reservation_payments,
+            max_outer_payment_ratio=1.0,
+        )
+        self.assertGreater(uncapped.payment, capped.payment - 1e-9)
+
+    def test_run_ramcom_baseline_environment_reports_revenue_parameters(self) -> None:
+        """RamCOM metrics should echo the ζ / μ2 / κ parameters actually used."""
+
+        environment = SimpleNamespace(
+            tasks=[],
+            local_couriers=[],
+            partner_couriers_by_platform={},
+            movement_callback=_complete_routes,
+            station_set=[],
+            travel_model=SimpleNamespace(distance=lambda start, end: 0.0, travel_time=lambda start, end: 0.0),
+            service_radius_km=None,
+            geo_index=None,
+            travel_speed_m_per_s=0.0,
+        )
+        task = SimpleNamespace(num="t1", fare=20.0, s_time=0.0, d_time=100.0, weight=1.0, l_node="p1")
+        outer = SimpleNamespace(num=2, location="outer", re_schedule=[], re_weight=0.0, max_weight=5.0)
+        environment = environment._replace(
+            tasks=[task],
+            partner_couriers_by_platform={"P1": [outer]},
+        ) if hasattr(environment, "_replace") else SimpleNamespace(
+            tasks=[task],
+            local_couriers=[],
+            partner_couriers_by_platform={"P1": [outer]},
+            movement_callback=_complete_routes,
+            station_set=[],
+            travel_model=SimpleNamespace(distance=lambda start, end: 0.0, travel_time=lambda start, end: 0.0),
+            service_radius_km=None,
+            geo_index=None,
+            travel_speed_m_per_s=0.0,
+        )
+
+        def feasible_insertions(task: object, couriers: object, **_kwargs: object) -> list[object]:
+            if couriers == [outer]:
+                return [SimpleNamespace(courier=outer, insertion_index=0, distance_meters=0.0)]
+            return []
+
+        with patch("baselines.ramcom.build_legacy_feasible_insertions", side_effect=feasible_insertions):
+            result = run_ramcom_baseline_environment(
+                environment=environment,
+                random_seed=1,
+                local_payment_ratio=0.4,
+                cross_platform_sharing_rate_mu2=0.25,
+                max_outer_payment_ratio=0.5,
+            )
+
+        self.assertAlmostEqual(result["local_payment_ratio_zeta"], 0.4)
+        self.assertAlmostEqual(result["cross_platform_sharing_rate_mu2"], 0.25)
+        self.assertAlmostEqual(result["max_outer_payment_ratio"], 0.5)
+
     def test_ramcom_reports_cross_payment_ratio_diagnostics(self) -> None:
         """RamCOM should expose delivered cross payment ratio diagnostics."""
 
@@ -1251,7 +1325,12 @@ class MetricAlignmentTest(unittest.TestCase):
             return []
 
         with patch("baselines.ramcom.build_legacy_feasible_insertions", side_effect=feasible_insertions):
-            result = run_ramcom_baseline_environment(environment=environment, random_seed=1)
+            result = run_ramcom_baseline_environment(
+                environment=environment,
+                random_seed=1,
+                local_payment_ratio=0.2,
+                cross_platform_sharing_rate_mu2=0.5,
+            )
 
         self.assertEqual(result["cross_assignment_count"], 1)
         self.assertAlmostEqual(result["cross_payment_total"], 14.0)

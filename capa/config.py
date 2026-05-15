@@ -9,25 +9,25 @@ if TYPE_CHECKING:
 
 
 # 论文 CAPA 默认参数
-DEFAULT_CAPA_BATCH_SIZE = 30
+DEFAULT_CAPA_BATCH_SIZE = 20
 # 算法 1 中的批大小阈值 Δb，表示将到达包裹流累积成一个 batch 的时间窗口。
 
-DEFAULT_CHENGDU_DEADLINE_SECONDS = 360
+DEFAULT_CHENGDU_DEADLINE_SECONDS = 240
 # 成都实验统一 pickup deadline，读取数据后按 s_time + deadline_seconds 重写，避免数据集 d_time 污染。
 
 DEFAULT_UTILITY_BALANCE_GAMMA = 0.5
 # Eq.(6) 中的平衡系数 γ，用于权衡容量比 Δwτ 与绕路比 Δdτ 对局部匹配效用 u(τ,c) 的影响。
 
-DEFAULT_THRESHOLD_OMEGA = 0.7
+DEFAULT_THRESHOLD_OMEGA = 0.8
 # Eq.(7) 中的敏感性调节因子 ω，用于把候选匹配对平均效用缩放成动态阈值 Th。
 
-DEFAULT_LOCAL_PAYMENT_RATIO_ZETA = 0.2
+DEFAULT_LOCAL_PAYMENT_RATIO_ZETA = 0.5
 # 本地骑手固定报酬比例 ζ，对应论文中的 Rc(τ,c)=ζ·pτ。
 
-DEFAULT_LOCAL_SHARING_RATE_MU1 = 0.5
+DEFAULT_LOCAL_SHARING_RATE_MU1 = 0.4
 # Loc 的第一层共享比例 μ1，用于定义 p'τ = μ1·pτ，即本地平台愿意给跨平台骑手的最高起始支付上界。
 
-DEFAULT_CROSS_PLATFORM_SHARING_RATE_MU2 = 0.5
+DEFAULT_CROSS_PLATFORM_SHARING_RATE_MU2 = 0.3
 # Loc 的第二层共享比例 μ2，用于平台层拍卖奖励与支付上界；论文要求 μ1 + μ2 ≤ 1。
 
 DEFAULT_PAPER_CAPA_RUNNER_KWARGS: dict[str, float] = {
@@ -111,6 +111,12 @@ DEFAULT_MRA_SHARING_RATE = 0.5
 
 DEFAULT_RAMCOM_RANDOM_SEED = 1
 # RamCOM 基线的默认随机种子；非 CAPA 论文主参数。
+
+DEFAULT_RAMCOM_MAX_OUTER_PAYMENT_RATIO = 0.5
+# RAMCOM 的 outer_payment 相对 fare 的上限比例 κ；用于限制 outer_payment ≤ κ·fare，
+# 防止 reservation/历史抽样把 cooperative payment 推到接近 fare、本地平台跨平台
+# 收益（fare − outer_payment − μ2·fare）被压成接近零。κ=0.5 时，配合 μ2=0.3
+# 大致让本地平台跨平台保留 ≈ 0.2·fare 起步。
 
 
 def build_default_capa_config(batch_size: int = DEFAULT_CAPA_BATCH_SIZE) -> "CAPAConfig":

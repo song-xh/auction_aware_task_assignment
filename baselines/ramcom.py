@@ -9,7 +9,12 @@ import random
 from time import perf_counter
 from typing import Any, Callable, Mapping, Sequence
 
-from capa.config import DEFAULT_CAPA_BATCH_SIZE, DEFAULT_CROSS_PLATFORM_SHARING_RATE_MU2, DEFAULT_RAMCOM_RANDOM_SEED
+from capa.config import (
+    DEFAULT_CAPA_BATCH_SIZE,
+    DEFAULT_CROSS_PLATFORM_SHARING_RATE_MU2,
+    DEFAULT_RAMCOM_MAX_OUTER_PAYMENT_RATIO,
+    DEFAULT_RAMCOM_RANDOM_SEED,
+)
 from capa.utility import (
     DEFAULT_LOCAL_PAYMENT_RATIO,
     InsertionCache,
@@ -136,6 +141,7 @@ def estimate_ramcom_outer_payment(
     request: Any,
     outer_worker_histories: Sequence[Sequence[float]],
     reservation_payments: Sequence[float | None] | None = None,
+    max_outer_payment_ratio: float = DEFAULT_RAMCOM_MAX_OUTER_PAYMENT_RATIO,
 ) -> RamCOMPaymentEstimate:
     """Estimate the outer payment maximizing RamCOM expected revenue.
 
@@ -143,19 +149,27 @@ def estimate_ramcom_outer_payment(
         request: Request-like object exposing `fare`.
         outer_worker_histories: Historical completed values for each candidate outer worker.
         reservation_payments: Reservation estimates aligned with candidate histories.
+        max_outer_payment_ratio: Hard upper bound on `outer_payment / fare` used to
+            prevent the cooperative payment search from picking values close to
+            `fare`, which would leave the local platform with near-zero cross
+            revenue. Candidate levels above `max_outer_payment_ratio * fare` are
+            filtered out before the expected-revenue search.
 
     Returns:
         Selected payment, expected revenue, and aggregate acceptance probability.
     """
 
     fare = float(getattr(request, "fare"))
-    candidate_levels = {fare}
+    payment_cap = max(1e-9, float(max_outer_payment_ratio)) * fare
+    candidate_levels: set[float] = set()
+    if 0.0 < payment_cap:
+        candidate_levels.add(payment_cap)
     for history in outer_worker_histories:
         for value in history:
-            if 0.0 < float(value) <= fare:
+            if 0.0 < float(value) <= payment_cap:
                 candidate_levels.add(float(value))
     for reservation in reservation_payments or []:
-        if reservation is not None and 0.0 < float(reservation) <= fare:
+        if reservation is not None and 0.0 < float(reservation) <= payment_cap:
             candidate_levels.add(float(reservation))
     best_payment = fare
     best_revenue = float("-inf")
@@ -180,6 +194,7 @@ def choose_outer_payment_by_expected_revenue(
     request: Any,
     outer_worker_histories: Sequence[Sequence[float]],
     reservation_payments: Sequence[float | None] | None = None,
+    max_outer_payment_ratio: float = DEFAULT_RAMCOM_MAX_OUTER_PAYMENT_RATIO,
 ) -> float:
     """Choose the cooperative payment maximizing expected revenue for RamCOM.
 
@@ -187,6 +202,7 @@ def choose_outer_payment_by_expected_revenue(
         request: Request-like object exposing `fare`.
         outer_worker_histories: Historical completed values for each candidate outer worker.
         reservation_payments: Reservation estimates aligned with candidate histories.
+        max_outer_payment_ratio: Hard upper bound on `outer_payment / fare`.
 
     Returns:
         The payment that maximizes `(fare - payment) * acceptance_probability`.
@@ -196,6 +212,7 @@ def choose_outer_payment_by_expected_revenue(
         request=request,
         outer_worker_histories=outer_worker_histories,
         reservation_payments=reservation_payments,
+        max_outer_payment_ratio=max_outer_payment_ratio,
     ).payment
 
 
@@ -227,6 +244,7 @@ def run_ramcom_baseline_environment(
     batch_size: int = DEFAULT_CAPA_BATCH_SIZE,
     local_payment_ratio: float = DEFAULT_LOCAL_PAYMENT_RATIO,
     cross_platform_sharing_rate_mu2: float = DEFAULT_CROSS_PLATFORM_SHARING_RATE_MU2,
+    max_outer_payment_ratio: float = DEFAULT_RAMCOM_MAX_OUTER_PAYMENT_RATIO,
     progress_callback: Callable[[Mapping[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     """Run the Chengdu-adapted RamCOM baseline on the unified environment.
@@ -434,6 +452,7 @@ def run_ramcom_baseline_environment(
                         task,
                         outer_histories,
                         outer_reservations,
+                        max_outer_payment_ratio=max_outer_payment_ratio,
                     )
                     outer_payment = payment_estimate.payment
                     trace_entry["payment_e"] = outer_payment
@@ -561,6 +580,9 @@ def run_ramcom_baseline_environment(
         "acceptance_model": "empirical_history_or_reservation_based",
         "payment_search": "history_or_reservation_candidates",
         "batch_size": batch_size,
+        "local_payment_ratio_zeta": float(local_payment_ratio),
+        "cross_platform_sharing_rate_mu2": float(cross_platform_sharing_rate_mu2),
+        "max_outer_payment_ratio": float(max_outer_payment_ratio),
         "TR": total_revenue,
         "CR": delivered_parcels / total_tasks,
         "BPT": mean_decision_time(processing_time_seconds, total_tasks),
