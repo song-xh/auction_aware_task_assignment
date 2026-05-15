@@ -54,37 +54,37 @@ class CAPAConfig:
 
 @dataclass
 class ThresholdHistory:
-    """Maintain cumulative feasible-pair utility history for Eq.7 thresholding."""
+    """Maintain cumulative feasible-pair score history for local thresholding."""
 
-    utility_sum: float = 0.0
+    score_sum: float = 0.0
     pair_count: int = 0
 
-    def add_values(self, utility_values: Iterable[float]) -> None:
-        """Accumulate feasible-pair utility values from one batch.
+    def add_values(self, scores: Iterable[float]) -> None:
+        """Accumulate feasible-pair local revenue scores from one batch.
 
         Args:
-            utility_values: Utility values from the current batch's feasible
+            scores: Local revenue scores from the current batch's feasible
                 local candidate pairs.
         """
 
-        values = [float(value) for value in utility_values]
-        self.utility_sum += sum(values)
+        values = [float(value) for value in scores]
+        self.score_sum += sum(values)
         self.pair_count += len(values)
 
     def calculate_threshold(self, omega: float) -> float:
-        """Return the cumulative Eq.7 threshold.
+        """Return the cumulative local revenue threshold.
 
         Args:
             omega: Threshold sensitivity multiplier.
 
         Returns:
-            `omega * average_utility` over all accumulated feasible pairs, or
+            `omega * average_score` over all accumulated feasible pairs, or
             infinity when no feasible pair has ever existed.
         """
 
         if self.pair_count <= 0:
             return float("inf")
-        return float(omega) * (self.utility_sum / self.pair_count)
+        return float(omega) * (self.score_sum / self.pair_count)
 
 
 @dataclass(frozen=True)
@@ -138,11 +138,12 @@ class UtilityEvaluation:
 
 @dataclass(frozen=True)
 class CandidatePair:
-    """Store a feasible local matching pair and its utility."""
+    """Store a feasible local matching pair, insertion utility, and revenue score."""
 
     parcel: Parcel
     courier: Courier
     utility: UtilityEvaluation
+    local_revenue_score: float = 0.0
 
 
 @dataclass(frozen=True)

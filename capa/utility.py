@@ -546,6 +546,32 @@ def calculate_utility(
     )
 
 
+def calculate_local_revenue_score(parcel: Parcel, config: CAPAConfig) -> float:
+    """Return the CAMA local decision score `(1 - zeta) * p_tau`.
+
+    Args:
+        parcel: Parcel whose local-platform revenue is being evaluated.
+        config: CAPA configuration containing the local courier payment ratio.
+
+    Returns:
+        Local-platform revenue if the parcel is completed by a local courier.
+    """
+
+    return compute_local_platform_revenue_for_local_completion(
+        parcel_fare=parcel.fare,
+        local_payment_ratio=config.local_payment_ratio_zeta,
+    )
+
+
+def calculate_local_revenue_threshold(scores: Iterable[float], omega: float) -> float:
+    """Compute the revenue-based CAMA threshold over all feasible local pairs."""
+
+    values = list(scores)
+    if not values:
+        return float("inf")
+    return float(omega) * (sum(values) / len(values))
+
+
 def calculate_threshold(utility_values: Iterable[float], omega: float) -> float:
     """Compute the Eq.7 threshold over the entire set of feasible pairs `M_t`."""
 

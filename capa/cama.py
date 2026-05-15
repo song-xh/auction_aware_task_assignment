@@ -12,7 +12,8 @@ from .utility import (
     GeoIndex,
     InsertionCache,
     TimingAccumulator,
-    calculate_threshold,
+    calculate_local_revenue_score,
+    calculate_local_revenue_threshold,
     calculate_utility,
     compute_local_courier_payment,
     compute_local_platform_revenue_for_local_completion,
@@ -186,10 +187,25 @@ def run_cama(
                 insertion_cache=insertion_cache,
                 geo_index=geo_index,
             )
-            feasible_for_parcel.append(CandidatePair(parcel=parcel, courier=courier, utility=utility))
+            score = calculate_local_revenue_score(parcel, config)
+            feasible_for_parcel.append(
+                CandidatePair(
+                    parcel=parcel,
+                    courier=courier,
+                    utility=utility,
+                    local_revenue_score=score,
+                )
+            )
         if feasible_for_parcel:
             all_feasible_pairs.extend(feasible_for_parcel)
-            best_pair = max(feasible_for_parcel, key=lambda item: item.utility.value)
+            best_pair = max(
+                feasible_for_parcel,
+                key=lambda item: (
+                    item.local_revenue_score,
+                    item.utility.value,
+                    -item.utility.insertion_index,
+                ),
+            )
             candidate_best_pairs.append(best_pair)
         else:
             auction_pool.append(parcel)
@@ -205,17 +221,17 @@ def run_cama(
             )
 
     if threshold_history is None:
-        threshold = calculate_threshold(
-            (pair.utility.value for pair in all_feasible_pairs),
+        threshold = calculate_local_revenue_threshold(
+            (pair.local_revenue_score for pair in all_feasible_pairs),
             config.threshold_omega,
         )
     else:
-        threshold_history.add_values(pair.utility.value for pair in all_feasible_pairs)
+        threshold_history.add_values(pair.local_revenue_score for pair in all_feasible_pairs)
         threshold = threshold_history.calculate_threshold(config.threshold_omega)
 
     local_assignments: List[Assignment] = []
     for pair in candidate_best_pairs:
-        if pair.utility.value >= threshold:
+        if pair.local_revenue_score >= threshold:
             apply_local_assignment(pair.parcel, pair.courier, pair.utility.insertion_index)
             local_assignments.append(build_local_assignment(pair, config))
         else:

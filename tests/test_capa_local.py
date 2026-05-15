@@ -113,7 +113,7 @@ class LocalShortlistTest(unittest.TestCase):
         )
         history = ThresholdHistory()
         high = Parcel(parcel_id="high", location="p-high", arrival_time=0, deadline=20, weight=1.0, fare=10.0)
-        low = Parcel(parcel_id="low", location="p-low", arrival_time=20, deadline=40, weight=5.0, fare=10.0)
+        low = Parcel(parcel_id="low", location="p-low", arrival_time=20, deadline=40, weight=5.0, fare=2.0)
         first_result = run_cama(
             [high],
             [Courier(courier_id="c-high", current_location="depot", depot_location="depot", capacity=10.0)],
@@ -138,12 +138,39 @@ class LocalShortlistTest(unittest.TestCase):
             now=20,
         )
 
-        self.assertAlmostEqual(first_result.threshold, 0.9)
-        self.assertAlmostEqual(second_result.threshold, 0.7)
+        self.assertAlmostEqual(first_result.threshold, 8.0)
+        self.assertAlmostEqual(second_result.threshold, 4.8)
         self.assertEqual([assignment.parcel.parcel_id for assignment in first_result.local_assignments], ["high"])
         self.assertEqual(second_result.local_assignments, [])
         self.assertEqual([parcel.parcel_id for parcel in second_result.auction_pool], ["low"])
         self.assertEqual([assignment.parcel.parcel_id for assignment in batch_local_result.local_assignments], ["low"])
+
+    def test_run_cama_threshold_uses_local_revenue_not_detour_utility(self) -> None:
+        """Local threshold should preserve high-fare parcels even when detour quality is worse."""
+
+        travel_model = FakeTravelModel(
+            distances={
+                ("depot", "high"): 8.0,
+                ("high", "depot"): 8.0,
+                ("depot", "low"): 1.0,
+                ("low", "depot"): 1.0,
+            }
+        )
+        config = CAPAConfig(local_payment_ratio_zeta=0.2, threshold_omega=1.0)
+        high = Parcel(parcel_id="high", location="high", arrival_time=0, deadline=100, weight=1.0, fare=30.0)
+        low = Parcel(parcel_id="low", location="low", arrival_time=0, deadline=100, weight=1.0, fare=10.0)
+
+        result = run_cama(
+            [high, low],
+            [Courier(courier_id="c1", current_location="depot", depot_location="depot", capacity=10.0)],
+            travel_model,
+            config,
+            now=0,
+        )
+
+        self.assertAlmostEqual(result.threshold, 16.0)
+        self.assertEqual([assignment.parcel.parcel_id for assignment in result.local_assignments], ["high"])
+        self.assertEqual([parcel.parcel_id for parcel in result.auction_pool], ["low"])
 
 
 if __name__ == "__main__":
