@@ -9,6 +9,7 @@ from typing import Any, Sequence
 
 
 PLOT_METRICS = ("TR", "CR", "BPT")
+DEFAULT_COMPARISON_FIGSIZE = (5.4, 4.4)
 
 ALGORITHM_STYLE: dict[str, dict[str, Any]] = {
     "rlcapa":  {"label": "RL-CAPA", "marker": "P", "color": "g",          "linestyle": "-",  "markersize": 13},
@@ -37,11 +38,11 @@ METRIC_LABEL = {
 }
 
 XLABEL_OVERRIDE = {
-    "num_parcels":      "Number of Parcels |Γ|",
-    "local_couriers":   "Number of Local Couriers |C|",
-    "service_radius":   "Service Radius r (km)",
-    "platforms":        "Number of Platforms |P|",
-    "courier_capacity": "Courier Capacity κ",
+    "num_parcels":      r"Number of Parcels $\Gamma$",
+    "local_couriers":   r"Number of Local Couriers $\mathcal{C}$",
+    "service_radius":   r"Service Radius $r$ (km)",
+    "platforms":        r"Number of Platforms $\mathcal{P}$",
+    "courier_capacity": r"Courier Capacity $\kappa$",
 }
 
 
@@ -188,7 +189,7 @@ def save_default_comparison_plots(summary: dict[str, Any], output_dir: Path) -> 
         values = [results[algorithm]["metrics"][metric_name] for algorithm in visible_algorithms]
         labels = [ALGORITHM_STYLE.get(a, {}).get("label", a) for a in visible_algorithms]
         colors = [ALGORITHM_STYLE.get(a, {}).get("color", "gray") for a in visible_algorithms]
-        figure = plt.figure(figsize=(6, 5))
+        figure = plt.figure(figsize=DEFAULT_COMPARISON_FIGSIZE)
         ax = plt.gca()
         for spine in ax.spines.values():
             spine.set_linewidth(1.5)
@@ -310,9 +311,11 @@ def _save_grouped_bar_plot(
 
     n_groups = len(x_values)
     n_series = len(series)
-    indices = list(range(n_groups))
     bar_width = 0.14
     group_width = bar_width * n_series
+    group_gap = bar_width
+    step = group_width + group_gap
+    indices = [index * step for index in range(n_groups)]
 
     legend_handles: list[Any] = []
     for idx, (algo_name, ys) in enumerate(series):
@@ -353,7 +356,10 @@ def _save_grouped_bar_plot(
     ax.tick_params(axis="y", labelsize=25)
     y_exponent = _apply_scientific_y_formatter(ax)
     ax.set_ylabel(_axis_label_with_exponent(ylabel, y_exponent), fontsize=25)
-    ax.set_xlim(indices[0] - group_width / 2, indices[-1] + group_width / 2)
+    ax.set_xlim(
+        indices[0] - group_width / 2 - bar_width,
+        indices[-1] + group_width / 2 + bar_width,
+    )
     ax.margins(x=0)
 
     ax.legend(

@@ -17,17 +17,23 @@ def test_bpt_label_uses_batch_process_time() -> None:
 def test_num_parcels_label_uses_gamma_symbol() -> None:
     """Parcel-count plots should use the paper's Gamma parcel-set symbol."""
 
-    assert plotting.XLABEL_OVERRIDE["num_parcels"] == "Number of Parcels |Γ|"
-    assert "|P|" not in plotting.XLABEL_OVERRIDE["num_parcels"]
+    assert plotting.XLABEL_OVERRIDE["num_parcels"] == r"Number of Parcels $\Gamma$"
+    assert r"\mathcal{P}" not in plotting.XLABEL_OVERRIDE["num_parcels"]
 
 
-def test_all_sweep_labels_use_plain_non_italic_symbols() -> None:
-    """Sweep labels should use plain-text symbols instead of math italics."""
+def test_all_sweep_labels_use_math_notation_symbols() -> None:
+    """Sweep labels should use math notation for the paper symbols."""
 
-    assert plotting.XLABEL_OVERRIDE["local_couriers"] == "Number of Local Couriers |C|"
-    assert plotting.XLABEL_OVERRIDE["service_radius"] == "Service Radius r (km)"
-    assert plotting.XLABEL_OVERRIDE["platforms"] == "Number of Platforms |P|"
-    assert plotting.XLABEL_OVERRIDE["courier_capacity"] == "Courier Capacity κ"
+    assert plotting.XLABEL_OVERRIDE["local_couriers"] == r"Number of Local Couriers $\mathcal{C}$"
+    assert plotting.XLABEL_OVERRIDE["service_radius"] == r"Service Radius $r$ (km)"
+    assert plotting.XLABEL_OVERRIDE["platforms"] == r"Number of Platforms $\mathcal{P}$"
+    assert plotting.XLABEL_OVERRIDE["courier_capacity"] == r"Courier Capacity $\kappa$"
+
+
+def test_default_comparison_figure_size_is_more_compact() -> None:
+    """Default comparison plots should use a tighter figure size than 6x5."""
+
+    assert plotting.DEFAULT_COMPARISON_FIGSIZE == (5.4, 4.4)
 
 
 def test_plot_rc_uses_times_new_roman_as_primary_font() -> None:
@@ -65,7 +71,7 @@ def test_line_plot_uses_numeric_x_spacing_and_scientific_x_axis(tmp_path: Path) 
     assert all(label.get_rotation() == 0 for label in ax.get_xticklabels())
     assert all(label.get_fontsize() == 18 for label in ax.get_xticklabels())
     assert ax.xaxis.get_offset_text().get_text() == ""
-    assert ax.get_xlabel() == r"Number of Parcels |Γ| ($\times10^{3}$)"
+    assert ax.get_xlabel() == r"Number of Parcels $\Gamma$ ($\times10^{3}$)"
 
 
 def test_scale_by_smallest_scientific_exponent_uses_minimum_nonzero_order() -> None:
@@ -191,3 +197,5 @@ def test_grouped_bar_plot_uses_hatches_and_patch_legend(tmp_path: Path) -> None:
     ]
     assert ax.patches[0].get_hatch() == plotting.BAR_STYLE["capa"]["hatch"]
     assert ax.patches[3].get_hatch() == plotting.BAR_STYLE["impgta"]["hatch"]
+    assert [round(float(value), 2) for value in ax.get_xticks()] == [0.0, 0.7, 1.4]
+    assert tuple(round(float(value), 2) for value in ax.get_xlim()) == (-0.42, 1.82)
