@@ -586,9 +586,9 @@ Exp-1 — local couriers ∈ {100,200,300,400,500}, default 300
     --output-dir outputs/plots/chengdu_exp2_couriers_NY \
     --tmp-root /tmp/chengdu_exp2_couriers_NY \
     --algorithms capa greedy ramcom mra basegta impgta \
-    --num-parcels 2000 --local-couriers 300 \
+    --num-parcels 5000 --local-couriers 200 \
     --platforms 4 --couriers-per-platform 50 \
-    --courier-capacity 50 --service-radius-km 1.0
+    --courier-capacity 10 --service-radius-km 1.0
 
   Exp-2 — parcels ∈ {500,2000,5000,10000,20000}, default 2000
   python -m experiments.run_chengdu_exp1_num_parcels \
@@ -596,9 +596,9 @@ Exp-1 — local couriers ∈ {100,200,300,400,500}, default 300
     --output-dir outputs/plots/chengdu_exp1_num_parcels_NY \
     --tmp-root /tmp/chengdu_exp1_num_parcels_NY \
     --algorithms capa greedy ramcom mra basegta impgta \
-    --num-parcels 2000 --local-couriers 300 \
+    --num-parcels 5000 --local-couriers 200 \
     --platforms 4 --couriers-per-platform 50 \
-    --courier-capacity 50 --service-radius-km 1.0
+    --courier-capacity 10 --service-radius-km 1.0
 
   Exp-3 — platforms ∈ {2,4,8,12,16}, default 4, couriers/platform=50
   python -m experiments.run_chengdu_exp4_platforms \
@@ -606,9 +606,9 @@ Exp-1 — local couriers ∈ {100,200,300,400,500}, default 300
     --output-dir outputs/plots/chengdu_exp4_platforms_NY \
     --tmp-root /tmp/chengdu_exp4_platforms_NY \
     --algorithms capa greedy ramcom mra basegta impgta \
-    --num-parcels 2000 --local-couriers 300 \
+    --num-parcels 5000 --local-couriers 200 \
     --platforms 4 --couriers-per-platform 50 \
-    --courier-capacity 50 --service-radius-km 1.0
+    --courier-capacity 10 --service-radius-km 1.0
 
   Exp-4 — courier capacity ∈ {25,50,75,100,125}, default 50
   python -m experiments.run_chengdu_exp6_capacity \
@@ -616,9 +616,9 @@ Exp-1 — local couriers ∈ {100,200,300,400,500}, default 300
     --output-dir outputs/plots/chengdu_exp6_capacity_NY \
     --tmp-root /tmp/chengdu_exp6_capacity_NY \
     --algorithms capa greedy ramcom mra basegta impgta \
-    --num-parcels 2000 --local-couriers 300 \
+    --num-parcels 5000 --local-couriers 200 \
     --platforms 4 --couriers-per-platform 50 \
-    --courier-capacity 50 --service-radius-km 1.0
+    --courier-capacity 10 --service-radius-km 1.0
 
   Exp-5 — service radius ∈ {0.5,1,1.5,2,2.5}, default 1
   python -m experiments.run_chengdu_exp3_radius \
@@ -626,9 +626,9 @@ Exp-1 — local couriers ∈ {100,200,300,400,500}, default 300
     --output-dir outputs/plots/chengdu_exp3_radius_NY \
     --tmp-root /tmp/chengdu_exp3_radius_NY \
     --algorithms capa greedy ramcom mra basegta impgta \
-    --num-parcels 2000 --local-couriers 300 \
+    --num-parcels 5000 --local-couriers 200 \
     --platforms 4 --couriers-per-platform 50 \
-    --courier-capacity 50 --service-radius-km 1.0
+    --courier-capacity 10 --service-radius-km 1.0
 
 ```
 

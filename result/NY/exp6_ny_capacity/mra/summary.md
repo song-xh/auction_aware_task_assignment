@@ -20,9 +20,9 @@ Sweep points: [5, 10, 15, 20, 25]
 
 | metric | value |
 | --- | --- |
-| TR | 3382.97 |
-| CR | 0.153400 |
-| BPT | 0.930108 |
+| TR | 3246.80 |
+| CR | 0.147800 |
+| BPT | 1.0064 |
 
 ## courier_capacity = 15
 

@@ -36,6 +36,14 @@ SWEEP_EXPS = {
 }
 
 BASELINES = ["capa", "greedy", "basegta", "impgta", "mra", "ramcom"]
+ALL_ALGOS = BASELINES + ["rlcapa"]
+NY_DEFAULT_SWEEP_POINTS = {
+    "exp1_ny_parcel": 5000,
+    "exp2_ny_couriers": 200,
+    "exp3_ny_radius": 1,
+    "exp4_ny_platforms": 4,
+    "exp6_ny_capacity": 10,
+}
 
 
 # --------------------- parsing ---------------------
@@ -151,6 +159,35 @@ def _write_default_rlcapa_summary(exp_dir: Path, metrics: dict[str, float]) -> N
     (out_dir / "summary.md").write_text("\n".join(lines), encoding="utf-8")
 
 
+def _write_sweep_algorithm_summary(
+    exp_dir: Path,
+    algorithm: str,
+    sweep_param: str,
+    sweep_label: str,
+    sweep_points: list[Any],
+    rows: dict[Any, dict[str, float]],
+) -> None:
+    """Rewrite one sweep algorithm summary using the shared metrics table format."""
+
+    out_dir = exp_dir / algorithm
+    out_dir.mkdir(parents=True, exist_ok=True)
+    lines: list[str] = []
+    lines.append(f"# {algorithm} — {exp_dir.name}\n")
+    lines.append(f"Sweep parameter: **{sweep_param}** ({sweep_label})\n")
+    lines.append(f"Sweep points: {sweep_points}\n")
+    for pv in sweep_points:
+        metrics = rows[pv]
+        lines.append(f"## {sweep_param} = {pv}\n")
+        lines.append("### Metrics\n")
+        lines.append("| metric | value |")
+        lines.append("| --- | --- |")
+        lines.append(f"| TR | {_fmt_tr(metrics['TR'])} |")
+        lines.append(f"| CR | {_fmt_cr(metrics['CR'])} |")
+        lines.append(f"| BPT | {_fmt_bpt(metrics['BPT'])} |")
+        lines.append("")
+    (out_dir / "summary.md").write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+
+
 # --------------------- README + manifest update ---------------------
 
 def _rebuild_sweep_readme(exp_dir: Path, sweep_param: str, sweep_label: str,
@@ -252,6 +289,69 @@ def _build_default_summary(algos: list[str], algo_metrics: dict[str, dict[str, f
         "algorithms": algos,
         "results": {a: {"algorithm": a, "metrics": algo_metrics[a]} for a in algos},
     }
+
+
+def apply_default_metrics_to_sweep_rows(
+    algo_rows: dict[str, dict[Any, dict[str, float]]],
+    default_point: Any,
+    default_metrics: dict[str, dict[str, float]],
+    algorithms: list[str],
+) -> None:
+    """Overwrite one sweep point with the exp5 default metrics for all algorithms."""
+
+    for algorithm in algorithms:
+        if algorithm not in algo_rows:
+            raise KeyError(f"Missing sweep rows for algorithm: {algorithm}")
+        if default_point not in algo_rows[algorithm]:
+            raise KeyError(f"Missing default sweep point {default_point!r} for algorithm: {algorithm}")
+        if algorithm not in default_metrics:
+            raise KeyError(f"Missing default metrics for algorithm: {algorithm}")
+        algo_rows[algorithm][default_point] = dict(default_metrics[algorithm])
+
+
+def load_default_algorithm_metrics(exp_dir: Path) -> dict[str, dict[str, float]]:
+    """Load `TR/CR/BPT` from the NY default comparison directory for all algorithms."""
+
+    return {
+        algorithm: _parse_default_summary(exp_dir / algorithm / "summary.md")
+        for algorithm in ALL_ALGOS
+    }
+
+
+def sync_ny_sweep_defaults_from_exp5() -> dict[str, tuple[list[str], dict[str, dict[Any, dict[str, float]]]]]:
+    """Copy exp5 default metrics into each NY sweep's documented default point."""
+
+    default_metrics = load_default_algorithm_metrics(NY_ROOT / "exp5_ny_default")
+    sweep_results: dict[str, tuple[list[str], dict[str, dict[Any, dict[str, float]]]]] = {}
+    for name, (sweep_param, label, points) in SWEEP_EXPS.items():
+        exp_dir = NY_ROOT / name
+        algo_rows = {
+            algorithm: _parse_sweep_summary(exp_dir / algorithm / "summary.md", sweep_param)
+            for algorithm in ALL_ALGOS
+        }
+        apply_default_metrics_to_sweep_rows(
+            algo_rows=algo_rows,
+            default_point=NY_DEFAULT_SWEEP_POINTS[name],
+            default_metrics=default_metrics,
+            algorithms=ALL_ALGOS,
+        )
+        for algorithm in ALL_ALGOS:
+            _write_sweep_algorithm_summary(
+                exp_dir=exp_dir,
+                algorithm=algorithm,
+                sweep_param=sweep_param,
+                sweep_label=label,
+                sweep_points=points,
+                rows=algo_rows[algorithm],
+            )
+        _rebuild_sweep_readme(exp_dir, sweep_param, label, points, algo_rows, ALL_ALGOS)
+        _update_manifest(exp_dir)
+        save_comparison_plots(
+            summary=_build_sweep_summary(sweep_param, points, ALL_ALGOS, algo_rows),
+            output_dir=exp_dir,
+        )
+        sweep_results[name] = (ALL_ALGOS, algo_rows)
+    return sweep_results
 
 
 # --------------------- main ---------------------
