@@ -1,0 +1,17 @@
+{
+  "axis": "courier_capacity",
+  "preset": "ny",
+  "algorithms": [
+    "capa",
+    "greedy",
+    "ramcom",
+    "mra",
+    "basegta",
+    "impgta",
+    "rlcapa"
+  ],
+  "summary": "outputs/plots/exp6_ny_capacity/summary.json",
+  "tmp_root": "/tmp/exp6_capacity",
+  "seed_path": "/tmp/exp6_capacity/canonical_seed.pkl",
+  "execution_mode": "split"
+}

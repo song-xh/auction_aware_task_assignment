@@ -1,0 +1,17 @@
+{
+  "axis": "service_radius",
+  "preset": "ny",
+  "algorithms": [
+    "capa",
+    "greedy",
+    "ramcom",
+    "mra",
+    "basegta",
+    "impgta",
+    "rlcapa"
+  ],
+  "summary": "outputs/plots/exp3_ny_radius/summary.json",
+  "tmp_root": "/tmp/exp3_radius",
+  "seed_path": "/tmp/exp3_radius/canonical_seed.pkl",
+  "execution_mode": "split"
+}

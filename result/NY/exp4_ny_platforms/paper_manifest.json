@@ -1,0 +1,17 @@
+{
+  "axis": "platforms",
+  "preset": "ny",
+  "algorithms": [
+    "capa",
+    "greedy",
+    "ramcom",
+    "mra",
+    "basegta",
+    "impgta",
+    "rlcapa"
+  ],
+  "summary": "outputs/plots/exp4_ny_platforms/summary.json",
+  "tmp_root": "/tmp/exp4_platforms",
+  "seed_path": "/tmp/exp4_platforms/canonical_seed.pkl",
+  "execution_mode": "split"
+}

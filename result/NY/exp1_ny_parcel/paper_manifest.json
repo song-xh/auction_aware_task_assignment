@@ -1,0 +1,17 @@
+{
+  "axis": "num_parcels",
+  "preset": "ny",
+  "algorithms": [
+    "capa",
+    "greedy",
+    "basegta",
+    "impgta",
+    "mra",
+    "ramcom",
+    "rlcapa"
+  ],
+  "summary": "outputs/plots/exp1_ny_parcel/summary.json",
+  "tmp_root": "/tmp/exp1_formal",
+  "seed_path": "/tmp/exp1_formal/canonical_seed.pkl",
+  "execution_mode": "split"
+}

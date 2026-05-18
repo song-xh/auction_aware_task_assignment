@@ -10,6 +10,7 @@ from typing import Any, Sequence
 PLOT_METRICS = ("TR", "CR", "BPT")
 
 ALGORITHM_STYLE: dict[str, dict[str, Any]] = {
+    "rlcapa":  {"label": "RL-CAPA", "marker": "P", "color": "g",          "linestyle": "-",  "markersize": 13},
     "capa":    {"label": "CAPA",    "marker": "*", "color": "black",      "linestyle": "--", "markersize": 14},
     "ramcom":  {"label": "RAMCOM",  "marker": "s", "color": "r",          "linestyle": "-",  "markersize": 12},
     "impgta":  {"label": "ImpGTA",  "marker": "D", "color": "c",          "linestyle": "-",  "markersize": 12},
@@ -25,11 +26,11 @@ METRIC_LABEL = {
 }
 
 XLABEL_OVERRIDE = {
-    "num_parcels":     r"Number of Parcels $|\Gamma|$",
-    "local_couriers":  r"Number of Couriers $|C|$",
-    "service_radius":  r"Service Radius (km)",
-    "platforms":       r"Number of Platforms",
-    "courier_capacity": r"Courier Capacity",
+    "num_parcels":      "Number of Parcels |Γ|",
+    "local_couriers":   "Number of Local Couriers |C|",
+    "service_radius":   "Service Radius r (km)",
+    "platforms":        "Number of Platforms |P|",
+    "courier_capacity": "Courier Capacity κ",
 }
 
 
@@ -88,7 +89,7 @@ def _apply_rc() -> None:
     # matplotlib backends sometimes fall back to DejaVu Sans for tick labels
     # even when font.family=serif is set globally.
     plt.rcParams["mathtext.rm"] = "serif"
-    plt.rcParams["mathtext.it"] = "serif:italic"
+    plt.rcParams["mathtext.it"] = "serif"
     plt.rcParams["mathtext.bf"] = "serif:bold"
 
 
@@ -127,19 +128,39 @@ def save_comparison_plots(summary: dict[str, Any], output_dir: Path) -> None:
     sweep_parameter = str(summary["sweep_parameter"])
     runs = list(summary.get("runs", []))
     x_values = [run[sweep_parameter] for run in runs]
+    use_bar = sweep_parameter == "platforms"
     for metric_name in PLOT_METRICS:
-        visible_algorithms = visible_algorithms_for_metric(metric_name, algorithms)
+        if use_bar:
+            visible_algorithms = visible_algorithms_for_bar(metric_name, algorithms)
+        else:
+            visible_algorithms = visible_algorithms_for_metric(metric_name, algorithms)
         series = [
             (algorithm, [run[algorithm]["metrics"][metric_name] for run in runs])
             for algorithm in visible_algorithms
         ]
-        _save_line_plot(
-            x_values=x_values,
-            series=series,
-            x_label=sweep_parameter,
-            metric_name=metric_name,
-            output_path=output_dir / f"{metric_name.lower()}_vs_{sweep_parameter}.png",
-        )
+        output_path = output_dir / f"{metric_name.lower()}_vs_{sweep_parameter}.png"
+        if use_bar:
+            _save_grouped_bar_plot(
+                x_values=x_values,
+                series=series,
+                x_label=sweep_parameter,
+                metric_name=metric_name,
+                output_path=output_path,
+            )
+        else:
+            _save_line_plot(
+                x_values=x_values,
+                series=series,
+                x_label=sweep_parameter,
+                metric_name=metric_name,
+                output_path=output_path,
+            )
+
+
+def visible_algorithms_for_bar(metric_name: str, algorithms: Sequence[str]) -> list[str]:
+    """Bar-plot variant: hide low-performing baselines and BaseGTA for exp4."""
+    hidden = {"basegta", "mra", "greedy"}
+    return [a for a in algorithms if a not in hidden]
 
 
 def save_default_comparison_plots(summary: dict[str, Any], output_dir: Path) -> None:
@@ -190,12 +211,13 @@ def _save_line_plot(
     for spine in ax.spines.values():
         spine.set_linewidth(1.5)
 
-    numeric_x, use_numeric_axis = _coerce_numeric_x(x_values)
-    x_positions, x_exponent = (
-        _scale_by_smallest_scientific_exponent(numeric_x)
-        if use_numeric_axis
-        else (list(range(1, len(x_values) + 1)), 0)
-    )
+    x_positions = list(range(len(x_values)))
+    numeric_x_values, use_numeric_axis = _coerce_numeric_x(x_values)
+    scaled_x_labels: list[str] = []
+    x_exponent = 0
+    if use_numeric_axis:
+        scaled_x_values, x_exponent = _scale_by_smallest_scientific_exponent(numeric_x_values)
+        scaled_x_labels = [_format_scaled_tick(value) for value in scaled_x_values]
     for algo_name, ys in series:
         style = ALGORITHM_STYLE.get(algo_name, {
             "label": algo_name, "marker": "o", "color": "gray",
@@ -220,8 +242,11 @@ def _save_line_plot(
 
     ax.set_xticks(x_positions)
     if use_numeric_axis:
-        ax.xaxis.set_major_formatter(_make_shared_exponent_formatter(x_exponent))
-        ax.tick_params(axis="x", labelsize=18)
+        ax.set_xticklabels(scaled_x_labels, fontsize=18)
+        ax.xaxis.get_offset_text().set_text(
+            "" if x_exponent == 0 else rf"$\times10^{{{x_exponent}}}$"
+        )
+        ax.xaxis.get_offset_text().set_fontsize(16)
         for label in ax.get_xticklabels():
             label.set_rotation(0)
             label.set_horizontalalignment("center")
@@ -239,15 +264,99 @@ def _save_line_plot(
     if x_positions:
         x_lo, x_hi = min(x_positions), max(x_positions)
         if x_lo == x_hi:
-            x_lo, x_hi = x_lo - 1, x_hi + 1
-        if use_numeric_axis:
-            ax.set_xlim(x_lo, x_hi)
-        else:
-            ax.set_xlim(x_lo, x_hi)
+            x_lo, x_hi = x_lo - 0.5, x_hi + 0.5
+        ax.set_xlim(x_lo, x_hi)
         ax.margins(x=0)
 
     if len(series) > 1:
         ax.legend(loc="best", fontsize=12, ncol=2, frameon=False)
+
+    figure.savefig(output_path, bbox_inches="tight", dpi=300)
+    eps_path = output_path.with_suffix(".eps")
+    try:
+        figure.savefig(eps_path, bbox_inches="tight", dpi=300)
+    except Exception:
+        pass
+    plt.close(figure)
+
+
+def _save_grouped_bar_plot(
+    x_values: Sequence[float],
+    series: Sequence[tuple[str, Sequence[float]]],
+    x_label: str,
+    metric_name: str,
+    output_path: Path,
+) -> None:
+    """Render grouped bar plot per sweep point with marker-tagged legend below."""
+    import matplotlib.pyplot as plt
+    from matplotlib.lines import Line2D
+
+    if not x_values or not series:
+        return
+
+    _apply_rc()
+    figure = plt.figure(figsize=(7.5, 5.2))
+    ax = plt.gca()
+    for spine in ax.spines.values():
+        spine.set_linewidth(1.5)
+
+    n_groups = len(x_values)
+    n_series = len(series)
+    group_width = 0.86
+    bar_width = group_width / n_series
+    indices = list(range(n_groups))
+
+    legend_handles: list[Any] = []
+    for idx, (algo_name, ys) in enumerate(series):
+        style = ALGORITHM_STYLE.get(algo_name, {
+            "label": algo_name, "marker": "o", "color": "gray",
+            "linestyle": "-", "markersize": 10,
+        })
+        offsets = [i - group_width / 2 + bar_width * (idx + 0.5) for i in indices]
+        ax.bar(
+            offsets,
+            [float(v) for v in ys],
+            width=bar_width,
+            color=style["color"],
+            edgecolor="black",
+            linewidth=1.0,
+            label=style["label"],
+        )
+        legend_handles.append(
+            Line2D(
+                [0], [0],
+                marker=style["marker"],
+                color=style["color"],
+                markerfacecolor="none",
+                markeredgecolor=style["color"],
+                markersize=style["markersize"],
+                linestyle="none",
+                label=style["label"],
+            )
+        )
+
+    xlabel = XLABEL_OVERRIDE.get(x_label, x_label)
+    ylabel = METRIC_LABEL.get(metric_name, metric_name)
+    ax.set_xlabel(xlabel, fontsize=20)
+    ax.set_ylabel(ylabel, fontsize=20)
+
+    ax.set_xticks(indices)
+    ax.set_xticklabels([_format_xtick(v) for v in x_values], fontsize=18)
+    ax.tick_params(axis="y", labelsize=18)
+    _apply_scientific_y_formatter(ax)
+    ax.set_xlim(-0.5, n_groups - 0.5)
+    ax.margins(x=0)
+
+    ax.legend(
+        handles=legend_handles,
+        loc="upper center",
+        bbox_to_anchor=(0.5, -0.18),
+        ncol=min(n_series, 4),
+        fontsize=12,
+        frameon=False,
+        handletextpad=0.4,
+        columnspacing=1.2,
+    )
 
     figure.savefig(output_path, bbox_inches="tight", dpi=300)
     eps_path = output_path.with_suffix(".eps")
