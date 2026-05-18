@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -17,6 +18,16 @@ ALGORITHM_STYLE: dict[str, dict[str, Any]] = {
     "basegta": {"label": "BaseGTA", "marker": "v", "color": "b",          "linestyle": "-",  "markersize": 12},
     "mra":     {"label": "MRA",     "marker": "o", "color": "darkorange", "linestyle": "-",  "markersize": 12},
     "greedy":  {"label": "Greedy",  "marker": "x", "color": "m",          "linestyle": "-",  "markersize": 12},
+}
+
+BAR_STYLE: dict[str, dict[str, str]] = {
+    "capa": {"facecolor": "orangered", "hatch": "/"},
+    "impgta": {"facecolor": "yellowgreen", "hatch": "\\"},
+    "ramcom": {"facecolor": "moccasin", "hatch": "-"},
+    "rlcapa": {"facecolor": "deepskyblue", "hatch": "//"},
+    "basegta": {"facecolor": "violet", "hatch": "\\\\"},
+    "mra": {"facecolor": "#D3D3D3", "hatch": "-\\"},
+    "greedy": {"facecolor": "peachpuff", "hatch": "x"},
 }
 
 METRIC_LABEL = {
@@ -183,10 +194,10 @@ def save_default_comparison_plots(summary: dict[str, Any], output_dir: Path) -> 
             spine.set_linewidth(1.5)
         ax.bar(labels, [float(v) for v in values], color=colors, edgecolor="black")
         ax.set_xlabel("Algorithm", fontsize=20)
-        ax.set_ylabel(METRIC_LABEL.get(metric_name, metric_name), fontsize=20)
         plt.xticks(fontsize=16, rotation=20)
         plt.yticks(fontsize=18)
-        _apply_scientific_y_formatter(ax)
+        y_exponent = _apply_scientific_y_formatter(ax)
+        ax.set_ylabel(_axis_label_with_exponent(METRIC_LABEL.get(metric_name, metric_name), y_exponent), fontsize=20)
         figure.savefig(output_dir / f"default_{metric_name.lower()}_comparison.png",
                        bbox_inches="tight", dpi=300)
         plt.close(figure)
@@ -237,16 +248,11 @@ def _save_line_plot(
 
     xlabel = XLABEL_OVERRIDE.get(x_label, x_label)
     ylabel = METRIC_LABEL.get(metric_name, metric_name)
-    ax.set_xlabel(xlabel, fontsize=20)
-    ax.set_ylabel(ylabel, fontsize=20)
+    ax.set_xlabel(_axis_label_with_exponent(xlabel, x_exponent if use_numeric_axis else 0), fontsize=20)
 
     ax.set_xticks(x_positions)
     if use_numeric_axis:
         ax.set_xticklabels(scaled_x_labels, fontsize=18)
-        ax.xaxis.get_offset_text().set_text(
-            "" if x_exponent == 0 else rf"$\times10^{{{x_exponent}}}$"
-        )
-        ax.xaxis.get_offset_text().set_fontsize(16)
         for label in ax.get_xticklabels():
             label.set_rotation(0)
             label.set_horizontalalignment("center")
@@ -260,7 +266,8 @@ def _save_line_plot(
             rotation_mode="anchor",
         )
     ax.tick_params(axis="y", labelsize=18)
-    _apply_scientific_y_formatter(ax)
+    y_exponent = _apply_scientific_y_formatter(ax)
+    ax.set_ylabel(_axis_label_with_exponent(ylabel, y_exponent), fontsize=20)
     if x_positions:
         x_lo, x_hi = min(x_positions), max(x_positions)
         if x_lo == x_hi:
@@ -271,6 +278,7 @@ def _save_line_plot(
     if len(series) > 1:
         ax.legend(loc="best", fontsize=12, ncol=2, frameon=False)
 
+    _set_axis_offset_text(ax.xaxis, 0, fontsize=16)
     figure.savefig(output_path, bbox_inches="tight", dpi=300)
     eps_path = output_path.with_suffix(".eps")
     try:
@@ -287,77 +295,79 @@ def _save_grouped_bar_plot(
     metric_name: str,
     output_path: Path,
 ) -> None:
-    """Render grouped bar plot per sweep point with marker-tagged legend below."""
+    """Render grouped bar plots in the paper's filled-bar + hatch style."""
     import matplotlib.pyplot as plt
-    from matplotlib.lines import Line2D
+    import matplotlib.patches as mpatches
 
     if not x_values or not series:
         return
 
     _apply_rc()
-    figure = plt.figure(figsize=(7.5, 5.2))
+    figure = plt.figure(figsize=(8.4, 5.6))
     ax = plt.gca()
     for spine in ax.spines.values():
         spine.set_linewidth(1.5)
 
     n_groups = len(x_values)
     n_series = len(series)
-    group_width = 0.86
-    bar_width = group_width / n_series
     indices = list(range(n_groups))
+    bar_width = 0.14
+    group_width = bar_width * n_series
 
     legend_handles: list[Any] = []
     for idx, (algo_name, ys) in enumerate(series):
-        style = ALGORITHM_STYLE.get(algo_name, {
-            "label": algo_name, "marker": "o", "color": "gray",
-            "linestyle": "-", "markersize": 10,
-        })
+        style = ALGORITHM_STYLE.get(algo_name, {"label": algo_name})
+        bar_style = BAR_STYLE.get(algo_name, {"facecolor": "lightgray", "hatch": "/"})
         offsets = [i - group_width / 2 + bar_width * (idx + 0.5) for i in indices]
         ax.bar(
             offsets,
             [float(v) for v in ys],
             width=bar_width,
-            color=style["color"],
+            color=bar_style["facecolor"],
             edgecolor="black",
-            linewidth=1.0,
+            linewidth=1.5,
+            hatch=bar_style["hatch"],
             label=style["label"],
         )
         legend_handles.append(
-            Line2D(
-                [0], [0],
-                marker=style["marker"],
-                color=style["color"],
-                markerfacecolor="none",
-                markeredgecolor=style["color"],
-                markersize=style["markersize"],
-                linestyle="none",
+            mpatches.Patch(
+                facecolor=bar_style["facecolor"],
+                edgecolor="black",
+                linewidth=1.5,
+                hatch=bar_style["hatch"],
                 label=style["label"],
             )
         )
 
     xlabel = XLABEL_OVERRIDE.get(x_label, x_label)
     ylabel = METRIC_LABEL.get(metric_name, metric_name)
-    ax.set_xlabel(xlabel, fontsize=20)
-    ax.set_ylabel(ylabel, fontsize=20)
-
     ax.set_xticks(indices)
-    ax.set_xticklabels([_format_xtick(v) for v in x_values], fontsize=18)
-    ax.tick_params(axis="y", labelsize=18)
-    _apply_scientific_y_formatter(ax)
-    ax.set_xlim(-0.5, n_groups - 0.5)
+    numeric_x_values, use_numeric_axis = _coerce_numeric_x(x_values)
+    x_exponent = 0
+    if use_numeric_axis:
+        scaled_x_values, x_exponent = _scale_by_smallest_scientific_exponent(numeric_x_values)
+        ax.set_xticklabels([_format_scaled_tick(value) for value in scaled_x_values], fontsize=25)
+    else:
+        ax.set_xticklabels([_format_xtick(v) for v in x_values], fontsize=25)
+    ax.set_xlabel(_axis_label_with_exponent(xlabel, x_exponent if use_numeric_axis else 0), fontsize=25)
+    ax.tick_params(axis="y", labelsize=25)
+    y_exponent = _apply_scientific_y_formatter(ax)
+    ax.set_ylabel(_axis_label_with_exponent(ylabel, y_exponent), fontsize=25)
+    ax.set_xlim(indices[0] - group_width / 2, indices[-1] + group_width / 2)
     ax.margins(x=0)
 
     ax.legend(
         handles=legend_handles,
         loc="upper center",
-        bbox_to_anchor=(0.5, -0.18),
         ncol=min(n_series, 4),
-        fontsize=12,
+        fontsize=18,
         frameon=False,
-        handletextpad=0.4,
-        columnspacing=1.2,
+        handletextpad=0.5,
+        columnspacing=0.9,
     )
 
+    figure.tight_layout()
+    _set_axis_offset_text(ax.xaxis, 0, fontsize=18)
     figure.savefig(output_path, bbox_inches="tight", dpi=300)
     eps_path = output_path.with_suffix(".eps")
     try:
@@ -367,108 +377,138 @@ def _save_grouped_bar_plot(
     plt.close(figure)
 
 
-def _apply_scientific_y_formatter(ax: Any) -> None:
-    """Force the y-axis to render every tick label in scientific notation.
+def _apply_scientific_y_formatter(ax: Any) -> int:
+    """Render y ticks with integer mantissas and return the shared exponent."""
 
-    Uses `ScalarFormatter(useMathText=True)` with the scientific power limits
-    pinned to `(0, 0)` so even values within the default `[10^-3, 10^3]` band
-    are rendered as `a×10^b` rather than plain decimals. The exponent is shown
-    as a regular tick label, not as a corner annotation.
-    """
-
-    _apply_scientific_axis_formatter(ax, "y")
-    ax.ticklabel_format(axis="y", style="sci", scilimits=(0, 0), useMathText=True)
+    return _apply_integer_scientific_axis_formatter(ax, "y")
 
 
-def _apply_scientific_axis_formatter(ax: Any, axis: str) -> None:
-    """Apply a shared scientific multiplier formatter to one numeric axis.
+def _apply_integer_scientific_axis_formatter(ax: Any, axis: str) -> int:
+    """Format one axis as integer mantissas with a shared power-of-ten offset.
 
     Args:
         ax: Matplotlib axes object whose numeric axis should be formatted.
         axis: Axis selector, either `"x"` or `"y"`.
 
     Returns:
-        None. The selected axis uses `ScalarFormatter` with a single scientific
-        exponent offset at the edge of the plot.
+        Shared exponent used by the axis label. The selected axis is rewritten
+        to fixed tick labels and the corner offset text is hidden.
     """
-
-    from matplotlib.ticker import ScalarFormatter
 
     if axis not in {"x", "y"}:
         raise ValueError(f"Unsupported axis for scientific formatting: {axis}")
 
-    formatter = ScalarFormatter(useMathText=True, useOffset=False)
-    formatter.set_scientific(True)
-    formatter.set_powerlimits((0, 0))
+    ax.figure.canvas.draw()
     target_axis = ax.xaxis if axis == "x" else ax.yaxis
-    target_axis.set_major_formatter(formatter)
-    target_axis.get_offset_text().set_fontsize(16 if axis == "x" else 18)
+    ticks = [float(value) for value in target_axis.get_majorticklocs() if math.isfinite(value)]
+    exponent = _shared_integer_exponent(ticks)
+    divisor = 10 ** exponent
+    labels = [_format_scaled_tick(value / divisor) for value in ticks]
+    if axis == "x":
+        ax.set_xticks(ticks)
+        ax.set_xticklabels(labels, fontsize=18)
+    else:
+        ax.set_yticks(ticks)
+        ax.set_yticklabels(labels, fontsize=18)
+    _set_axis_offset_text(target_axis, 0, fontsize=16 if axis == "x" else 18)
+    return exponent
 
 
-def _make_shared_exponent_formatter(exponent: int) -> Any:
-    """Create a matplotlib formatter with one shared scientific exponent.
+def _axis_label_with_exponent(label: str, exponent: int) -> str:
+    """Append one shared scientific multiplier beside an axis title.
 
     Args:
-        exponent: Base-10 exponent factored out of the original coordinates.
+        label: Base axis title.
+        exponent: Shared base-10 exponent for the axis values.
 
     Returns:
-        Matplotlib formatter that prints scaled tick labels and exposes the
-        shared multiplier through `get_offset()`.
+        Axis title with multiplier suffix when needed.
     """
 
-    from matplotlib.ticker import Formatter
+    if exponent == 0:
+        return label
+    return rf"{label} ($\times10^{{{exponent}}}$)"
 
-    class SharedExponentFormatter(Formatter):
-        """Format scaled tick values with one shared scientific offset."""
 
-        def __call__(self, value: float, pos: int | None = None) -> str:
-            """Return the mantissa tick label for one scaled coordinate.
+def _set_axis_offset_text(axis: Any, exponent: int, fontsize: int) -> None:
+    """Set a fixed scientific offset label on one axis.
 
-            Args:
-                value: Scaled coordinate value at the tick.
-                pos: Optional tick position supplied by matplotlib.
+    Args:
+        axis: Matplotlib axis object.
+        exponent: Shared base-10 exponent to display.
+        fontsize: Font size for the offset text.
 
-            Returns:
-                Compact numeric label without the shared exponent.
-            """
+    Returns:
+        None. The axis offset text is updated in place.
+    """
 
-            return _format_scaled_tick(value)
-
-        def get_offset(self) -> str:
-            """Return the shared scientific multiplier at the axis edge.
-
-            Args:
-                None.
-
-            Returns:
-                MathText multiplier such as `$\times10^{3}$`, or an empty
-                string when no exponent was factored out.
-            """
-
-            if exponent == 0:
-                return ""
-            return rf"$\times10^{{{exponent}}}$"
-
-    return SharedExponentFormatter()
+    offset_text = axis.get_offset_text()
+    offset_text.set_text("" if exponent == 0 else rf"$\times10^{{{exponent}}}$")
+    offset_text.set_fontsize(fontsize)
+    offset_text.set_visible(exponent != 0)
 
 
 def _scale_by_smallest_scientific_exponent(values: Sequence[float]) -> tuple[list[float], int]:
-    """Scale coordinates by the exponent of the smallest nonzero magnitude.
+    """Scale coordinates by the largest shared power-of-ten integer factor.
 
     Args:
         values: Numeric coordinate values.
 
     Returns:
         A pair of scaled coordinates and the base-10 exponent that was factored
-        out. For example, `[1000, 20000]` returns `([1, 20], 3)`.
+        out. The chosen exponent keeps all scaled values as integers whenever a
+        shared power-of-ten factor exists. For example, `[1000, 2200, 5000]`
+        returns `([10, 22, 50], 2)`.
     """
 
-    finite = [abs(value) for value in values if math.isfinite(value) and value != 0]
-    if not finite:
+    exponent = _shared_integer_exponent(values)
+    if exponent == 0 and not any(math.isfinite(value) and value != 0 for value in values):
         return list(values), 0
-    exponent = int(math.floor(math.log10(min(finite))))
     divisor = 10 ** exponent
     return [value / divisor for value in values], exponent
+
+
+def _shared_integer_exponent(values: Sequence[float]) -> int:
+    """Return the shared power-of-ten factor that preserves integer mantissas.
+
+    Args:
+        values: Numeric values that will share one scientific multiplier.
+
+    Returns:
+        Largest integer exponent `e` such that each finite nonzero value divided
+        by `10^e` is an integer within the decimal precision implied by its
+        textual representation.
+    """
+
+    exponents = [
+        _integer_power_of_ten_exponent(value)
+        for value in values
+        if math.isfinite(value) and value != 0
+    ]
+    if not exponents:
+        return 0
+    return min(exponents)
+
+
+def _integer_power_of_ten_exponent(value: float) -> int:
+    """Return the largest power-of-ten factor embedded in one decimal value.
+
+    Args:
+        value: Numeric value to analyze.
+
+    Returns:
+        Largest integer exponent `e` such that `value / 10^e` remains an
+        integer under the value's finite decimal representation.
+    """
+
+    decimal_value = Decimal(format(abs(value), ".12g"))
+    digits = decimal_value.as_tuple().digits
+    trailing_zeros = 0
+    for digit in reversed(digits):
+        if digit != 0:
+            break
+        trailing_zeros += 1
+    return decimal_value.as_tuple().exponent + trailing_zeros
 
 
 def _format_scaled_tick(value: float) -> str:
@@ -504,13 +544,11 @@ def _coerce_numeric_x(x_values: Sequence[Any]) -> tuple[list[float], bool]:
 
 
 def _format_xtick(v: Any) -> str:
-    """Compact tick label: 1000 -> '1.0K', floats kept short."""
+    """Compact numeric tick label without K-suffix shorthand."""
     try:
         f = float(v)
     except (TypeError, ValueError):
         return str(v)
-    if f >= 1000 and f.is_integer():
-        return f"{f / 1000:.1f}K"
     if f.is_integer():
         return str(int(f))
     return f"{f:g}"

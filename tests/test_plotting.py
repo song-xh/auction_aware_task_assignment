@@ -64,7 +64,8 @@ def test_line_plot_uses_numeric_x_spacing_and_scientific_x_axis(tmp_path: Path) 
     assert ax.get_xlim() == (0.0, 4.0)
     assert all(label.get_rotation() == 0 for label in ax.get_xticklabels())
     assert all(label.get_fontsize() == 18 for label in ax.get_xticklabels())
-    assert ax.xaxis.get_offset_text().get_text() == r"$\times10^{3}$"
+    assert ax.xaxis.get_offset_text().get_text() == ""
+    assert ax.get_xlabel() == r"Number of Parcels |Γ| ($\times10^{3}$)"
 
 
 def test_scale_by_smallest_scientific_exponent_uses_minimum_nonzero_order() -> None:
@@ -74,6 +75,38 @@ def test_scale_by_smallest_scientific_exponent_uses_minimum_nonzero_order() -> N
 
     assert scaled == [1.0, 100.0, 1000.0]
     assert exponent == 1
+
+
+def test_scale_by_smallest_scientific_exponent_keeps_integer_mantissas() -> None:
+    """Shared scaling should prefer an integer mantissa over decimal notation."""
+
+    scaled, exponent = plotting._scale_by_smallest_scientific_exponent([1000, 2200, 5000])
+
+    assert scaled == [10.0, 22.0, 50.0]
+    assert exponent == 2
+
+
+def test_apply_scientific_y_formatter_uses_integer_mantissas() -> None:
+    """Scientific y-axis labels should be integer mantissas with one shared exponent."""
+
+    import matplotlib.pyplot as plt
+
+    figure, ax = plt.subplots()
+    ax.set_yticks([0, 2200, 4400])
+
+    exponent = plotting._apply_scientific_y_formatter(ax)
+
+    assert [tick.get_text() for tick in ax.get_yticklabels()] == ["0", "22", "44"]
+    assert exponent == 2
+    assert ax.yaxis.get_offset_text().get_text() == ""
+    plt.close(figure)
+
+
+def test_axis_label_with_exponent_appends_shared_multiplier() -> None:
+    """Axis labels should carry the shared scientific multiplier beside the title."""
+
+    assert plotting._axis_label_with_exponent("Total Revenue", 0) == "Total Revenue"
+    assert plotting._axis_label_with_exponent("Total Revenue", 3) == r"Total Revenue ($\times10^{3}$)"
 
 
 def test_comparison_plot_filters_basegta_and_bpt_mra() -> None:
@@ -123,3 +156,38 @@ def test_visible_algorithms_for_bar_hides_basegta_in_exp4() -> None:
     assert plotting.visible_algorithms_for_bar("TR", algorithms) == ["capa", "impgta", "ramcom", "rlcapa"]
     assert plotting.visible_algorithms_for_bar("CR", algorithms) == ["capa", "impgta", "ramcom", "rlcapa"]
     assert plotting.visible_algorithms_for_bar("BPT", algorithms) == ["capa", "impgta", "ramcom", "rlcapa"]
+
+
+def test_grouped_bar_plot_uses_hatches_and_patch_legend(tmp_path: Path) -> None:
+    """Platform bar plots should use hatched bars and an in-plot patch legend."""
+
+    import matplotlib.pyplot as plt
+
+    output_path = tmp_path / "bar.png"
+
+    with patch("matplotlib.figure.Figure.savefig"), patch("matplotlib.pyplot.close"):
+        plotting._save_grouped_bar_plot(
+            x_values=[2, 4, 8],
+            series=[
+                ("capa", [1.0, 2.0, 3.0]),
+                ("impgta", [1.5, 2.5, 3.5]),
+                ("ramcom", [0.5, 1.5, 2.5]),
+                ("rlcapa", [2.0, 3.0, 4.0]),
+            ],
+            x_label="platforms",
+            metric_name="TR",
+            output_path=output_path,
+        )
+        ax = plt.gcf().axes[0]
+
+    legend = ax.get_legend()
+
+    assert legend is not None
+    assert [text.get_text() for text in legend.get_texts()] == [
+        "CAPA",
+        "ImpGTA",
+        "RAMCOM",
+        "RL-CAPA",
+    ]
+    assert ax.patches[0].get_hatch() == plotting.BAR_STYLE["capa"]["hatch"]
+    assert ax.patches[3].get_hatch() == plotting.BAR_STYLE["impgta"]["hatch"]
