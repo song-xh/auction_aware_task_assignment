@@ -199,3 +199,177 @@ def test_grouped_bar_plot_uses_hatches_and_patch_legend(tmp_path: Path) -> None:
     assert ax.patches[3].get_hatch() == plotting.BAR_STYLE["impgta"]["hatch"]
     assert [round(float(value), 2) for value in ax.get_xticks()] == [0.0, 0.7, 1.4]
     assert tuple(round(float(value), 2) for value in ax.get_xlim()) == (-0.42, 1.82)
+
+
+def test_line_plot_formats_cr_axis_as_integer_percent(tmp_path: Path) -> None:
+    """CR plots should render percentage labels with integer ticks."""
+
+    import matplotlib.pyplot as plt
+
+    output_path = tmp_path / "cr.png"
+
+    with patch("matplotlib.figure.Figure.savefig"), patch("matplotlib.pyplot.close"):
+        plotting._save_line_plot(
+            x_values=[100, 200, 300],
+            series=[("capa", [0.445, 0.4862, 0.5224])],
+            x_label="local_couriers",
+            metric_name="CR",
+            output_path=output_path,
+        )
+        ax = plt.gcf().axes[0]
+
+    labels = [tick.get_text() for tick in ax.get_yticklabels() if tick.get_text()]
+
+    assert ax.get_ylabel() == "Completion Rate (%)"
+    assert 1 <= len(labels) <= 5
+    assert all("." not in label for label in labels)
+
+
+def test_line_plot_formats_bpt_axis_in_ms(tmp_path: Path) -> None:
+    """BPT plots should use milliseconds on the y-axis."""
+
+    import matplotlib.pyplot as plt
+
+    output_path = tmp_path / "bpt.png"
+
+    with patch("matplotlib.figure.Figure.savefig"), patch("matplotlib.pyplot.close"):
+        plotting._save_line_plot(
+            x_values=[500, 2000, 5000],
+            series=[("capa", [0.227748, 0.218733, 0.232102])],
+            x_label="num_parcels",
+            metric_name="BPT",
+            output_path=output_path,
+        )
+        ax = plt.gcf().axes[0]
+
+    assert ax.get_ylabel().startswith("BPT")
+    assert "ms" in ax.get_ylabel()
+
+
+def test_exp1_tr_plot_uses_log10_y_axis_label(tmp_path: Path) -> None:
+    """Exp-1 TR plots should compress revenue with a log10 y-axis."""
+
+    import matplotlib.pyplot as plt
+
+    output_path = tmp_path / "tr.png"
+
+    with patch("matplotlib.figure.Figure.savefig"), patch("matplotlib.pyplot.close"):
+        plotting._save_line_plot(
+            x_values=[500, 2000, 5000, 10000, 20000],
+            series=[("capa", [1317.54, 5736.95, 14624.23, 27560.34, 48965.33])],
+            x_label="num_parcels",
+            metric_name="TR",
+            output_path=output_path,
+        )
+        ax = plt.gcf().axes[0]
+
+    assert ax.get_ylabel() == r"Total Revenue ($\log_{10}$)"
+
+
+def test_line_plot_legend_uses_framed_non_center_location(tmp_path: Path) -> None:
+    """Legends should avoid centered placement and use a visible frame."""
+
+    import matplotlib.pyplot as plt
+
+    output_path = tmp_path / "legend.png"
+
+    with patch("matplotlib.figure.Figure.savefig"), patch("matplotlib.pyplot.close"):
+        plotting._save_line_plot(
+            x_values=[500, 2000, 5000],
+            series=[
+                ("capa", [1.0, 2.0, 3.0]),
+                ("greedy", [0.5, 1.0, 1.5]),
+                ("impgta", [1.2, 2.2, 3.2]),
+            ],
+            x_label="num_parcels",
+            metric_name="TR",
+            output_path=output_path,
+        )
+        ax = plt.gcf().axes[0]
+
+    legend = ax.get_legend()
+
+    assert legend is not None
+    assert legend.get_frame_on() is True
+    assert legend._loc != 0
+
+
+def test_exp1_tr_plot_uses_integer_log_ticks_2_3_4(tmp_path: Path) -> None:
+    """Exp-1 TR should show at least the integer log ticks 2, 3, and 4."""
+
+    import matplotlib.pyplot as plt
+
+    output_path = tmp_path / "exp1-tr.png"
+
+    with patch("matplotlib.figure.Figure.savefig"), patch("matplotlib.pyplot.close"):
+        plotting._save_line_plot(
+            x_values=[500, 2000, 5000, 10000, 20000],
+            series=[
+                ("capa", [1317.54, 5736.95, 14624.23, 27560.34, 48965.33]),
+                ("greedy", [362.45, 2418.85, 7281.19, 12066.23, 14760.35]),
+            ],
+            x_label="num_parcels",
+            metric_name="TR",
+            output_path=output_path,
+        )
+        ax = plt.gcf().axes[0]
+
+    labels = [tick.get_text() for tick in ax.get_yticklabels()]
+
+    assert "2" in labels
+    assert "3" in labels
+    assert "4" in labels
+
+
+def test_exp2_tr_plot_limits_y_ticks_to_five_or_fewer(tmp_path: Path) -> None:
+    """Exp-2 TR should not render an excessive y-tick count."""
+
+    import matplotlib.pyplot as plt
+
+    output_path = tmp_path / "exp2-tr.png"
+
+    with patch("matplotlib.figure.Figure.savefig"), patch("matplotlib.pyplot.close"):
+        plotting._save_line_plot(
+            x_values=[100, 200, 300, 400, 500],
+            series=[
+                ("capa", [10238.03, 11120.70, 11453.88, 11871.22, 11729.52]),
+                ("impgta", [13794.39, 13841.65, 14299.24, 14061.35, 13969.21]),
+            ],
+            x_label="local_couriers",
+            metric_name="TR",
+            output_path=output_path,
+        )
+        ax = plt.gcf().axes[0]
+
+    labels = [tick.get_text() for tick in ax.get_yticklabels() if tick.get_text()]
+
+    assert len(labels) <= 5
+
+
+def test_exp4_bar_plot_uses_two_column_upper_left_legend(tmp_path: Path) -> None:
+    """Exp-4 legend should be a compact 2x2 block in the upper-left corner."""
+
+    import matplotlib.pyplot as plt
+
+    output_path = tmp_path / "exp4-bar.png"
+
+    with patch("matplotlib.figure.Figure.savefig"), patch("matplotlib.pyplot.close"):
+        plotting._save_grouped_bar_plot(
+            x_values=[2, 4, 8, 12, 16],
+            series=[
+                ("capa", [1.0, 2.0, 3.0, 4.0, 5.0]),
+                ("impgta", [1.5, 2.5, 3.5, 4.5, 5.5]),
+                ("ramcom", [0.5, 1.5, 2.5, 3.5, 4.5]),
+                ("rlcapa", [2.0, 3.0, 4.0, 5.0, 6.0]),
+            ],
+            x_label="platforms",
+            metric_name="TR",
+            output_path=output_path,
+        )
+        ax = plt.gcf().axes[0]
+
+    legend = ax.get_legend()
+
+    assert legend is not None
+    assert legend._ncols == 2
+    assert legend._loc == 2

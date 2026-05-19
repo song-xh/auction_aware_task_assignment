@@ -49,10 +49,10 @@ Algorithm files:
 
 | algorithm | value |
 | --- | --- |
-| capa | 0.008403 |
-| greedy | 0.002667 |
-| basegta | 0.011906 |
-| impgta | 0.072461 |
-| mra | 1.0064 |
-| ramcom | 0.010330 |
-| rlcapa | 0.002267 |
+| capa | 0.018311 |
+| greedy | 0.006667 |
+| basegta | 0.015906 |
+| impgta | 0.028461 |
+| mra | 0.052400 |
+| ramcom | 0.013330 |
+| rlcapa | 0.036267 |

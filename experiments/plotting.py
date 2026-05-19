@@ -178,6 +178,7 @@ def visible_algorithms_for_bar(metric_name: str, algorithms: Sequence[str]) -> l
 def save_default_comparison_plots(summary: dict[str, Any], output_dir: Path) -> None:
     """Write one categorical comparison plot per paper metric for the default-setting experiment."""
     import matplotlib.pyplot as plt
+    from matplotlib.ticker import MaxNLocator
 
     _apply_rc()
     algorithms = [str(name) for name in summary.get("algorithms", [])]
@@ -186,7 +187,8 @@ def save_default_comparison_plots(summary: dict[str, Any], output_dir: Path) -> 
         return
     for metric_name in PLOT_METRICS:
         visible_algorithms = visible_algorithms_for_metric(metric_name, algorithms)
-        values = [results[algorithm]["metrics"][metric_name] for algorithm in visible_algorithms]
+        raw_values = [results[algorithm]["metrics"][metric_name] for algorithm in visible_algorithms]
+        values = _transform_metric_values(metric_name, "", raw_values)
         labels = [ALGORITHM_STYLE.get(a, {}).get("label", a) for a in visible_algorithms]
         colors = [ALGORITHM_STYLE.get(a, {}).get("color", "gray") for a in visible_algorithms]
         figure = plt.figure(figsize=DEFAULT_COMPARISON_FIGSIZE)
@@ -197,8 +199,14 @@ def save_default_comparison_plots(summary: dict[str, Any], output_dir: Path) -> 
         ax.set_xlabel("Algorithm", fontsize=20)
         plt.xticks(fontsize=16, rotation=20)
         plt.yticks(fontsize=18)
-        y_exponent = _apply_scientific_y_formatter(ax)
-        ax.set_ylabel(_axis_label_with_exponent(METRIC_LABEL.get(metric_name, metric_name), y_exponent), fontsize=20)
+        ylabel = _metric_axis_label(metric_name, "")
+        if _uses_integer_metric_axis(metric_name, ""):
+            ax.yaxis.set_major_locator(MaxNLocator(nbins=4, integer=True))
+            _apply_integer_y_tick_labels(ax)
+            ax.set_ylabel(ylabel, fontsize=20)
+        else:
+            y_exponent = _apply_scientific_y_formatter(ax)
+            ax.set_ylabel(_axis_label_with_exponent(ylabel, y_exponent), fontsize=20)
         figure.savefig(output_dir / f"default_{metric_name.lower()}_comparison.png",
                        bbox_inches="tight", dpi=300)
         plt.close(figure)
@@ -213,6 +221,7 @@ def _save_line_plot(
 ) -> None:
     """Render a styled multi-series line plot matching the paper template."""
     import matplotlib.pyplot as plt
+    from matplotlib.ticker import MaxNLocator
 
     if not x_values:
         return
@@ -230,6 +239,10 @@ def _save_line_plot(
     if use_numeric_axis:
         scaled_x_values, x_exponent = _scale_by_smallest_scientific_exponent(numeric_x_values)
         scaled_x_labels = [_format_scaled_tick(value) for value in scaled_x_values]
+    transformed_series = [
+        (algo_name, _transform_metric_values(metric_name, x_label, ys))
+        for algo_name, ys in series
+    ]
     for algo_name, ys in series:
         style = ALGORITHM_STYLE.get(algo_name, {
             "label": algo_name, "marker": "o", "color": "gray",
@@ -237,7 +250,7 @@ def _save_line_plot(
         })
         ax.plot(
             x_positions,
-            [float(v) for v in ys],
+            transformed_series[[name for name, _values in transformed_series].index(algo_name)][1],
             label=style["label"],
             marker=style["marker"],
             markerfacecolor="none",
@@ -248,7 +261,7 @@ def _save_line_plot(
         )
 
     xlabel = XLABEL_OVERRIDE.get(x_label, x_label)
-    ylabel = METRIC_LABEL.get(metric_name, metric_name)
+    ylabel = _metric_axis_label(metric_name, x_label)
     ax.set_xlabel(_axis_label_with_exponent(xlabel, x_exponent if use_numeric_axis else 0), fontsize=20)
 
     ax.set_xticks(x_positions)
@@ -267,8 +280,16 @@ def _save_line_plot(
             rotation_mode="anchor",
         )
     ax.tick_params(axis="y", labelsize=18)
-    y_exponent = _apply_scientific_y_formatter(ax)
-    ax.set_ylabel(_axis_label_with_exponent(ylabel, y_exponent), fontsize=20)
+    if _uses_integer_metric_axis(metric_name, x_label):
+        if metric_name == "TR" and x_label == "num_parcels":
+            _apply_log10_revenue_ticks(ax)
+        else:
+            ax.yaxis.set_major_locator(MaxNLocator(nbins=4, integer=True))
+            _apply_integer_y_tick_labels(ax)
+        ax.set_ylabel(ylabel, fontsize=20)
+    else:
+        y_exponent = _apply_scientific_y_formatter(ax)
+        ax.set_ylabel(_axis_label_with_exponent(ylabel, y_exponent), fontsize=20)
     if x_positions:
         x_lo, x_hi = min(x_positions), max(x_positions)
         if x_lo == x_hi:
@@ -277,7 +298,15 @@ def _save_line_plot(
         ax.margins(x=0)
 
     if len(series) > 1:
-        ax.legend(loc="best", fontsize=12, ncol=2, frameon=False)
+        ax.legend(
+            loc="upper left",
+            fontsize=10 if len(series) >= 4 else 11,
+            ncol=2,
+            frameon=True,
+            edgecolor="black",
+            facecolor="white",
+            framealpha=0.95,
+        )
 
     _set_axis_offset_text(ax.xaxis, 0, fontsize=16)
     figure.savefig(output_path, bbox_inches="tight", dpi=300)
@@ -299,6 +328,7 @@ def _save_grouped_bar_plot(
     """Render grouped bar plots in the paper's filled-bar + hatch style."""
     import matplotlib.pyplot as plt
     import matplotlib.patches as mpatches
+    from matplotlib.ticker import MaxNLocator
 
     if not x_values or not series:
         return
@@ -317,8 +347,12 @@ def _save_grouped_bar_plot(
     step = group_width + group_gap
     indices = [index * step for index in range(n_groups)]
 
+    transformed_series = [
+        (algo_name, _transform_metric_values(metric_name, x_label, ys))
+        for algo_name, ys in series
+    ]
     legend_handles: list[Any] = []
-    for idx, (algo_name, ys) in enumerate(series):
+    for idx, (algo_name, ys) in enumerate(transformed_series):
         style = ALGORITHM_STYLE.get(algo_name, {"label": algo_name})
         bar_style = BAR_STYLE.get(algo_name, {"facecolor": "lightgray", "hatch": "/"})
         offsets = [i - group_width / 2 + bar_width * (idx + 0.5) for i in indices]
@@ -343,7 +377,7 @@ def _save_grouped_bar_plot(
         )
 
     xlabel = XLABEL_OVERRIDE.get(x_label, x_label)
-    ylabel = METRIC_LABEL.get(metric_name, metric_name)
+    ylabel = _metric_axis_label(metric_name, x_label)
     ax.set_xticks(indices)
     numeric_x_values, use_numeric_axis = _coerce_numeric_x(x_values)
     x_exponent = 0
@@ -354,8 +388,13 @@ def _save_grouped_bar_plot(
         ax.set_xticklabels([_format_xtick(v) for v in x_values], fontsize=25)
     ax.set_xlabel(_axis_label_with_exponent(xlabel, x_exponent if use_numeric_axis else 0), fontsize=25)
     ax.tick_params(axis="y", labelsize=25)
-    y_exponent = _apply_scientific_y_formatter(ax)
-    ax.set_ylabel(_axis_label_with_exponent(ylabel, y_exponent), fontsize=25)
+    if _uses_integer_metric_axis(metric_name, x_label):
+        ax.yaxis.set_major_locator(MaxNLocator(nbins=4, integer=True))
+        _apply_integer_y_tick_labels(ax, fontsize=25)
+        ax.set_ylabel(ylabel, fontsize=25)
+    else:
+        y_exponent = _apply_scientific_y_formatter(ax)
+        ax.set_ylabel(_axis_label_with_exponent(ylabel, y_exponent), fontsize=25)
     ax.set_xlim(
         indices[0] - group_width / 2 - bar_width,
         indices[-1] + group_width / 2 + bar_width,
@@ -364,12 +403,15 @@ def _save_grouped_bar_plot(
 
     ax.legend(
         handles=legend_handles,
-        loc="upper center",
-        ncol=min(n_series, 4),
-        fontsize=18,
-        frameon=False,
+        loc="upper left",
+        ncol=2 if n_series == 4 else min(n_series, 4),
+        fontsize=14 if n_series == 4 else 18,
+        frameon=True,
+        edgecolor="black",
+        facecolor="white",
+        framealpha=0.95,
         handletextpad=0.5,
-        columnspacing=0.9,
+        columnspacing=0.8 if n_series == 4 else 0.9,
     )
 
     figure.tight_layout()
@@ -387,6 +429,80 @@ def _apply_scientific_y_formatter(ax: Any) -> int:
     """Render y ticks with integer mantissas and return the shared exponent."""
 
     return _apply_integer_scientific_axis_formatter(ax, "y")
+
+
+def _metric_axis_label(metric_name: str, x_label: str) -> str:
+    """Return the requested y-axis label for one plot metric."""
+
+    if metric_name == "CR":
+        return "Completion Rate (%)"
+    if metric_name == "BPT":
+        return "BPT (ms)"
+    if metric_name == "TR" and x_label == "num_parcels":
+        return r"Total Revenue ($\log_{10}$)"
+    return METRIC_LABEL.get(metric_name, metric_name)
+
+
+def _transform_metric_values(metric_name: str, x_label: str, values: Sequence[float]) -> list[float]:
+    """Transform raw metric values for display on the requested axis scale."""
+
+    numeric_values = [float(value) for value in values]
+    if metric_name == "CR":
+        return [value * 100.0 for value in numeric_values]
+    if metric_name == "BPT":
+        return [value * 1000.0 for value in numeric_values]
+    if metric_name == "TR" and x_label == "num_parcels":
+        return [math.log10(max(value, 1e-12)) for value in numeric_values]
+    return numeric_values
+
+
+def _uses_integer_metric_axis(metric_name: str, x_label: str) -> bool:
+    """Return whether the metric should use the integer-tick display path."""
+
+    return metric_name in {"CR", "BPT"} or (metric_name == "TR" and x_label == "num_parcels")
+
+
+def _apply_integer_y_tick_labels(ax: Any, fontsize: int = 18) -> None:
+    """Limit the y-axis to a small integer tick set without decimal labels."""
+
+    ax.figure.canvas.draw()
+    ticks = [
+        float(value)
+        for value in ax.get_yticks()
+        if math.isfinite(value)
+    ]
+    y_min, y_max = ax.get_ylim()
+    in_bounds = [
+        tick for tick in ticks
+        if y_min - 1e-9 <= tick <= y_max + 1e-9
+    ]
+    if len(in_bounds) > 5:
+        in_bounds = in_bounds[:5]
+    ax.set_yticks(in_bounds)
+    ax.set_yticklabels([str(int(round(tick))) for tick in in_bounds], fontsize=fontsize)
+
+
+def _apply_log10_revenue_ticks(ax: Any, fontsize: int = 18) -> None:
+    """Render exp-1 TR plots with fixed integer log10 ticks including 2, 3, 4."""
+
+    ax.figure.canvas.draw()
+    values = [
+        float(value)
+        for line in ax.get_lines()
+        for value in line.get_ydata()
+        if math.isfinite(float(value))
+    ]
+    if not values:
+        return
+    tick_start = min(2, int(math.floor(min(values))))
+    tick_end = max(4, int(math.floor(max(values))))
+    ticks = list(range(tick_start, tick_end + 1))
+    ticks = [tick for tick in ticks if 2 <= tick <= 4] or [2, 3, 4]
+    lower_bound = min(min(values) - 0.1, 2.0)
+    upper_bound = max(values) + 0.1
+    ax.set_ylim(lower_bound, upper_bound)
+    ax.set_yticks(ticks)
+    ax.set_yticklabels([str(tick) for tick in ticks], fontsize=fontsize)
 
 
 def _apply_integer_scientific_axis_formatter(ax: Any, axis: str) -> int:
@@ -407,6 +523,10 @@ def _apply_integer_scientific_axis_formatter(ax: Any, axis: str) -> int:
     ax.figure.canvas.draw()
     target_axis = ax.xaxis if axis == "x" else ax.yaxis
     ticks = [float(value) for value in target_axis.get_majorticklocs() if math.isfinite(value)]
+    if len(ticks) > 5:
+        step = (len(ticks) - 1) / 4
+        chosen_indices = sorted({round(index * step) for index in range(5)})
+        ticks = [ticks[index] for index in chosen_indices]
     exponent = _shared_integer_exponent(ticks)
     divisor = 10 ** exponent
     labels = [_format_scaled_tick(value / divisor) for value in ticks]

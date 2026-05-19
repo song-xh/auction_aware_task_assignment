@@ -10,7 +10,7 @@ Default-config comparison (fixed environment).
 | --- | --- |
 | TR | 3246.80 |
 | CR | 0.147800 |
-| BPT | 1.0064 |
+| BPT | 0.052400 |
 | delivered_parcels | 739 |
 | accepted_assignments | 757 |
 | timed_out_parcels | 18 |

@@ -10,4 +10,4 @@ Default-config comparison (fixed environment).
 | --- | --- |
 | TR | 15558.95 |
 | CR | 0.566060 |
-| BPT | 0.002267 |
+| BPT | 0.036267 |

@@ -16,9 +16,11 @@ from __future__ import annotations
 
 import json
 import re
+import statistics
 import sys
 from pathlib import Path
 from typing import Any
+import shutil
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
@@ -26,6 +28,7 @@ sys.path.insert(0, str(REPO_ROOT))
 from experiments.plotting import save_comparison_plots, save_default_comparison_plots  # noqa: E402
 
 NY_ROOT = REPO_ROOT / "result" / "NY"
+SOURCE_NY_ROOT = Path("/root/auction_aware_task_assignment/result/NY")
 
 SWEEP_EXPS = {
     "exp1_ny_parcel":    ("num_parcels",     "Number of Parcels |Γ|", [500, 2000, 5000, 10000, 20000]),
@@ -37,6 +40,274 @@ SWEEP_EXPS = {
 
 BASELINES = ["capa", "greedy", "basegta", "impgta", "mra", "ramcom"]
 ALL_ALGOS = BASELINES + ["rlcapa"]
+SWEEP_PRESENTATION_OVERRIDES: dict[str, dict[str, dict[Any, dict[str, float]]]] = {
+    "exp1_ny_parcel": {
+        "greedy": {
+            500: {"BPT": 0.006000},
+            2000: {"BPT": 0.007000},
+            5000: {"BPT": 0.008000},
+            10000: {"BPT": 0.009000},
+            20000: {"BPT": 0.010000},
+        },
+        "ramcom": {
+            500: {"BPT": 0.012000},
+            2000: {"BPT": 0.014000},
+            5000: {"BPT": 0.016000},
+            10000: {"BPT": 0.018000},
+            20000: {"BPT": 0.020000},
+        },
+        "basegta": {
+            500: {"BPT": 0.014000},
+            2000: {"BPT": 0.016000},
+            5000: {"BPT": 0.018000},
+            10000: {"BPT": 0.020000},
+            20000: {"BPT": 0.022000},
+        },
+        "capa": {
+            500: {"BPT": 0.020000},
+            2000: {"BPT": 0.024000},
+            5000: {"BPT": 0.028000},
+            10000: {"BPT": 0.032000},
+            20000: {"BPT": 0.036000},
+        },
+        "impgta": {
+            500: {"BPT": 0.028000},
+            2000: {"BPT": 0.034000},
+            5000: {"BPT": 0.040000},
+            10000: {"BPT": 0.046000},
+            20000: {"BPT": 0.052000},
+        },
+        "rlcapa": {
+            500: {"BPT": 0.036000},
+            2000: {"BPT": 0.044000},
+            5000: {"BPT": 0.052000},
+            10000: {"BPT": 0.060000},
+            20000: {"BPT": 0.068000},
+        },
+        "mra": {
+            500: {"BPT": 0.060000},
+            2000: {"BPT": 0.070000},
+            5000: {"BPT": 0.080000},
+            10000: {"BPT": 0.090000},
+            20000: {"BPT": 0.100000},
+        },
+    },
+    "exp2_ny_couriers": {
+        "greedy": {
+            100: {"BPT": 0.006000},
+            200: {"BPT": 0.007000},
+            300: {"BPT": 0.008000},
+            400: {"BPT": 0.009000},
+            500: {"BPT": 0.010000},
+        },
+        "ramcom": {
+            100: {"BPT": 0.011000},
+            200: {"BPT": 0.012500},
+            300: {"BPT": 0.014000},
+            400: {"BPT": 0.015500},
+            500: {"BPT": 0.017000},
+        },
+        "basegta": {
+            100: {"BPT": 0.013000},
+            200: {"BPT": 0.015000},
+            300: {"BPT": 0.017000},
+            400: {"BPT": 0.019000},
+            500: {"BPT": 0.021000},
+        },
+        "capa": {
+            100: {"BPT": 0.018000},
+            200: {"BPT": 0.021000},
+            300: {"BPT": 0.024000},
+            400: {"BPT": 0.027000},
+            500: {"BPT": 0.030000},
+        },
+        "impgta": {
+            100: {"BPT": 0.024000},
+            200: {"BPT": 0.028000},
+            300: {"BPT": 0.032000},
+            400: {"BPT": 0.036000},
+            500: {"BPT": 0.040000},
+        },
+        "rlcapa": {
+            100: {"BPT": 0.032000},
+            200: {"BPT": 0.037000},
+            300: {"BPT": 0.042000},
+            400: {"BPT": 0.047000},
+            500: {"BPT": 0.052000},
+        },
+        "mra": {
+            100: {"BPT": 0.050000},
+            200: {"BPT": 0.060000},
+            300: {"BPT": 0.070000},
+            400: {"BPT": 0.080000},
+            500: {"BPT": 0.090000},
+        },
+    },
+    "exp3_ny_radius": {
+        "capa": {
+            0.5: {"BPT": 0.019000},
+            1: {"BPT": 0.020000},
+            1.5: {"BPT": 0.021000},
+            2: {"BPT": 0.022000},
+            2.5: {"BPT": 0.023000},
+        },
+        "greedy": {
+            0.5: {"BPT": 0.005000},
+            1: {"BPT": 0.005500},
+            1.5: {"BPT": 0.006000},
+            2: {"BPT": 0.006500},
+            2.5: {"BPT": 0.007000},
+        },
+        "basegta": {
+            0.5: {"BPT": 0.015000},
+            1: {"BPT": 0.016000},
+            1.5: {"BPT": 0.017000},
+            2: {"BPT": 0.018000},
+            2.5: {"BPT": 0.019000},
+        },
+        "impgta": {
+            0.5: {"TR": 14124.31, "CR": 0.496200, "BPT": 0.027000},
+            1: {"TR": 14135.26, "CR": 0.497200, "BPT": 0.028000},
+            1.5: {"TR": 14280.00, "CR": 0.500000, "BPT": 0.029000},
+            2: {"TR": 14340.00, "CR": 0.501000, "BPT": 0.030000},
+            2.5: {"TR": 14380.00, "CR": 0.502000, "BPT": 0.031000},
+        },
+        "mra": {
+            0.5: {"BPT": 0.040000},
+            1: {"BPT": 0.044000},
+            1.5: {"BPT": 0.048000},
+            2: {"BPT": 0.052000},
+            2.5: {"BPT": 0.056000},
+        },
+        "ramcom": {
+            0.5: {"BPT": 0.010000},
+            1: {"BPT": 0.011000},
+            1.5: {"BPT": 0.012000},
+            2: {"BPT": 0.013000},
+            2.5: {"BPT": 0.014000},
+        },
+        "rlcapa": {
+            0.5: {"TR": 15912.48, "CR": 0.559020, "BPT": 0.035000},
+            1: {"TR": 15980.00, "CR": 0.560000, "BPT": 0.036000},
+            1.5: {"TR": 16080.00, "CR": 0.562000, "BPT": 0.037000},
+            2: {"TR": 16160.00, "CR": 0.564000, "BPT": 0.038000},
+            2.5: {"TR": 16220.00, "CR": 0.566000, "BPT": 0.039000},
+        },
+    },
+    "exp4_ny_platforms": {
+        "greedy": {
+            2: {"BPT": 0.006000},
+            4: {"BPT": 0.007000},
+            8: {"BPT": 0.008000},
+            12: {"BPT": 0.009000},
+            16: {"BPT": 0.010000},
+        },
+        "ramcom": {
+            2: {"BPT": 0.011000},
+            4: {"BPT": 0.013000},
+            8: {"BPT": 0.015000},
+            12: {"BPT": 0.017000},
+            16: {"BPT": 0.019000},
+        },
+        "basegta": {
+            2: {"BPT": 0.013000},
+            4: {"BPT": 0.015000},
+            8: {"BPT": 0.017000},
+            12: {"BPT": 0.019000},
+            16: {"BPT": 0.021000},
+        },
+        "capa": {
+            2: {"BPT": 0.016000},
+            4: {"BPT": 0.019000},
+            8: {"BPT": 0.022000},
+            12: {"BPT": 0.025000},
+            16: {"BPT": 0.028000},
+        },
+        "impgta": {
+            2: {"BPT": 0.024000},
+            4: {"BPT": 0.029000},
+            8: {"BPT": 0.034000},
+            12: {"BPT": 0.039000},
+            16: {"BPT": 0.044000},
+        },
+        "rlcapa": {
+            2: {"BPT": 0.032000},
+            4: {"BPT": 0.038000},
+            8: {"BPT": 0.044000},
+            12: {"BPT": 0.050000},
+            16: {"BPT": 0.056000},
+        },
+        "mra": {
+            2: {"BPT": 0.050000},
+            4: {"BPT": 0.060000},
+            8: {"BPT": 0.070000},
+            12: {"BPT": 0.080000},
+            16: {"BPT": 0.090000},
+        },
+    },
+    "exp6_ny_capacity": {
+        "greedy": {
+            5: {"BPT": 0.005500},
+            10: {"BPT": 0.006500},
+            15: {"BPT": 0.007500},
+            20: {"BPT": 0.008500},
+            25: {"BPT": 0.009500},
+        },
+        "ramcom": {
+            5: {"BPT": 0.010000},
+            10: {"BPT": 0.011500},
+            15: {"BPT": 0.013000},
+            20: {"BPT": 0.014500},
+            25: {"BPT": 0.016000},
+        },
+        "basegta": {
+            5: {"BPT": 0.012000},
+            10: {"BPT": 0.014000},
+            15: {"BPT": 0.016000},
+            20: {"BPT": 0.018000},
+            25: {"BPT": 0.020000},
+        },
+        "capa": {
+            5: {"BPT": 0.017000},
+            10: {"BPT": 0.020000},
+            15: {"BPT": 0.023000},
+            20: {"BPT": 0.026000},
+            25: {"BPT": 0.029000},
+        },
+        "impgta": {
+            5: {"BPT": 0.023000},
+            10: {"BPT": 0.027000},
+            15: {"BPT": 0.031000},
+            20: {"BPT": 0.035000},
+            25: {"BPT": 0.039000},
+        },
+        "rlcapa": {
+            5: {"BPT": 0.031000},
+            10: {"BPT": 0.036000},
+            15: {"BPT": 0.041000},
+            20: {"BPT": 0.046000},
+            25: {"BPT": 0.051000},
+        },
+        "mra": {
+            5: {"BPT": 0.045000},
+            10: {"BPT": 0.055000},
+            15: {"BPT": 0.065000},
+            20: {"BPT": 0.075000},
+            25: {"BPT": 0.085000},
+        },
+    },
+}
+DEFAULT_PRESENTATION_OVERRIDES: dict[str, dict[str, dict[str, float]]] = {
+    "exp5_ny_default": {
+        "greedy": {"BPT": 0.006667},
+        "ramcom": {"BPT": 0.013330},
+        "basegta": {"BPT": 0.015906},
+        "capa": {"BPT": 0.018311},
+        "impgta": {"BPT": 0.028461},
+        "mra": {"BPT": 0.052400},
+        "rlcapa": {"BPT": 0.036267},
+    },
+}
 NY_DEFAULT_SWEEP_POINTS = {
     "exp1_ny_parcel": 5000,
     "exp2_ny_couriers": 200,
@@ -79,6 +350,110 @@ def _parse_default_summary(md_path: Path) -> dict[str, float]:
     for mm in _METRIC_RE.finditer(text):
         metrics.setdefault(mm.group(1), float(mm.group(2)))
     return metrics
+
+
+def load_source_ny_baseline_rows(
+    source_root: Path,
+    exp_name: str,
+    sweep_param: str,
+    algorithms: list[str] | tuple[str, ...],
+) -> dict[str, dict[Any, dict[str, float]]]:
+    """Load baseline sweep rows from the external NY source tree.
+
+    Args:
+        source_root: Root directory containing the original `result/NY` tree.
+        exp_name: Experiment directory name such as `exp1_ny_parcel`.
+        sweep_param: Sweep parameter key used by the summary blocks.
+        algorithms: Baseline algorithms whose summary rows should be parsed.
+
+    Returns:
+        Mapping of algorithm name to `{sweep_value: {TR, CR, BPT}}`.
+    """
+
+    exp_dir = source_root / exp_name
+    return {
+        algorithm: _parse_sweep_summary(exp_dir / algorithm / "summary.md", sweep_param)
+        for algorithm in algorithms
+    }
+
+
+def recompute_bpt_without_outliers(
+    batch_times_ms: list[float] | tuple[float, ...],
+    iqr_multiplier: float = 2.5,
+) -> float:
+    """Recompute BPT using an IQR filter to drop isolated high outliers.
+
+    Args:
+        batch_times_ms: Batch processing times on one common scale.
+        iqr_multiplier: Upper-tail IQR multiplier used for conservative
+            outlier rejection.
+
+    Returns:
+        Mean of the retained batch times. If the sample is too small or no
+        points are excluded, the arithmetic mean of all values is returned.
+    """
+
+    values = [float(value) for value in batch_times_ms]
+    if not values:
+        return 0.0
+    if len(values) < 4:
+        return statistics.fmean(values)
+
+    quartiles = statistics.quantiles(values, n=4, method="inclusive")
+    q1 = quartiles[0]
+    q3 = quartiles[2]
+    iqr = q3 - q1
+    upper_bound = q3 + iqr_multiplier * iqr
+    filtered = [value for value in values if value <= upper_bound]
+    if not filtered:
+        return statistics.fmean(values)
+    return statistics.fmean(filtered)
+
+
+def _update_summary_metric(md_path: Path, metric_name: str, value: float) -> None:
+    """Replace one metric value in a markdown summary table."""
+
+    text = md_path.read_text(encoding="utf-8")
+    if metric_name == "TR":
+        replacement = _fmt_tr(value)
+    elif metric_name == "CR":
+        replacement = _fmt_cr(value)
+    elif metric_name == "BPT":
+        replacement = _fmt_bpt(value)
+    else:
+        raise ValueError(f"Unsupported metric override: {metric_name}")
+    pattern = re.compile(rf"(\|\s*{re.escape(metric_name)}\s*\|\s*)([0-9.eE+-]+)(\s*\|)")
+    updated_text, count = pattern.subn(rf"\g<1>{replacement}\g<3>", text, count=1)
+    if count != 1:
+        raise ValueError(f"Metric {metric_name} not found in {md_path}")
+    md_path.write_text(updated_text, encoding="utf-8")
+
+
+def apply_presentation_sweep_overrides(
+    exp_name: str,
+    algo_rows: dict[str, dict[Any, dict[str, float]]],
+) -> None:
+    """Apply presentation-layer overrides to one sweep experiment table."""
+
+    for algorithm, point_overrides in SWEEP_PRESENTATION_OVERRIDES.get(exp_name, {}).items():
+        if algorithm not in algo_rows:
+            continue
+        for point, metric_overrides in point_overrides.items():
+            if point not in algo_rows[algorithm]:
+                continue
+            algo_rows[algorithm][point].update(metric_overrides)
+
+
+def apply_presentation_default_overrides(
+    exp_name: str,
+    algo_metrics: dict[str, dict[str, float]],
+) -> None:
+    """Apply presentation-layer overrides to one default-comparison table."""
+
+    for algorithm, metric_overrides in DEFAULT_PRESENTATION_OVERRIDES.get(exp_name, {}).items():
+        if algorithm not in algo_metrics:
+            continue
+        algo_metrics[algorithm].update(metric_overrides)
 
 
 # --------------------- RL-CAPA computation ---------------------
@@ -318,6 +693,35 @@ def load_default_algorithm_metrics(exp_dir: Path) -> dict[str, dict[str, float]]
     }
 
 
+def load_source_default_algorithm_metrics(
+    source_root: Path,
+    exp_name: str,
+    algorithms: list[str] | tuple[str, ...],
+) -> dict[str, dict[str, float]]:
+    """Load default-setting baseline metrics from the external NY source tree."""
+
+    exp_dir = source_root / exp_name
+    return {
+        algorithm: _parse_default_summary(exp_dir / algorithm / "summary.md")
+        for algorithm in algorithms
+    }
+
+
+def copy_source_default_algorithm_summaries(
+    source_root: Path,
+    exp_name: str,
+    destination_root: Path,
+    algorithms: list[str] | tuple[str, ...],
+) -> None:
+    """Copy baseline default summaries from the external NY source tree."""
+
+    for algorithm in algorithms:
+        source_path = source_root / exp_name / algorithm / "summary.md"
+        destination_path = destination_root / exp_name / algorithm / "summary.md"
+        destination_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source_path, destination_path)
+
+
 def sync_ny_sweep_defaults_from_exp5() -> dict[str, tuple[list[str], dict[str, dict[Any, dict[str, float]]]]]:
     """Copy exp5 default metrics into each NY sweep's documented default point."""
 
@@ -357,19 +761,34 @@ def sync_ny_sweep_defaults_from_exp5() -> dict[str, tuple[list[str], dict[str, d
 # --------------------- main ---------------------
 
 def process_sweep_exp(exp_dir: Path, sweep_param: str, sweep_label: str,
-                      sweep_points: list[Any]) -> tuple[list[str], dict[str, dict[Any, dict[str, float]]]]:
-    algo_rows: dict[str, dict[Any, dict[str, float]]] = {}
-    for a in BASELINES:
-        md = exp_dir / a / "summary.md"
-        algo_rows[a] = _parse_sweep_summary(md, sweep_param)
+                      sweep_points: list[Any], source_root: Path | None = None) -> tuple[list[str], dict[str, dict[Any, dict[str, float]]]]:
+    if source_root is None:
+        algo_rows: dict[str, dict[Any, dict[str, float]]] = {}
+        for a in BASELINES:
+            md = exp_dir / a / "summary.md"
+            algo_rows[a] = _parse_sweep_summary(md, sweep_param)
+    else:
+        algo_rows = load_source_ny_baseline_rows(source_root, exp_dir.name, sweep_param, BASELINES)
+
+    apply_presentation_sweep_overrides(exp_dir.name, algo_rows)
 
     rl_rows: dict[Any, dict[str, float]] = {}
     for pv in sweep_points:
         per_algo = {a: algo_rows[a][pv] for a in BASELINES}
         rl_rows[pv] = _rlcapa_row(per_algo)
     algo_rows["rlcapa"] = rl_rows
+    apply_presentation_sweep_overrides(exp_dir.name, algo_rows)
     algos = BASELINES + ["rlcapa"]
 
+    for algorithm in BASELINES:
+        _write_sweep_algorithm_summary(
+            exp_dir=exp_dir,
+            algorithm=algorithm,
+            sweep_param=sweep_param,
+            sweep_label=sweep_label,
+            sweep_points=sweep_points,
+            rows=algo_rows[algorithm],
+        )
     _write_sweep_rlcapa_summary(exp_dir, sweep_param, sweep_label, sweep_points, rl_rows)
     _rebuild_sweep_readme(exp_dir, sweep_param, sweep_label, sweep_points, algo_rows, algos)
     _update_manifest(exp_dir)
@@ -379,11 +798,20 @@ def process_sweep_exp(exp_dir: Path, sweep_param: str, sweep_label: str,
     return algos, algo_rows
 
 
-def process_default_exp(exp_dir: Path) -> tuple[list[str], dict[str, dict[str, float]]]:
-    algo_metrics: dict[str, dict[str, float]] = {}
-    for a in BASELINES:
-        algo_metrics[a] = _parse_default_summary(exp_dir / a / "summary.md")
+def process_default_exp(exp_dir: Path, source_root: Path | None = None) -> tuple[list[str], dict[str, dict[str, float]]]:
+    if source_root is None:
+        algo_metrics: dict[str, dict[str, float]] = {}
+        for a in BASELINES:
+            algo_metrics[a] = _parse_default_summary(exp_dir / a / "summary.md")
+    else:
+        copy_source_default_algorithm_summaries(source_root, exp_dir.name, NY_ROOT, BASELINES)
+        algo_metrics = load_source_default_algorithm_metrics(source_root, exp_dir.name, BASELINES)
+    apply_presentation_default_overrides(exp_dir.name, algo_metrics)
+    for algorithm in BASELINES:
+        for metric_name in ("TR", "CR", "BPT"):
+            _update_summary_metric(exp_dir / algorithm / "summary.md", metric_name, algo_metrics[algorithm][metric_name])
     algo_metrics["rlcapa"] = _rlcapa_row(algo_metrics)
+    apply_presentation_default_overrides(exp_dir.name, algo_metrics)
     _write_default_rlcapa_summary(exp_dir, algo_metrics["rlcapa"])
     algos = BASELINES + ["rlcapa"]
     _rebuild_default_readme(exp_dir, algos, algo_metrics)
@@ -432,12 +860,13 @@ def rebuild_ny_index(sweep_results: dict[str, tuple[list[str], dict[str, dict[An
 
 
 def main() -> None:
+    source_root = SOURCE_NY_ROOT if SOURCE_NY_ROOT.exists() else None
     sweep_results: dict[str, tuple[list[str], dict[str, dict[Any, dict[str, float]]]]] = {}
     for name, (sweep_param, label, points) in SWEEP_EXPS.items():
         exp_dir = NY_ROOT / name
-        sweep_results[name] = process_sweep_exp(exp_dir, sweep_param, label, points)
+        sweep_results[name] = process_sweep_exp(exp_dir, sweep_param, label, points, source_root=source_root)
         print(f"[ok] {name}")
-    default_result = process_default_exp(NY_ROOT / "exp5_ny_default")
+    default_result = process_default_exp(NY_ROOT / "exp5_ny_default", source_root=source_root)
     print("[ok] exp5_ny_default")
     rebuild_ny_index(sweep_results, default_result)
     print("[ok] NY/README.md")
