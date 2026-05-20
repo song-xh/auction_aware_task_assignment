@@ -9,8 +9,10 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import pytest
+
 from capa.config import DEFAULT_CROSS_PLATFORM_SHARING_RATE_MU2
-from capa.metrics import compute_batch_processing_time
+from capa.metrics import compute_batch_processing_time, compute_reported_batch_processing_time
 from capa.models import BatchReport, BatchTimingBreakdown
 from capa.utility import DistanceMatrixTravelModel, compute_local_platform_revenue_for_local_completion
 from baselines.greedy import run_greedy_baseline_environment
@@ -202,8 +204,8 @@ class MetricAlignmentTest(unittest.TestCase):
         self.assertEqual([task.num for task in seed.partner_tasks_by_platform["P1"]], ["p-own-1"])
         self.assertEqual([task.num for task in cloned.partner_tasks_by_platform["P1"]], ["p-own-1"])
 
-    def test_capa_bpt_is_mean_assignment_time_per_batch(self) -> None:
-        """CAPA BPT should be the mean assignment-decision time per matching batch."""
+    def test_capa_bpt_is_mean_reported_batch_time_per_batch(self) -> None:
+        """CAPA BPT should be the mean reported batch-processing time per matching batch."""
 
         reports = [
             BatchReport(
@@ -214,7 +216,7 @@ class MetricAlignmentTest(unittest.TestCase):
                 cross_assignments=[],
                 unresolved_parcels=[],
                 processing_time_seconds=10.0,
-                timing=BatchTimingBreakdown(decision_time_seconds=2.0),
+                timing=BatchTimingBreakdown(decision_time_seconds=2.0, movement_time_seconds=1.0),
             ),
             BatchReport(
                 batch_index=2,
@@ -224,11 +226,77 @@ class MetricAlignmentTest(unittest.TestCase):
                 cross_assignments=[],
                 unresolved_parcels=[],
                 processing_time_seconds=20.0,
-                timing=BatchTimingBreakdown(decision_time_seconds=4.0),
+                timing=BatchTimingBreakdown(decision_time_seconds=4.0, movement_time_seconds=2.0),
             ),
         ]
 
-        self.assertEqual(compute_batch_processing_time(reports), 3.0)
+        self.assertEqual(compute_reported_batch_processing_time(reports[0]), 11.0)
+        self.assertEqual(compute_reported_batch_processing_time(reports[1]), 22.0)
+        self.assertEqual(compute_batch_processing_time(reports), 16.5)
+
+    def test_reported_bpt_falls_back_to_full_timing_breakdown(self) -> None:
+        """Legacy-style reports should still widen BPT from the timing breakdown."""
+
+        report = BatchReport(
+            batch_index=1,
+            batch_time=30,
+            input_parcels=[],
+            local_assignments=[],
+            cross_assignments=[],
+            unresolved_parcels=[],
+            processing_time_seconds=0.0,
+            timing=BatchTimingBreakdown(
+                decision_time_seconds=0.1,
+                routing_time_seconds=0.2,
+                insertion_time_seconds=0.3,
+                movement_time_seconds=0.4,
+            ),
+        )
+
+        self.assertEqual(compute_reported_batch_processing_time(report), pytest.approx(1.0))
+
+    def test_build_metric_series_uses_widened_bpt_values(self) -> None:
+        """Batch plots should use the same widened BPT accounting as summary metrics."""
+
+        reports = [
+            BatchReport(
+                batch_index=1,
+                batch_time=30,
+                input_parcels=[],
+                local_assignments=[],
+                cross_assignments=[],
+                unresolved_parcels=[],
+                processing_time_seconds=0.8,
+                timing=BatchTimingBreakdown(
+                    decision_time_seconds=0.1,
+                    routing_time_seconds=0.2,
+                    insertion_time_seconds=0.3,
+                    movement_time_seconds=0.4,
+                ),
+            ),
+            BatchReport(
+                batch_index=2,
+                batch_time=60,
+                input_parcels=[],
+                local_assignments=[],
+                cross_assignments=[],
+                unresolved_parcels=[],
+                processing_time_seconds=1.1,
+                timing=BatchTimingBreakdown(
+                    decision_time_seconds=0.2,
+                    routing_time_seconds=0.3,
+                    insertion_time_seconds=0.4,
+                    movement_time_seconds=0.5,
+                ),
+            ),
+        ]
+
+        from capa.experiments import build_metric_series
+
+        _, _, bpt_values = build_metric_series(reports, total_parcels=1)
+
+        self.assertEqual(bpt_values, pytest.approx([1.2, 1.6]))
+        self.assertEqual(compute_batch_processing_time(reports), pytest.approx(1.4))
 
     def test_impgta_prediction_success_rate_controls_future_window(self) -> None:
         """ImpGTA should preserve the full simplified future window when prediction success is 100%."""

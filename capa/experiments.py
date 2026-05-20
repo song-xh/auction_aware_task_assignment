@@ -12,7 +12,7 @@ from baselines.greedy import run_greedy_baseline_environment
 from baselines.gta import run_basegta_baseline_environment, run_impgta_baseline_environment
 from capa.config import DEFAULT_CAPA_BATCH_SIZE, DEFAULT_IMPGTA_WINDOW_SECONDS, build_default_capa_config
 from env.chengdu import LegacyChengduEnvironment, build_framework_chengdu_environment, run_time_stepped_chengdu_batches
-from .metrics import compute_completion_rate, compute_total_revenue
+from .metrics import compute_completion_rate, compute_reported_batch_processing_time, compute_total_revenue
 from .models import BatchReport, CAPAConfig, CAPAResult, Parcel, RunMetrics
 
 
@@ -93,7 +93,7 @@ def build_metric_series(batch_reports: Sequence[BatchReport], total_parcels: int
         assignments = [*report.local_assignments, *report.cross_assignments]
         revenue_per_batch.append(compute_total_revenue(assignments))
         completion_per_batch.append(compute_completion_rate([None] * report.delivered_parcel_count, total_parcels))
-        bpt_per_batch.append(report.timing.decision_time_seconds)
+        bpt_per_batch.append(compute_reported_batch_processing_time(report))
     return revenue_per_batch, completion_per_batch, bpt_per_batch
 
 
@@ -125,7 +125,7 @@ def save_experiment_plots(batch_reports: Sequence[BatchReport], metrics: RunMetr
 
     plt.figure()
     plt.plot(batch_indices, bpt_values, marker="o")
-    plt.title(f"BPT Over Batches (Total={metrics.batch_processing_time:.4f}s)")
+    plt.title(f"BPT Over Batches (Mean={metrics.batch_processing_time:.4f}s)")
     plt.xlabel("Batch")
     plt.ylabel("BPT (s)")
     plt.tight_layout()

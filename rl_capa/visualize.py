@@ -18,7 +18,7 @@ from typing import List, Sequence
 
 import numpy as np
 
-from capa.metrics import compute_completion_rate, compute_total_revenue
+from capa.metrics import compute_completion_rate, compute_reported_batch_processing_time, compute_total_revenue
 from capa.models import BatchReport
 
 
@@ -246,7 +246,7 @@ def plot_evaluation_curves(
                 total_parcels,
             )
         )
-        bpt_values.append(report.timing.decision_time_seconds)
+        bpt_values.append(compute_reported_batch_processing_time(report))
 
     paths = {
         "TR": str(normalized_output_dir / "tr_over_batches.png"),
@@ -274,7 +274,7 @@ def plot_evaluation_curves(
 
     plt.figure()
     plt.plot(batch_indices, bpt_values, marker="o")
-    plt.title(f"BPT Over Batches (Total={batch_processing_time:.4f}s)")
+    plt.title(f"BPT Over Batches (Mean={batch_processing_time:.4f}s)")
     plt.xlabel("Batch")
     plt.ylabel("BPT (s)")
     plt.tight_layout()
