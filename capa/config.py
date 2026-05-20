@@ -103,6 +103,9 @@ DEFAULT_IMPGTA_PREDICTION_SUCCESS_RATE = 0.8
 DEFAULT_IMPGTA_PREDICTION_SAMPLING_SEED = 1
 # ImpGTA 简化预测逻辑里对未来窗口做成功率抽样时使用的确定性随机种子。
 
+DEFAULT_IMPGTA_THRESHOLD_SCALE = 1.0
+# ImpGTA 内层/外层机会成本阈值的统一缩放因子；>1 会收紧当前任务接受条件。
+
 DEFAULT_MRA_BASE_PRICE = 2.0
 # MRA 基线的基础报价偏移项；非 CAPA 论文主参数。
 

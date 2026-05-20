@@ -151,6 +151,7 @@ def run_mra_baseline_environment(
     last_batch_index = max(batch_lookup) if batch_lookup else -1
     current_time = first_batch_start
     decision_epoch_count = 0
+    processing_time_seconds = 0.0
 
     total_batches = last_batch_index + 1
     for zero_based_batch_index in range(total_batches):
@@ -179,9 +180,6 @@ def run_mra_baseline_environment(
         ]
         while remaining:
             round_started = perf_counter()
-            routing_before = timing.routing_time_seconds
-            insertion_before = timing.insertion_time_seconds
-            movement_before = timing.movement_time_seconds
             graph_edges: list[MRAEdge] = []
             for task in remaining:
                 feasible = build_legacy_feasible_insertions(
@@ -257,14 +255,9 @@ def run_mra_baseline_environment(
 
             remaining = [task for task in remaining if str(getattr(task, "num")) not in used_tasks]
             elapsed = perf_counter() - round_started
-            decision_delta = max(
-                0.0,
-                elapsed
-                - (timing.routing_time_seconds - routing_before)
-                - (timing.insertion_time_seconds - insertion_before)
-                - (timing.movement_time_seconds - movement_before),
-            )
+            decision_delta = max(0.0, elapsed)
             timing.decision_time_seconds += decision_delta
+            processing_time_seconds += decision_delta
             decision_epoch_count += 1
 
         backlog = remaining
@@ -298,7 +291,7 @@ def run_mra_baseline_environment(
     return {
         "TR": total_revenue,
         "CR": delivered_parcels / total_tasks,
-        "BPT": mean_decision_time(timing.decision_time_seconds, decision_epoch_count),
+        "BPT": mean_decision_time(processing_time_seconds, decision_epoch_count),
         "delivered_parcels": delivered_parcels,
         "accepted_assignments": accepted_assignments,
         "timed_out_parcels": len(timed_out_task_ids),

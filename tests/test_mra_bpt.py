@@ -10,10 +10,10 @@ from baselines.mra import run_mra_baseline_environment
 
 
 class MRABPTTest(unittest.TestCase):
-    """Verify MRA reports the CAPA-aligned decision-time metric."""
+    """Verify MRA reports the widened paper-style batch-runtime metric."""
 
-    def test_run_mra_reports_mean_decision_time_seconds(self) -> None:
-        """BPT should be mean assignment-decision time over MRA decision epochs."""
+    def test_run_mra_reports_mean_full_round_elapsed_seconds(self) -> None:
+        """BPT should report mean full round elapsed time over MRA decision epochs."""
 
         task = SimpleNamespace(num="t1", fare=10.0, s_time=0.0, d_time=300.0)
         task_two = SimpleNamespace(num="t2", fare=10.0, s_time=30.0, d_time=330.0)
@@ -57,8 +57,8 @@ class MRABPTTest(unittest.TestCase):
             result = run_mra_baseline_environment(environment=environment, batch_size=30)
 
         self.assertEqual(len(timing_instances), 1)
-        self.assertEqual(timing_instances[0].decision_time_seconds, 6.0)
-        self.assertEqual(result["BPT"], 3.0)
+        self.assertEqual(timing_instances[0].decision_time_seconds, 16.0)
+        self.assertEqual(result["BPT"], 8.0)
 
     def test_run_mra_matches_batch_tasks_at_batch_end(self) -> None:
         """MRA should evaluate every batch task after the full batch wait time."""

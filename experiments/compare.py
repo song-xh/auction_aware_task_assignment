@@ -147,10 +147,11 @@ def _select_executor_class(parallel_backend: str) -> type[ProcessPoolExecutor] |
 
 def _build_runner_kwargs(algorithm_name: str, config: ExperimentConfig) -> dict[str, Any]:
     """Translate experiment config into algorithm-specific runner arguments."""
-    if algorithm_name in {"capa", "greedy", "mra"}:
+    if algorithm_name in {"basegta", "capa", "greedy", "mra", "ramcom"}:
         return {"batch_size": config.batch_size}
     if algorithm_name == "impgta":
         return {
+            "batch_size": config.batch_size,
             "prediction_window_seconds": config.prediction_window_seconds,
             "prediction_success_rate": config.prediction_success_rate,
             "prediction_sampling_seed": config.prediction_sampling_seed,

@@ -9,6 +9,7 @@ from typing import Any, Callable, Mapping
 
 from baselines.gta import run_basegta_baseline_environment
 from capa.config import (
+    DEFAULT_CAPA_BATCH_SIZE,
     DEFAULT_CROSS_PLATFORM_SHARING_RATE_MU2,
     DEFAULT_LOCAL_PAYMENT_RATIO_ZETA,
 )
@@ -22,11 +23,13 @@ class BaseGTARunner(AlgorithmRunner):
 
     def __init__(
         self,
+        batch_size: int = DEFAULT_CAPA_BATCH_SIZE,
         local_payment_ratio_zeta: float = DEFAULT_LOCAL_PAYMENT_RATIO_ZETA,
         cross_platform_sharing_rate_mu2: float = DEFAULT_CROSS_PLATFORM_SHARING_RATE_MU2,
         baseline_runner: Callable[..., dict[str, Any]] | None = None,
     ) -> None:
         """Store revenue parameters and the optional injected baseline runner."""
+        self._batch_size = int(batch_size)
         self._local_payment_ratio_zeta = float(local_payment_ratio_zeta)
         self._cross_platform_sharing_rate_mu2 = float(cross_platform_sharing_rate_mu2)
         self._baseline_runner = baseline_runner or run_basegta_baseline_environment
@@ -41,6 +44,7 @@ class BaseGTARunner(AlgorithmRunner):
         started_at = datetime.now().astimezone()
         metrics = self._baseline_runner(
             environment=environment,
+            batch_size=self._batch_size,
             local_payment_ratio=self._local_payment_ratio_zeta,
             cross_platform_sharing_rate_mu2=self._cross_platform_sharing_rate_mu2,
             progress_callback=progress_callback,
@@ -66,6 +70,7 @@ class BaseGTARunner(AlgorithmRunner):
             started_at=started_at,
             finished_at=finished_at,
             extra_fields={
+                "batch_size": self._batch_size,
                 "config": {
                     "local_payment_ratio_zeta": self._local_payment_ratio_zeta,
                     "cross_platform_sharing_rate_mu2": self._cross_platform_sharing_rate_mu2,
@@ -80,12 +85,14 @@ class BaseGTARunner(AlgorithmRunner):
 
 
 def build_basegta_runner(
+    batch_size: int = DEFAULT_CAPA_BATCH_SIZE,
     local_payment_ratio_zeta: float = DEFAULT_LOCAL_PAYMENT_RATIO_ZETA,
     cross_platform_sharing_rate_mu2: float = DEFAULT_CROSS_PLATFORM_SHARING_RATE_MU2,
     baseline_runner: Callable[..., dict[str, Any]] | None = None,
 ) -> BaseGTARunner:
     """Build the unified BaseGTA runner."""
     return BaseGTARunner(
+        batch_size=batch_size,
         local_payment_ratio_zeta=local_payment_ratio_zeta,
         cross_platform_sharing_rate_mu2=cross_platform_sharing_rate_mu2,
         baseline_runner=baseline_runner,

@@ -1,0 +1,16 @@
+{
+  "axis": "local_couriers",
+  "preset": "ny",
+  "algorithms": [
+    "capa",
+    "greedy",
+    "ramcom",
+    "mra",
+    "basegta",
+    "impgta"
+  ],
+  "summary": "outputs/plots/exp2_ny_couriers_tuned_v2/summary.json",
+  "tmp_root": "/tmp/exp2_couriers_tuned_v2",
+  "seed_path": "/tmp/exp2_couriers_tuned_v2/canonical_seed.pkl",
+  "execution_mode": "split"
+}

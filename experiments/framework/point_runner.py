@@ -35,9 +35,10 @@ def default_runner_kwargs_for_algorithm(
     """
 
     kwargs: dict[str, Any] = {}
-    if algorithm in {"capa", "greedy", "mra"}:
+    if algorithm in {"basegta", "capa", "greedy", "mra", "ramcom"}:
         kwargs["batch_size"] = batch_size
     elif algorithm == "impgta":
+        kwargs["batch_size"] = batch_size
         kwargs["prediction_window_seconds"] = DEFAULT_IMPGTA_WINDOW_SECONDS
         kwargs["prediction_success_rate"] = DEFAULT_IMPGTA_PREDICTION_SUCCESS_RATE
         kwargs["prediction_sampling_seed"] = DEFAULT_IMPGTA_PREDICTION_SAMPLING_SEED

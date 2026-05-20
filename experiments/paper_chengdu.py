@@ -399,12 +399,24 @@ def run_chengdu_paper_split_experiment(
             command.extend(["--task-window-start-seconds", str(fixed_config["task_window_start_seconds"])])
         if fixed_config["task_window_end_seconds"] is not None:
             command.extend(["--task-window-end-seconds", str(fixed_config["task_window_end_seconds"])])
+        if fixed_config.get("impgta_threshold_scale") is not None:
+            command.extend(["--impgta-threshold-scale", str(fixed_config["impgta_threshold_scale"])])
+        if fixed_config.get("impgta_local_payment_ratio_zeta") is not None:
+            command.extend(["--impgta-local-payment-ratio-zeta", str(fixed_config["impgta_local_payment_ratio_zeta"])])
+        if fixed_config.get("impgta_cross_platform_sharing_rate_mu2") is not None:
+            command.extend(
+                [
+                    "--impgta-cross-platform-sharing-rate-mu2",
+                    str(fixed_config["impgta_cross_platform_sharing_rate_mu2"]),
+                ]
+            )
         if seed_path is not None:
             command.extend(["--seed-path", str(seed_path)])
         for algorithm, overrides in merged_runner_overrides.items():
-            if algorithm != "capa":
-                continue
-            command.extend(_build_capa_override_cli_args(overrides))
+            if algorithm == "capa":
+                command.extend(_build_capa_override_cli_args(overrides))
+            elif algorithm == "impgta":
+                command.extend(_build_impgta_override_cli_args(overrides))
         return command
 
     def aggregate_summary_builder(point_output_dirs: dict[int | float, Path]) -> dict[str, Any]:
@@ -748,6 +760,9 @@ def build_script_parser(description: str) -> argparse.ArgumentParser:
     parser.add_argument("--local-payment-ratio-zeta", type=float, default=None)
     parser.add_argument("--local-sharing-rate-mu1", type=float, default=None)
     parser.add_argument("--cross-platform-sharing-rate-mu2", type=float, default=None)
+    parser.add_argument("--impgta-threshold-scale", type=float, default=None)
+    parser.add_argument("--impgta-local-payment-ratio-zeta", type=float, default=None)
+    parser.add_argument("--impgta-cross-platform-sharing-rate-mu2", type=float, default=None)
     return parser
 
 
@@ -804,6 +819,14 @@ def build_fixed_config_from_args(args: argparse.Namespace) -> dict[str, Any]:
             DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["rl_entropy_decay_episodes"],
         ),
         "rl_max_grad_norm": getattr(args, "rl_max_grad_norm", DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["rl_max_grad_norm"]),
+        "utility_balance_gamma": getattr(args, "utility_balance_gamma", None),
+        "threshold_omega": getattr(args, "threshold_omega", None),
+        "local_payment_ratio_zeta": getattr(args, "local_payment_ratio_zeta", None),
+        "local_sharing_rate_mu1": getattr(args, "local_sharing_rate_mu1", None),
+        "cross_platform_sharing_rate_mu2": getattr(args, "cross_platform_sharing_rate_mu2", None),
+        "impgta_threshold_scale": getattr(args, "impgta_threshold_scale", None),
+        "impgta_local_payment_ratio_zeta": getattr(args, "impgta_local_payment_ratio_zeta", None),
+        "impgta_cross_platform_sharing_rate_mu2": getattr(args, "impgta_cross_platform_sharing_rate_mu2", None),
     }
 
 
@@ -837,6 +860,13 @@ def build_capa_runner_overrides_from_args(args: argparse.Namespace) -> dict[str,
         if args.cross_platform_sharing_rate_mu2 is not None
         else {}
     )
+    impgta_overrides = {**zeta_overrides, **mu2_overrides}
+    if getattr(args, "impgta_threshold_scale", None) is not None:
+        impgta_overrides["threshold_scale"] = args.impgta_threshold_scale
+    if getattr(args, "impgta_local_payment_ratio_zeta", None) is not None:
+        impgta_overrides["local_payment_ratio_zeta"] = args.impgta_local_payment_ratio_zeta
+    if getattr(args, "impgta_cross_platform_sharing_rate_mu2", None) is not None:
+        impgta_overrides["cross_platform_sharing_rate_mu2"] = args.impgta_cross_platform_sharing_rate_mu2
 
     per_algorithm: dict[str, dict[str, Any]] = {}
     if capa_overrides:
@@ -845,9 +875,11 @@ def build_capa_runner_overrides_from_args(args: argparse.Namespace) -> dict[str,
     if mra_overrides:
         per_algorithm["mra"] = mra_overrides
     cross_baseline_overrides = {**zeta_overrides, **mu2_overrides}
-    for baseline in ("basegta", "impgta", "ramcom"):
+    for baseline in ("basegta", "ramcom"):
         if cross_baseline_overrides:
             per_algorithm[baseline] = dict(cross_baseline_overrides)
+    if impgta_overrides:
+        per_algorithm["impgta"] = impgta_overrides
     return per_algorithm
 
 
@@ -872,6 +904,39 @@ def build_paper_runner_overrides_from_fixed_config(
             DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["rl_batch_actions"],
         )
     ]
+    capa_overrides = {
+        key: value
+        for key, value in {
+            "utility_balance_gamma": fixed_config.get("utility_balance_gamma"),
+            "threshold_omega": fixed_config.get("threshold_omega"),
+            "local_payment_ratio_zeta": fixed_config.get("local_payment_ratio_zeta"),
+            "local_sharing_rate_mu1": fixed_config.get("local_sharing_rate_mu1"),
+            "cross_platform_sharing_rate_mu2": fixed_config.get("cross_platform_sharing_rate_mu2"),
+        }.items()
+        if value is not None
+    }
+    mra_overrides = {
+        "local_payment_ratio_zeta": fixed_config.get("local_payment_ratio_zeta"),
+    }
+    mra_overrides = {key: value for key, value in mra_overrides.items() if value is not None}
+    cross_baseline_overrides = {
+        key: value
+        for key, value in {
+            "local_payment_ratio_zeta": fixed_config.get("local_payment_ratio_zeta"),
+            "cross_platform_sharing_rate_mu2": fixed_config.get("cross_platform_sharing_rate_mu2"),
+        }.items()
+        if value is not None
+    }
+    impgta_overrides = dict(cross_baseline_overrides)
+    if fixed_config.get("impgta_threshold_scale") is not None:
+        impgta_overrides["threshold_scale"] = fixed_config["impgta_threshold_scale"]
+    if fixed_config.get("impgta_local_payment_ratio_zeta") is not None:
+        impgta_overrides["local_payment_ratio_zeta"] = fixed_config["impgta_local_payment_ratio_zeta"]
+    if fixed_config.get("impgta_cross_platform_sharing_rate_mu2") is not None:
+        impgta_overrides["cross_platform_sharing_rate_mu2"] = fixed_config["impgta_cross_platform_sharing_rate_mu2"]
+    ramcom_overrides = dict(cross_baseline_overrides)
+    if fixed_config.get("max_outer_payment_ratio") is not None:
+        ramcom_overrides["max_outer_payment_ratio"] = fixed_config["max_outer_payment_ratio"]
     merged: dict[str, dict[str, Any]] = {
         "impgta": {
             "prediction_window_seconds": int(fixed_config["prediction_window_seconds"]),
@@ -920,6 +985,16 @@ def build_paper_runner_overrides_from_fixed_config(
             ),
         },
     }
+    if capa_overrides:
+        merged.setdefault("capa", {}).update(capa_overrides)
+    if mra_overrides:
+        merged.setdefault("mra", {}).update(mra_overrides)
+    if cross_baseline_overrides:
+        merged.setdefault("basegta", {}).update(cross_baseline_overrides)
+    if ramcom_overrides:
+        merged.setdefault("ramcom", {}).update(ramcom_overrides)
+    if impgta_overrides:
+        merged.setdefault("impgta", {}).update(impgta_overrides)
     for algorithm, overrides in (explicit_overrides or {}).items():
         merged.setdefault(algorithm, {})
         merged[algorithm].update(dict(overrides))
@@ -970,6 +1045,21 @@ def _build_capa_override_cli_args(capa_runner_kwargs: dict[str, Any]) -> list[st
     for key, flag in mapping.items():
         if key in capa_runner_kwargs:
             args.extend([flag, str(capa_runner_kwargs[key])])
+    return args
+
+
+def _build_impgta_override_cli_args(impgta_runner_kwargs: dict[str, Any]) -> list[str]:
+    """Translate ImpGTA override kwargs into CLI arguments for formal point scripts."""
+
+    mapping = {
+        "threshold_scale": "--impgta-threshold-scale",
+        "local_payment_ratio_zeta": "--impgta-local-payment-ratio-zeta",
+        "cross_platform_sharing_rate_mu2": "--impgta-cross-platform-sharing-rate-mu2",
+    }
+    args: list[str] = []
+    for key, flag in mapping.items():
+        if key in impgta_runner_kwargs:
+            args.extend([flag, str(impgta_runner_kwargs[key])])
     return args
 
 

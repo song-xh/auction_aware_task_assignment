@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import py_compile
+import sys
 import time
 import unittest
 from pathlib import Path
@@ -42,6 +43,8 @@ from experiments.paper_chengdu import (
     build_fixed_config_from_args,
     build_paper_runner_overrides_from_fixed_config,
 )
+from experiments.framework.point_runner import default_runner_kwargs_for_algorithm
+from experiments.run_chengdu_exp2_couriers import main as run_exp2_main
 from experiments.seeding import build_environment_seed, clone_environment_from_seed
 from runner import build_algorithm_kwargs
 
@@ -144,6 +147,13 @@ class MetricAlignmentTest(unittest.TestCase):
             task_window_start_seconds=120,
             task_window_end_seconds=600,
             task_sampling_seed=13,
+            deadline_seconds=600,
+            local_payment_ratio_zeta=0.45,
+            local_sharing_rate_mu1=0.35,
+            cross_platform_sharing_rate_mu2=0.2,
+            impgta_threshold_scale=1.2,
+            impgta_local_payment_ratio_zeta=0.3,
+            impgta_cross_platform_sharing_rate_mu2=0.1,
         )
 
         fixed_config = build_fixed_config_from_args(args)
@@ -154,6 +164,12 @@ class MetricAlignmentTest(unittest.TestCase):
         self.assertEqual(fixed_config["prediction_window_seconds"], 180)
         self.assertEqual(fixed_config["prediction_success_rate"], 0.6)
         self.assertEqual(fixed_config["prediction_sampling_seed"], 17)
+        self.assertEqual(fixed_config["local_payment_ratio_zeta"], 0.45)
+        self.assertEqual(fixed_config["local_sharing_rate_mu1"], 0.35)
+        self.assertEqual(fixed_config["cross_platform_sharing_rate_mu2"], 0.2)
+        self.assertEqual(fixed_config["impgta_threshold_scale"], 1.2)
+        self.assertEqual(fixed_config["impgta_local_payment_ratio_zeta"], 0.3)
+        self.assertEqual(fixed_config["impgta_cross_platform_sharing_rate_mu2"], 0.1)
 
     def test_environment_seed_preserves_task_window_sampling(self) -> None:
         """Canonical Chengdu seeds should preserve task-window sampling metadata across clones."""
@@ -230,9 +246,9 @@ class MetricAlignmentTest(unittest.TestCase):
             ),
         ]
 
-        self.assertEqual(compute_reported_batch_processing_time(reports[0]), 11.0)
-        self.assertEqual(compute_reported_batch_processing_time(reports[1]), 22.0)
-        self.assertEqual(compute_batch_processing_time(reports), 16.5)
+        self.assertEqual(compute_reported_batch_processing_time(reports[0]), 10.0)
+        self.assertEqual(compute_reported_batch_processing_time(reports[1]), 20.0)
+        self.assertEqual(compute_batch_processing_time(reports), 15.0)
 
     def test_reported_bpt_falls_back_to_full_timing_breakdown(self) -> None:
         """Legacy-style reports should still widen BPT from the timing breakdown."""
@@ -253,7 +269,7 @@ class MetricAlignmentTest(unittest.TestCase):
             ),
         )
 
-        self.assertEqual(compute_reported_batch_processing_time(report), pytest.approx(1.0))
+        self.assertEqual(compute_reported_batch_processing_time(report), pytest.approx(0.6))
 
     def test_build_metric_series_uses_widened_bpt_values(self) -> None:
         """Batch plots should use the same widened BPT accounting as summary metrics."""
@@ -295,8 +311,8 @@ class MetricAlignmentTest(unittest.TestCase):
 
         _, _, bpt_values = build_metric_series(reports, total_parcels=1)
 
-        self.assertEqual(bpt_values, pytest.approx([1.2, 1.6]))
-        self.assertEqual(compute_batch_processing_time(reports), pytest.approx(1.4))
+        self.assertEqual(bpt_values, pytest.approx([0.8, 1.1]))
+        self.assertEqual(compute_batch_processing_time(reports), pytest.approx(0.95))
 
     def test_impgta_prediction_success_rate_controls_future_window(self) -> None:
         """ImpGTA should preserve the full simplified future window when prediction success is 100%."""
@@ -415,6 +431,29 @@ class MetricAlignmentTest(unittest.TestCase):
                 task=current_task,
                 available_capacity_weight=5.0,
                 future_tasks=future_tasks,
+            )
+        )
+
+    def test_impgta_threshold_scale_tightens_inner_acceptance(self) -> None:
+        """ImpGTA inner gating should expose a tunable multiplicative threshold scale."""
+
+        current_task = SimpleNamespace(num="t0", fare=10.0, weight=1.0)
+        future_tasks = [SimpleNamespace(num="f1", fare=10.0, weight=1.0)]
+
+        self.assertTrue(
+            should_dispatch_inner_task_impgta(
+                task=current_task,
+                available_capacity_weight=1.0,
+                future_tasks=future_tasks,
+                threshold_scale=1.0,
+            )
+        )
+        self.assertFalse(
+            should_dispatch_inner_task_impgta(
+                task=current_task,
+                available_capacity_weight=1.0,
+                future_tasks=future_tasks,
+                threshold_scale=1.1,
             )
         )
 
@@ -561,6 +600,32 @@ class MetricAlignmentTest(unittest.TestCase):
             )
         )
 
+    def test_impgta_threshold_scale_tightens_outer_acceptance(self) -> None:
+        """ImpGTA outer gating should expose a tunable multiplicative threshold scale."""
+
+        future_tasks = [
+            SimpleNamespace(num="p-f1", fare=10.0, s_time=10.0, weight=1.0),
+        ]
+
+        self.assertTrue(
+            should_bid_outer_platform_impgta(
+                current_task_value=5.0,
+                available_capacity_weight=0.0,
+                future_tasks=future_tasks,
+                local_payment_ratio=0.5,
+                threshold_scale=1.0,
+            )
+        )
+        self.assertFalse(
+            should_bid_outer_platform_impgta(
+                current_task_value=5.0,
+                available_capacity_weight=0.0,
+                future_tasks=future_tasks,
+                local_payment_ratio=0.5,
+                threshold_scale=1.1,
+            )
+        )
+
     def test_impgta_cross_payment_matches_aim_critical_payment(self) -> None:
         """ImpGTA cross completions should settle with AIM critical payment."""
 
@@ -699,8 +764,8 @@ class MetricAlignmentTest(unittest.TestCase):
             run_impgta_baseline_environment(environment=build_environment(), prediction_success_rate=0.0)
         self.assertGreater(aim_spy.call_count, 0)
 
-    def test_impgta_bpt_excludes_aim_routing_delay(self) -> None:
-        """ImpGTA BPT should exclude routing delay even when cross settlement uses AIM."""
+    def test_impgta_bpt_includes_aim_routing_delay(self) -> None:
+        """ImpGTA BPT should include route-evaluation delay under the widened runtime contract."""
 
         class SlowTravelModel:
             """Travel model that records an artificial delay on every distance query."""
@@ -766,14 +831,14 @@ class MetricAlignmentTest(unittest.TestCase):
             result = run_impgta_baseline_environment(environment=environment, prediction_success_rate=0.0)
 
         self.assertGreater(travel_model.routing_delay_seconds, 0.0)
-        self.assertGreaterEqual(result["BPT"], 0.0)
-        self.assertLess(result["BPT"], travel_model.routing_delay_seconds)
+        self.assertGreaterEqual(result["BPT"], travel_model.routing_delay_seconds)
 
     def test_runner_builds_impgta_prediction_success_kwargs(self) -> None:
         """Unified runner kwargs should expose ImpGTA prediction-success controls."""
 
         args = SimpleNamespace(
             algorithm="impgta",
+            batch_size=45,
             prediction_window_seconds=180,
             prediction_success_rate=0.6,
             prediction_sampling_seed=17,
@@ -781,6 +846,7 @@ class MetricAlignmentTest(unittest.TestCase):
 
         kwargs = build_algorithm_kwargs(args)
 
+        self.assertEqual(kwargs["batch_size"], 45)
         self.assertEqual(kwargs["prediction_window_seconds"], 180)
         self.assertEqual(kwargs["prediction_success_rate"], 0.6)
         self.assertEqual(kwargs["prediction_sampling_seed"], 17)
@@ -793,12 +859,83 @@ class MetricAlignmentTest(unittest.TestCase):
                 "prediction_window_seconds": 240,
                 "prediction_success_rate": 0.55,
                 "prediction_sampling_seed": 19,
+                "impgta_threshold_scale": 1.2,
             }
         )
 
         self.assertEqual(overrides["impgta"]["prediction_window_seconds"], 240)
         self.assertEqual(overrides["impgta"]["prediction_success_rate"], 0.55)
         self.assertEqual(overrides["impgta"]["prediction_sampling_seed"], 19)
+        self.assertEqual(overrides["impgta"]["threshold_scale"], 1.2)
+
+    def test_exp2_point_mode_forwards_seed_path(self) -> None:
+        """Exp-2 point execution should reuse the provided canonical seed path."""
+
+        seed_path = "/tmp/test-exp2-seed.pkl"
+        with patch("experiments.run_chengdu_exp2_couriers.run_chengdu_paper_point") as point_spy:
+            argv = [
+                "run_chengdu_exp2_couriers.py",
+                "--execution-mode",
+                "point",
+                "--point-value",
+                "100",
+                "--seed-path",
+                seed_path,
+                "--output-dir",
+                "/tmp/exp2-point-test",
+            ]
+            with patch.object(sys, "argv", argv):
+                self.assertEqual(run_exp2_main(), 0)
+
+        point_spy.assert_called_once()
+        self.assertEqual(str(point_spy.call_args.kwargs["seed_path"]), seed_path)
+
+    def test_paper_runner_overrides_include_shared_revenue_controls(self) -> None:
+        """Paper point/split execution should forward shared revenue controls to all relevant algorithms."""
+
+        overrides = build_paper_runner_overrides_from_fixed_config(
+            {
+                "prediction_window_seconds": 240,
+                "prediction_success_rate": 0.55,
+                "prediction_sampling_seed": 19,
+                "local_payment_ratio_zeta": 0.5,
+                "local_sharing_rate_mu1": 0.4,
+                "cross_platform_sharing_rate_mu2": 0.2,
+                "max_outer_payment_ratio": 0.3,
+            }
+        )
+
+        self.assertEqual(overrides["capa"]["local_payment_ratio_zeta"], 0.5)
+        self.assertEqual(overrides["capa"]["local_sharing_rate_mu1"], 0.4)
+        self.assertEqual(overrides["capa"]["cross_platform_sharing_rate_mu2"], 0.2)
+        self.assertEqual(overrides["mra"]["local_payment_ratio_zeta"], 0.5)
+        self.assertEqual(overrides["basegta"]["local_payment_ratio_zeta"], 0.5)
+        self.assertEqual(overrides["basegta"]["cross_platform_sharing_rate_mu2"], 0.2)
+        self.assertEqual(overrides["impgta"]["local_payment_ratio_zeta"], 0.5)
+        self.assertEqual(overrides["impgta"]["cross_platform_sharing_rate_mu2"], 0.2)
+        self.assertEqual(overrides["ramcom"]["local_payment_ratio_zeta"], 0.5)
+        self.assertEqual(overrides["ramcom"]["cross_platform_sharing_rate_mu2"], 0.2)
+        self.assertEqual(overrides["ramcom"]["max_outer_payment_ratio"], 0.3)
+
+    def test_paper_runner_overrides_allow_impgta_specific_revenue_controls(self) -> None:
+        """Paper point/split execution should allow ImpGTA-only revenue tuning."""
+
+        overrides = build_paper_runner_overrides_from_fixed_config(
+            {
+                "prediction_window_seconds": 240,
+                "prediction_success_rate": 0.55,
+                "prediction_sampling_seed": 19,
+                "local_payment_ratio_zeta": 0.5,
+                "cross_platform_sharing_rate_mu2": 0.2,
+                "impgta_local_payment_ratio_zeta": 0.3,
+                "impgta_cross_platform_sharing_rate_mu2": 0.1,
+            }
+        )
+
+        self.assertEqual(overrides["basegta"]["local_payment_ratio_zeta"], 0.5)
+        self.assertEqual(overrides["basegta"]["cross_platform_sharing_rate_mu2"], 0.2)
+        self.assertEqual(overrides["impgta"]["local_payment_ratio_zeta"], 0.3)
+        self.assertEqual(overrides["impgta"]["cross_platform_sharing_rate_mu2"], 0.1)
 
     def test_paper_runner_overrides_include_rl_capa_infer_checkpoint_controls(self) -> None:
         """Paper point/split execution should forward RL-CAPA inference checkpoint controls."""
@@ -872,8 +1009,8 @@ class MetricAlignmentTest(unittest.TestCase):
 
         self.assertAlmostEqual(result["TR"], 7.0)
 
-    def test_basegta_bpt_is_mean_assignment_time_per_task(self) -> None:
-        """BaseGTA BPT should report mean assignment-decision time per task epoch."""
+    def test_basegta_bpt_is_mean_full_elapsed_time_per_batch_epoch(self) -> None:
+        """BaseGTA BPT should report mean full elapsed assignment time per batch epoch."""
 
         tasks = [
             SimpleNamespace(num="t1", fare=10.0, s_time=0.0, d_time=10.0, weight=1.0, l_node="p1"),
@@ -890,17 +1027,18 @@ class MetricAlignmentTest(unittest.TestCase):
             service_radius_km=None,
         )
 
+        def fake_select(**kwargs: object) -> GTABid:
+            kwargs["travel_model"]._timing.routing_time_seconds += 1.0
+            return GTABid(platform_id="", courier=courier, dispatch_cost=1.0)
+
         with (
-            patch(
-                "baselines.gta.select_available_courier_for_task",
-                return_value=GTABid(platform_id="", courier=courier, dispatch_cost=1.0),
-            ),
+            patch("baselines.gta.select_available_courier_for_task", side_effect=fake_select),
             patch("baselines.gta.drain_legacy_routes"),
             patch("baselines.gta.perf_counter", side_effect=[0.0, 2.0, 3.0, 7.0]),
         ):
-            result = run_basegta_baseline_environment(environment=environment)
+            result = run_basegta_baseline_environment(environment=environment, batch_size=30)
 
-        self.assertEqual(result["BPT"], 3.0)
+        self.assertEqual(result["BPT"], 6.0)
 
     def test_impgta_uses_delivered_count_for_cr(self) -> None:
         """ImpGTA should derive delivered count from post-drain route state, not accepts."""
@@ -1124,8 +1262,8 @@ class MetricAlignmentTest(unittest.TestCase):
         self.assertEqual(result["delivered_parcels"], 0)
         self.assertEqual(result["CR"], 0.0)
 
-    def test_greedy_bpt_is_mean_assignment_time_per_task(self) -> None:
-        """Greedy BPT should report mean assignment-decision time per task epoch."""
+    def test_greedy_bpt_is_mean_full_elapsed_time_per_batch(self) -> None:
+        """Greedy BPT should report mean full elapsed assignment time per batch epoch."""
 
         tasks = [
             SimpleNamespace(num="t1", fare=10.0, s_time=0.0, d_time=10.0, weight=1.0, l_node="p1"),
@@ -1141,14 +1279,18 @@ class MetricAlignmentTest(unittest.TestCase):
             service_radius_km=None,
         )
 
+        def fake_select(*_args: object, **kwargs: object) -> tuple[object, int, float]:
+            kwargs["timing"].routing_time_seconds += 1.0
+            return (courier, 0, 1.0)
+
         with (
-            patch("baselines.greedy.select_greedy_assignment", return_value=(courier, 0, 1.0)),
+            patch("baselines.greedy.select_greedy_assignment", side_effect=fake_select),
             patch("baselines.greedy.drain_legacy_routes"),
             patch("baselines.greedy.perf_counter", side_effect=[0.0, 2.0, 3.0, 7.0]),
         ):
             result = run_greedy_baseline_environment(environment=environment, batch_size=30)
 
-        self.assertEqual(result["BPT"], 3.0)
+        self.assertEqual(result["BPT"], 6.0)
 
     def test_mra_uses_delivered_count_for_cr(self) -> None:
         """MRA should derive delivered count from post-drain route state, not accepts."""
@@ -1209,8 +1351,8 @@ class MetricAlignmentTest(unittest.TestCase):
         self.assertEqual(result["delivered_parcels"], 0)
         self.assertEqual(result["CR"], 0.0)
 
-    def test_ramcom_bpt_is_mean_assignment_time_per_task(self) -> None:
-        """RamCOM BPT should report mean assignment-decision time per task epoch."""
+    def test_ramcom_bpt_is_mean_full_elapsed_time_per_batch(self) -> None:
+        """RamCOM BPT should report mean full elapsed assignment time per batch epoch."""
 
         tasks = [
             SimpleNamespace(num="t1", fare=10.0, s_time=0.0, d_time=10.0, weight=1.0, l_node="p1"),
@@ -1226,13 +1368,17 @@ class MetricAlignmentTest(unittest.TestCase):
             service_radius_km=None,
         )
 
+        def fake_feasible_insertions(**kwargs: object) -> list[object]:
+            kwargs["timing"].routing_time_seconds += 1.0
+            return []
+
         with (
-            patch("baselines.ramcom.build_legacy_feasible_insertions", return_value=[]),
+            patch("baselines.ramcom.build_legacy_feasible_insertions", side_effect=fake_feasible_insertions),
             patch("baselines.ramcom.perf_counter", side_effect=[0.0, 2.0, 3.0, 7.0]),
         ):
             result = run_ramcom_baseline_environment(environment=environment)
 
-        self.assertEqual(result["BPT"], 3.0)
+        self.assertEqual(result["BPT"], 6.0)
 
     def test_ramcom_acceptance_uses_reservation_when_history_missing(self) -> None:
         """RamCOM should use an explicit reservation model when empirical history is absent."""
@@ -1486,6 +1632,7 @@ class MetricAlignmentTest(unittest.TestCase):
         def fake_runner(name: str):
             def _runner(**kwargs: object) -> dict[str, object]:
                 captured[name] = {
+                    "batch_size": float(kwargs.get("batch_size", -1)),
                     "local_payment_ratio": float(kwargs.get("local_payment_ratio", -1)),
                     "cross_platform_sharing_rate_mu2": float(kwargs.get("cross_platform_sharing_rate_mu2", -1)),
                 }
@@ -1504,20 +1651,24 @@ class MetricAlignmentTest(unittest.TestCase):
             return _runner
 
         basegta = build_basegta_runner(
+            batch_size=45,
             local_payment_ratio_zeta=0.6,
             cross_platform_sharing_rate_mu2=0.2,
             baseline_runner=fake_runner("basegta"),
         )
         basegta.run(environment=environment)
+        self.assertAlmostEqual(captured["basegta"]["batch_size"], 45)
         self.assertAlmostEqual(captured["basegta"]["local_payment_ratio"], 0.6)
         self.assertAlmostEqual(captured["basegta"]["cross_platform_sharing_rate_mu2"], 0.2)
 
         impgta = build_impgta_runner(
+            batch_size=35,
             local_payment_ratio_zeta=0.55,
             cross_platform_sharing_rate_mu2=0.15,
             baseline_runner=fake_runner("impgta"),
         )
         impgta.run(environment=environment)
+        self.assertAlmostEqual(captured["impgta"]["batch_size"], 35)
         self.assertAlmostEqual(captured["impgta"]["local_payment_ratio"], 0.55)
         self.assertAlmostEqual(captured["impgta"]["cross_platform_sharing_rate_mu2"], 0.15)
 
@@ -1678,6 +1829,32 @@ class MetricAlignmentTest(unittest.TestCase):
         )
 
         self.assertEqual(build_algorithm_kwargs(args), {"batch_size": 45})
+
+    def test_runner_builds_basegta_batch_size_kwargs(self) -> None:
+        """The root runner should pass batch-size configuration into BaseGTA."""
+
+        args = SimpleNamespace(algorithm="basegta", batch_size=45)
+
+        self.assertEqual(build_algorithm_kwargs(args), {"batch_size": 45})
+
+    def test_point_runner_default_kwargs_pass_batch_size_to_ramcom(self) -> None:
+        """Paper point/split execution should pass the shared batch size into RamCOM."""
+
+        self.assertEqual(default_runner_kwargs_for_algorithm("ramcom", batch_size=45), {"batch_size": 45})
+
+    def test_point_runner_default_kwargs_pass_batch_size_to_gta_variants(self) -> None:
+        """Paper point/split execution should pass the shared batch size into GTA baselines."""
+
+        self.assertEqual(default_runner_kwargs_for_algorithm("basegta", batch_size=45), {"batch_size": 45})
+        self.assertEqual(
+            default_runner_kwargs_for_algorithm("impgta", batch_size=45),
+            {
+                "batch_size": 45,
+                "prediction_window_seconds": 30,
+                "prediction_success_rate": 0.8,
+                "prediction_sampling_seed": 1,
+            },
+        )
 
     def test_ramcom_runner_keeps_trace_out_of_printed_metrics(self) -> None:
         """RamCOM runner should persist trace separately from the scalar metrics surface."""

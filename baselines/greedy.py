@@ -29,6 +29,7 @@ from env.chengdu import (
     advance_legacy_routes_with_deadline_accounting,
     LegacyCourierSnapshotCache,
     apply_assignment_to_legacy_courier,
+    bucketize_legacy_tasks_by_batch,
     drain_legacy_routes,
     drain_legacy_routes_with_deadline_accounting,
     framework_movement_callback,
@@ -130,7 +131,6 @@ def run_greedy_baseline_environment(
         Normalized `TR`/`CR`/`BPT` metrics.
     """
 
-    del batch_size
     tasks = sort_legacy_tasks(list(environment.tasks))
     total_tasks = len(tasks)
     if total_tasks == 0:
@@ -146,6 +146,8 @@ def run_greedy_baseline_environment(
             "partner_cross_assignment_counts": {},
             "partner_cross_revenues": {},
         }
+    _, batch_lookup = bucketize_legacy_tasks_by_batch(tasks, batch_size)
+    batch_epoch_count = max(batch_lookup) + 1 if batch_lookup else 0
 
     local_couriers = list(environment.local_couriers)
     movement = environment.movement_callback or framework_movement_callback
@@ -194,8 +196,6 @@ def run_greedy_baseline_environment(
 
         for task in arrivals:
             started = perf_counter()
-            routing_before = timing.routing_time_seconds
-            insertion_before = timing.insertion_time_seconds
             selection = select_greedy_assignment(
                 task=task,
                 couriers=local_couriers,
@@ -222,10 +222,7 @@ def run_greedy_baseline_environment(
                     parcel_fare=float(getattr(task, "fare")),
                     local_payment_ratio=local_payment_ratio,
                 )
-            processing_time_seconds += max(
-                0.0,
-                perf_counter() - started - (timing.routing_time_seconds - routing_before) - (timing.insertion_time_seconds - insertion_before),
-            )
+            processing_time_seconds += max(0.0, perf_counter() - started)
             processed_tasks += 1
             if progress_callback is not None and (processed_tasks == total_tasks or processed_tasks % progress_stride == 0):
                 progress_callback(
@@ -256,7 +253,7 @@ def run_greedy_baseline_environment(
     return {
         "TR": total_revenue,
         "CR": delivered_parcels / total_tasks,
-        "BPT": mean_decision_time(processing_time_seconds, processed_tasks),
+        "BPT": mean_decision_time(processing_time_seconds, batch_epoch_count),
         "delivered_parcels": delivered_parcels,
         "accepted_assignments": accepted_assignments,
         "timed_out_parcels": len(timed_out_task_ids),

@@ -22,21 +22,21 @@ def compute_completion_rate(assignments: Sequence[Assignment], total_parcels: in
 def compute_reported_batch_processing_time(batch_report: BatchReport) -> float:
     """Return the reported BPT for one batch report.
 
-    The widened BPT contract prefers explicit batch wall-clock timing from
-    `processing_time_seconds`, then adds movement overhead that happens outside
-    the matching window. Legacy-style reports that only populate the timing
-    breakdown fall back to the full recorded timing sum.
+    BPT is intended to capture assignment computation inside one matching
+    round, including graph/routing, insertion, and matching work, but not the
+    simulated physical movement that happens after the decision is made.
+    Legacy-style reports that only populate the timing breakdown therefore
+    sum decision, routing, and insertion time, excluding movement.
     """
 
-    timing_total = (
+    decision_total = (
         batch_report.timing.decision_time_seconds
         + batch_report.timing.routing_time_seconds
         + batch_report.timing.insertion_time_seconds
-        + batch_report.timing.movement_time_seconds
     )
     if batch_report.processing_time_seconds > 0.0:
-        return batch_report.processing_time_seconds + batch_report.timing.movement_time_seconds
-    return timing_total
+        return batch_report.processing_time_seconds
+    return decision_total
 
 
 def compute_batch_processing_time(batch_reports: Sequence[BatchReport]) -> float:

@@ -381,8 +381,6 @@ def run_ramcom_baseline_environment(
                 continue
 
             started = perf_counter()
-            routing_before = timing.routing_time_seconds
-            insertion_before = timing.insertion_time_seconds
             assigned = False
             if float(getattr(task, "fare")) > threshold:
                 inner_candidates = build_legacy_feasible_insertions(
@@ -519,10 +517,7 @@ def run_ramcom_baseline_environment(
             if trace_entry["reject_reason"] in {"no_feasible_outer", "rejected_by_all", "invalid_payment"}:
                 rejected_observed_deadline_count += 1
 
-            processing_time_seconds += max(
-                0.0,
-                perf_counter() - started - (timing.routing_time_seconds - routing_before) - (timing.insertion_time_seconds - insertion_before),
-            )
+            processing_time_seconds += max(0.0, perf_counter() - started)
             if progress_callback is not None and (task_index == total_tasks or task_index % progress_stride == 0):
                 progress_callback(
                     {
@@ -585,7 +580,7 @@ def run_ramcom_baseline_environment(
         "max_outer_payment_ratio": float(max_outer_payment_ratio),
         "TR": total_revenue,
         "CR": delivered_parcels / total_tasks,
-        "BPT": mean_decision_time(processing_time_seconds, total_tasks),
+        "BPT": mean_decision_time(processing_time_seconds, len(batches)),
         "delivered_parcels": delivered_parcels,
         "accepted_assignments": accepted_assignments,
         "timed_out_parcels": len(timed_out_task_ids),

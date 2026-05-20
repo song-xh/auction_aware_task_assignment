@@ -36,6 +36,7 @@ def main() -> int:
             preset_name=args.preset,
             poll_seconds=args.poll_seconds,
             progress_mode=args.progress_mode,
+            seed_path=Path(args.seed_path) if args.seed_path else None,
         )
     elif args.execution_mode == "point":
         if args.point_value is None:
@@ -46,6 +47,7 @@ def main() -> int:
             output_dir=Path(args.output_dir),
             algorithms=args.algorithms,
             fixed_config_overrides=fixed_config,
+            seed_path=Path(args.seed_path) if args.seed_path else None,
         )
     else:
         raise SystemExit(f"Unsupported execution mode for Exp-2: {args.execution_mode}")

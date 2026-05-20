@@ -16,8 +16,8 @@ def mean_decision_time(total_seconds: float, decision_epochs: int) -> float:
     """Return mean assignment-decision time per comparable BPT epoch.
 
     Args:
-        total_seconds: Accumulated assignment-decision time with routing,
-            insertion, and movement excluded.
+        total_seconds: Accumulated elapsed assignment-processing time across
+            comparable decision epochs.
         decision_epochs: Number of task/batch/round epochs represented by the
             accumulated decision time.
 

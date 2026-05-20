@@ -9,9 +9,11 @@ from typing import Any, Callable, Mapping
 
 from baselines.gta import run_impgta_baseline_environment
 from capa.config import (
+    DEFAULT_CAPA_BATCH_SIZE,
     DEFAULT_CROSS_PLATFORM_SHARING_RATE_MU2,
     DEFAULT_IMPGTA_PREDICTION_SAMPLING_SEED,
     DEFAULT_IMPGTA_PREDICTION_SUCCESS_RATE,
+    DEFAULT_IMPGTA_THRESHOLD_SCALE,
     DEFAULT_IMPGTA_WINDOW_SECONDS,
     DEFAULT_LOCAL_PAYMENT_RATIO_ZETA,
 )
@@ -25,19 +27,23 @@ class ImpGTARunner(AlgorithmRunner):
 
     def __init__(
         self,
+        batch_size: int = DEFAULT_CAPA_BATCH_SIZE,
         prediction_window_seconds: int = DEFAULT_IMPGTA_WINDOW_SECONDS,
         prediction_success_rate: float = DEFAULT_IMPGTA_PREDICTION_SUCCESS_RATE,
         prediction_sampling_seed: int = DEFAULT_IMPGTA_PREDICTION_SAMPLING_SEED,
         local_payment_ratio_zeta: float = DEFAULT_LOCAL_PAYMENT_RATIO_ZETA,
         cross_platform_sharing_rate_mu2: float = DEFAULT_CROSS_PLATFORM_SHARING_RATE_MU2,
+        threshold_scale: float = DEFAULT_IMPGTA_THRESHOLD_SCALE,
         baseline_runner: Callable[..., dict[str, Any]] | None = None,
     ) -> None:
         """Store the ImpGTA prediction parameters, revenue parameters, and injected runner."""
+        self._batch_size = int(batch_size)
         self._prediction_window_seconds = prediction_window_seconds
         self._prediction_success_rate = prediction_success_rate
         self._prediction_sampling_seed = prediction_sampling_seed
         self._local_payment_ratio_zeta = float(local_payment_ratio_zeta)
         self._cross_platform_sharing_rate_mu2 = float(cross_platform_sharing_rate_mu2)
+        self._threshold_scale = float(threshold_scale)
         self._baseline_runner = baseline_runner or run_impgta_baseline_environment
 
     def run(
@@ -50,11 +56,13 @@ class ImpGTARunner(AlgorithmRunner):
         started_at = datetime.now().astimezone()
         metrics = self._baseline_runner(
             environment=environment,
+            batch_size=self._batch_size,
             prediction_window_seconds=self._prediction_window_seconds,
             prediction_success_rate=self._prediction_success_rate,
             prediction_sampling_seed=self._prediction_sampling_seed,
             local_payment_ratio=self._local_payment_ratio_zeta,
             cross_platform_sharing_rate_mu2=self._cross_platform_sharing_rate_mu2,
+            threshold_scale=self._threshold_scale,
             progress_callback=progress_callback,
         )
         finished_at = datetime.now().astimezone()
@@ -78,12 +86,14 @@ class ImpGTARunner(AlgorithmRunner):
             started_at=started_at,
             finished_at=finished_at,
             extra_fields={
+                "batch_size": self._batch_size,
                 "prediction_window_seconds": self._prediction_window_seconds,
                 "prediction_success_rate": self._prediction_success_rate,
                 "prediction_sampling_seed": self._prediction_sampling_seed,
                 "config": {
                     "local_payment_ratio_zeta": self._local_payment_ratio_zeta,
                     "cross_platform_sharing_rate_mu2": self._cross_platform_sharing_rate_mu2,
+                    "threshold_scale": self._threshold_scale,
                 },
             },
         )
@@ -95,19 +105,23 @@ class ImpGTARunner(AlgorithmRunner):
 
 
 def build_impgta_runner(
+    batch_size: int = DEFAULT_CAPA_BATCH_SIZE,
     prediction_window_seconds: int = DEFAULT_IMPGTA_WINDOW_SECONDS,
     prediction_success_rate: float = DEFAULT_IMPGTA_PREDICTION_SUCCESS_RATE,
     prediction_sampling_seed: int = DEFAULT_IMPGTA_PREDICTION_SAMPLING_SEED,
     local_payment_ratio_zeta: float = DEFAULT_LOCAL_PAYMENT_RATIO_ZETA,
     cross_platform_sharing_rate_mu2: float = DEFAULT_CROSS_PLATFORM_SHARING_RATE_MU2,
+    threshold_scale: float = DEFAULT_IMPGTA_THRESHOLD_SCALE,
     baseline_runner: Callable[..., dict[str, Any]] | None = None,
 ) -> ImpGTARunner:
     """Build the unified ImpGTA runner."""
     return ImpGTARunner(
+        batch_size=batch_size,
         prediction_window_seconds=prediction_window_seconds,
         prediction_success_rate=prediction_success_rate,
         prediction_sampling_seed=prediction_sampling_seed,
         local_payment_ratio_zeta=local_payment_ratio_zeta,
         cross_platform_sharing_rate_mu2=cross_platform_sharing_rate_mu2,
+        threshold_scale=threshold_scale,
         baseline_runner=baseline_runner,
     )

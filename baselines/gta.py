@@ -10,10 +10,12 @@ from time import perf_counter
 from typing import Any, Callable, Mapping, MutableSequence, Sequence
 
 from capa.config import (
+    DEFAULT_CAPA_BATCH_SIZE,
     DEFAULT_CROSS_PLATFORM_SHARING_RATE_MU2,
     DEFAULT_GTA_UNIT_PRICE_PER_KM,
     DEFAULT_IMPGTA_PREDICTION_SAMPLING_SEED,
     DEFAULT_IMPGTA_PREDICTION_SUCCESS_RATE,
+    DEFAULT_IMPGTA_THRESHOLD_SCALE,
     DEFAULT_IMPGTA_WINDOW_SECONDS,
 )
 from capa.constraints import is_deadline_feasible_by_geo, is_within_service_radius
@@ -28,6 +30,7 @@ from capa.utility import (
 from env.chengdu import (
     advance_legacy_routes_with_deadline_accounting,
     apply_assignment_to_legacy_courier,
+    bucketize_legacy_tasks_by_batch,
     drain_legacy_routes,
     drain_legacy_routes_with_deadline_accounting,
     flatten_partner_couriers,
@@ -425,11 +428,31 @@ def future_task_weight_demand(future_tasks: Sequence[Any]) -> float:
     return sum(max(0.0, float(getattr(task, "weight", 1.0))) for task in future_tasks)
 
 
-def should_dispatch_inner_task_impgta(task: Any, available_capacity_weight: float, future_tasks: Sequence[Any]) -> bool:
-    """Evaluate ImpGTA's inner conditions under the CPUL parcel-capacity model."""
-    if float(available_capacity_weight) > future_task_weight_demand(future_tasks):
+def should_dispatch_inner_task_impgta(
+    task: Any,
+    available_capacity_weight: float,
+    future_tasks: Sequence[Any],
+    threshold_scale: float = DEFAULT_IMPGTA_THRESHOLD_SCALE,
+) -> bool:
+    """Evaluate ImpGTA's inner conditions under the CPUL parcel-capacity model.
+
+    Args:
+        task: Current local-platform task under evaluation.
+        available_capacity_weight: Residual courier capacity available inside
+            the prediction window.
+        future_tasks: Predicted local future tasks.
+        threshold_scale: Multiplicative tightening factor applied to both the
+            future demand and future expected reward thresholds.
+
+    Returns:
+        True when current spare capacity dominates scaled future demand, or the
+        current task fare is at least the scaled expected future reward.
+    """
+
+    scaled_threshold = max(0.0, float(threshold_scale))
+    if float(available_capacity_weight) > scaled_threshold * future_task_weight_demand(future_tasks):
         return True
-    return float(getattr(task, "fare")) >= expected_future_reward(future_tasks)
+    return float(getattr(task, "fare")) >= scaled_threshold * expected_future_reward(future_tasks)
 
 
 def estimate_impgta_outer_task_value(
@@ -460,6 +483,7 @@ def should_bid_outer_platform_impgta(
     available_capacity_weight: float,
     future_tasks: Sequence[Any],
     local_payment_ratio: float = DEFAULT_LOCAL_PAYMENT_RATIO,
+    threshold_scale: float = DEFAULT_IMPGTA_THRESHOLD_SCALE,
 ) -> bool:
     """Evaluate ImpGTA's outer conditions for one cooperating platform.
 
@@ -471,15 +495,18 @@ def should_bid_outer_platform_impgta(
         future_tasks: Predicted own-task stream for the cooperating platform.
         local_payment_ratio: Fixed courier payment ratio for own-task net
             revenue.
+        threshold_scale: Multiplicative tightening factor applied to both the
+            future demand and future expected own-task net-revenue thresholds.
 
     Returns:
         True when supply is sufficient or the current cross-platform net revenue
         is no worse than the predicted own-task net revenue.
     """
 
-    if float(available_capacity_weight) > future_task_weight_demand(future_tasks):
+    scaled_threshold = max(0.0, float(threshold_scale))
+    if float(available_capacity_weight) > scaled_threshold * future_task_weight_demand(future_tasks):
         return True
-    return float(current_task_value) >= expected_future_local_platform_revenue(
+    return float(current_task_value) >= scaled_threshold * expected_future_local_platform_revenue(
         future_tasks,
         local_payment_ratio=local_payment_ratio,
     )
@@ -578,12 +605,14 @@ def advance_simulation(
 def _run_gta_environment(
     environment: Any,
     algorithm: str,
+    batch_size: int = DEFAULT_CAPA_BATCH_SIZE,
     prediction_window_seconds: int | None = None,
     prediction_success_rate: float = DEFAULT_IMPGTA_PREDICTION_SUCCESS_RATE,
     prediction_sampling_seed: int = DEFAULT_IMPGTA_PREDICTION_SAMPLING_SEED,
     unit_price_per_km: float = DEFAULT_UNIT_PRICE_PER_KM,
     local_payment_ratio: float = DEFAULT_LOCAL_PAYMENT_RATIO,
     cross_platform_sharing_rate_mu2: float = DEFAULT_CROSS_PLATFORM_SHARING_RATE_MU2,
+    threshold_scale: float = DEFAULT_IMPGTA_THRESHOLD_SCALE,
     progress_callback: Callable[[Mapping[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     """Run one GTA-style baseline over the shared Chengdu environment."""
@@ -602,6 +631,8 @@ def _run_gta_environment(
             "partner_cross_assignment_counts": {},
             "partner_cross_revenues": {},
         }
+    _, batch_lookup = bucketize_legacy_tasks_by_batch(tasks, batch_size)
+    decision_epoch_count = (max(batch_lookup) + 1) if batch_lookup else 0
 
     local_couriers = list(environment.local_couriers)
     partner_couriers_by_platform = {
@@ -672,8 +703,6 @@ def _run_gta_environment(
 
         for task in arrivals:
             started = perf_counter()
-            routing_before = timing.routing_time_seconds
-            insertion_before = timing.insertion_time_seconds
             local_bid = select_available_courier_for_task(
                 task=task,
                 couriers=local_couriers,
@@ -693,6 +722,7 @@ def _run_gta_environment(
                         prediction_window_seconds or 0,
                     ),
                     future_tasks=local_future_tasks,
+                    threshold_scale=threshold_scale,
                 ):
                     apply_assignment_to_legacy_courier(task, local_bid.courier, local_bid.insertion_index)
                     accepted_assignments += 1
@@ -703,10 +733,7 @@ def _run_gta_environment(
                         local_payment_ratio=local_payment_ratio,
                     )
                     assignment_modes_by_task_id[task_id] = "local"
-                    processing_time_seconds += max(
-                        0.0,
-                        perf_counter() - started - (timing.routing_time_seconds - routing_before) - (timing.insertion_time_seconds - insertion_before),
-                    )
+                    processing_time_seconds += max(0.0, perf_counter() - started)
                     processed_tasks += 1
                     if progress_callback is not None and (processed_tasks == total_task_count or processed_tasks % progress_stride == 0):
                         progress_callback(
@@ -760,6 +787,7 @@ def _run_gta_environment(
                         ),
                         future_tasks=partner_future_tasks,
                         local_payment_ratio=local_payment_ratio,
+                        threshold_scale=threshold_scale,
                     ):
                         continue
                 outer_bids.append(
@@ -788,10 +816,7 @@ def _run_gta_environment(
                 assignment_modes_by_task_id[task_id] = "cross"
                 partner_platform_by_task_id[task_id] = outcome.platform_id
                 partner_revenue_by_task_id[task_id] = float(outcome.payment)
-            processing_time_seconds += max(
-                0.0,
-                perf_counter() - started - (timing.routing_time_seconds - routing_before) - (timing.insertion_time_seconds - insertion_before),
-            )
+            processing_time_seconds += max(0.0, perf_counter() - started)
             processed_tasks += 1
             if progress_callback is not None and (processed_tasks == total_task_count or processed_tasks % progress_stride == 0):
                 progress_callback(
@@ -828,7 +853,7 @@ def _run_gta_environment(
     return {
         "TR": total_profit,
         "CR": delivered_parcels / total_task_count,
-        "BPT": mean_decision_time(processing_time_seconds, processed_tasks),
+        "BPT": mean_decision_time(processing_time_seconds, decision_epoch_count),
         "delivered_parcels": delivered_parcels,
         "accepted_assignments": accepted_assignments,
         "timed_out_parcels": len(timed_out_task_ids),
@@ -839,11 +864,13 @@ def _run_gta_environment(
         "partner_cross_revenues": partner_cross_revenues,
         "local_payment_ratio_zeta": float(local_payment_ratio),
         "cross_platform_sharing_rate_mu2": float(cross_platform_sharing_rate_mu2),
+        "threshold_scale": float(threshold_scale),
     }
 
 
 def run_basegta_baseline_environment(
     environment: Any,
+    batch_size: int = DEFAULT_CAPA_BATCH_SIZE,
     unit_price_per_km: float = DEFAULT_UNIT_PRICE_PER_KM,
     local_payment_ratio: float = DEFAULT_LOCAL_PAYMENT_RATIO,
     cross_platform_sharing_rate_mu2: float = DEFAULT_CROSS_PLATFORM_SHARING_RATE_MU2,
@@ -853,6 +880,7 @@ def run_basegta_baseline_environment(
     return _run_gta_environment(
         environment=environment,
         algorithm="basegta",
+        batch_size=batch_size,
         prediction_window_seconds=None,
         unit_price_per_km=unit_price_per_km,
         local_payment_ratio=local_payment_ratio,
@@ -863,23 +891,27 @@ def run_basegta_baseline_environment(
 
 def run_impgta_baseline_environment(
     environment: Any,
+    batch_size: int = DEFAULT_CAPA_BATCH_SIZE,
     prediction_window_seconds: int = DEFAULT_IMPGTA_WINDOW_SECONDS,
     prediction_success_rate: float = DEFAULT_IMPGTA_PREDICTION_SUCCESS_RATE,
     prediction_sampling_seed: int = DEFAULT_IMPGTA_PREDICTION_SAMPLING_SEED,
     unit_price_per_km: float = DEFAULT_UNIT_PRICE_PER_KM,
     local_payment_ratio: float = DEFAULT_LOCAL_PAYMENT_RATIO,
     cross_platform_sharing_rate_mu2: float = DEFAULT_CROSS_PLATFORM_SHARING_RATE_MU2,
+    threshold_scale: float = DEFAULT_IMPGTA_THRESHOLD_SCALE,
     progress_callback: Callable[[Mapping[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     """Run ImpGTA on the shared Chengdu environment with a fixed future window."""
     return _run_gta_environment(
         environment=environment,
         algorithm="impgta",
+        batch_size=batch_size,
         prediction_window_seconds=prediction_window_seconds,
         prediction_success_rate=prediction_success_rate,
         prediction_sampling_seed=prediction_sampling_seed,
         unit_price_per_km=unit_price_per_km,
         local_payment_ratio=local_payment_ratio,
         cross_platform_sharing_rate_mu2=cross_platform_sharing_rate_mu2,
+        threshold_scale=threshold_scale,
         progress_callback=progress_callback,
     )
