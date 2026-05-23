@@ -127,6 +127,18 @@ def _add_common_environment_arguments(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument("--rl-future-feature-window-seconds", type=int, default=300, help="True future window in seconds used by RL-CAPA stage-1 features.")
     parser.add_argument("--rl-use-service-slack", action="store_true", help="Append normalized local service slack to the RL-CAPA Stage-2 state.")
+    parser.add_argument(
+        "--rl-train-delay-max-seconds",
+        type=float,
+        default=0.0,
+        help="RL training-time domain randomization: max delay seconds sampled per episode (Uniform[0,N]); 0 disables.",
+    )
+    parser.add_argument(
+        "--rl-train-delay-window",
+        type=str,
+        default=None,
+        help='RL training-time domain randomization: "start,end" arrival window receiving the sampled delay. Required with --rl-train-delay-max-seconds.',
+    )
     parser.add_argument("--rl-checkpoint-dir", default=None, help="Checkpoint directory used by eval-only RL-CAPA inference runs.")
     parser.add_argument("--rl-device", default=None, help="Optional torch device override for RL-CAPA, for example `cpu` or `cuda`.")
     parser.add_argument(
@@ -178,6 +190,8 @@ def build_algorithm_kwargs(args: argparse.Namespace) -> dict[str, Any]:
             "warmup_episodes": args.rl_warmup_episodes,
             "future_feature_window_seconds": args.rl_future_feature_window_seconds,
             "use_service_slack": args.rl_use_service_slack,
+            "train_delay_max_seconds": args.rl_train_delay_max_seconds,
+            "train_delay_window": args.rl_train_delay_window,
             "device": args.rl_device,
         }
         if args.algorithm == "rl-capa-infer":

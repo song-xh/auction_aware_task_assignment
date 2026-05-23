@@ -798,6 +798,51 @@ python -m experiments.run_chengdu_exp7_deadline_delay \
 
 **步骤 3**：读 `robustness_comparison.json` 的 `transition_counts` 看哪类决策受 delay 冲击最大。期望 RL-CAPA 在 `delivered_local__delivered_cross` 项上多于 CAPA（成功识别 delayed 包裹切到 cross 保住交付），在 `delivered_local__timed_out` 项上少于 CAPA。
 
+### 训练时 delay 域随机化（domain randomization）
+
+实测发现：
+
+| 训练设置 | baseline TR | delayed TR | TR 损失 | 关键模式 |
+|---------|------------:|-----------:|--------:|----------|
+| 无 delay 训练 | 232.49 | 222.43 | 10.06 | RL 决策**字节等于** CAPA（pi2 学会了 CAMA-cascade pattern）。 |
+| 固定 delay 训练（30s @ window 10-30） | 81.95 | 82.07 | -0.12 | **崩塌为 all-cross**：pi2 把 100 包裹全推 cross，0 local。TR 暴跌 65%。 |
+| 随机 delay 训练（`Uniform[0, 60]` @ window 10-30） | 226.40 | 226.99 | -0.58 | RL 21 local / 41 cross / 38 unmatched，与 CAPA 接近但 -3% TR。pi2 维持分化策略。 |
+
+固定 delay 训练的失败说明 pi2 必须看到**delay 与无 delay 的混合分布**才能学到「条件触发 cross」而不是「无条件 cross」。
+
+**新增 CLI 参数**（runner.py，仅训练时生效）：
+
+- `--rl-train-delay-max-seconds N`：每个 episode 从 `Uniform[0, N]` 采样 delay 时长，50% 概率采到 0 保留无扰基线分布。
+- `--rl-train-delay-window "start,end"`：受随机 delay 影响的 true_arrival 窗口；必须与 `--rl-train-delay-max-seconds > 0` 一同提供。
+- 实现：`RLCAPAEnv._maybe_inject_train_delay` 在 `reset()` 内每集重采样 delay 并 `apply_processing_delay` 应用到克隆 env.tasks。
+
+**推荐训练命令**（替换 prior step 1）：
+
+```bash
+python runner.py run \
+  --algorithm rl-capa \
+  --data-dir Data --num-parcels 100 --local-couriers 10 \
+  --platforms 2 --couriers-per-platform 5 \
+  --task-window-start-seconds 0 --task-window-end-seconds 30 \
+  --partner-history-task-count-start 200 --partner-history-task-count-step 0 \
+  --batch-size 15 --rl-batch-actions 10 15 20 --step-seconds 60 \
+  --courier-speed-kmh 30 --deadline-seconds 720 \
+  --task-sampling-seed 1 \
+  --rl-train-delay-max-seconds 60 --rl-train-delay-window 10,30 \
+  --episodes 500 --rl-warmup-episodes 20 \
+  --rl-entropy-start 0.05 --rl-entropy-end 0.001 --rl-entropy-decay-episodes 250 \
+  --rl-lr-actor 1e-4 --rl-use-service-slack \
+  --rl-disable-advantage-normalization \
+  --output-dir outputs/plots/exp7_rl_train_randomized
+```
+
+**目前差距**：randomized-delay 训练后 RL 仍比 CAPA 低 ~3% TR。下一步优化方向：
+
+1. **`is_delayed_i` 显式特征**：把 `parcel.is_delayed` 标志加入 Stage-2 state（dim 12→13）。pi2 直接看到「这个包裹被延迟」标记，无需从 `local_feasible` / `service_slack` 间接推断。当前的「相对量」特征对小幅 delay 不够敏感（30s 在 720s deadline 下只占 4%）。
+2. **Reward shaping**：当 pi2=1 拯救了一个 CAPA 会 timeout 的 parcel，给 +bonus；当 pi2=1 把一个本可 local-deliver 的 parcel 推给 cross 拿到更低 revenue，给 -penalty。让 pi2 学到「只对受扰包裹切 cross」的精细策略。
+3. **更多 episodes（500-1000）**：12 维 state 训练样本不足，pi2 可能未收敛。
+4. **Curriculum**：从无 delay 开始，逐 episode 递增 delay 上限。
+
 ### 扫描多个 delay 强度
 
 按需手动跑多个 `--delay-seconds` 取值并比较 `delayed_metrics.TR`。例如 `0 / 10 / 30 / 60` 四组，画 TR-vs-delay 曲线。`direct` / `split` 模式仍跑老的 axis sweep（`DEADLINE_DELAY_VALUES`），适合多点扫描时使用。

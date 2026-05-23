@@ -41,12 +41,11 @@ def _add_robustness_arguments(parser: argparse.ArgumentParser) -> None:
         default=None,
         help='Robustness mode: inclusive "start,end" true-arrival window receiving the delay.',
     )
-    # parser.add_argument(
-    #     "--rl-checkpoint-dir",
-    #     type=str,
-    #     default=None,
-    #     help="Robustness mode: directory containing a trained rl-capa checkpoint for rl-capa-infer.",
-    # )
+    parser.add_argument(
+        "--rl-use-service-slack",
+        action="store_true",
+        help="Robustness mode: match checkpoint trained with --rl-use-service-slack so the Stage-2 dim aligns.",
+    )
 
 
 def main() -> int:
@@ -165,7 +164,7 @@ def _runner_kwargs_for(
             "max_batch_size": int(fixed_config.get("rl_max_batch_size", 20)),
             "batch_actions": fixed_config.get("rl_batch_actions"),
             "step_seconds": int(fixed_config.get("rl_step_seconds", 60)),
-            "use_service_slack": bool(fixed_config.get("rl_use_service_slack", False)),
+            "use_service_slack": bool(getattr(args, "rl_use_service_slack", False)),
         }
     return {}
 

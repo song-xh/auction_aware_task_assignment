@@ -185,6 +185,7 @@ def build_rl_capa_infer_runner(
     future_feature_window_seconds: int = 300,
     use_service_slack: bool = False,
     device: str | None = None,
+    **_train_delay_kwargs,
 ) -> RLCAPAInferenceAlgorithmRunner:
     """Build one inference-only RL-CAPA runner."""
 

@@ -10,6 +10,7 @@ decision points:
 
 from __future__ import annotations
 
+import random
 from collections import deque
 from dataclasses import dataclass
 from time import perf_counter
@@ -89,6 +90,7 @@ class RLCAPAEnv:
         self._timed_out_parcels: list[Parcel] = []
         self._episode_finalized: bool = False
         self._delivery_outcome_cursor: int = 0
+        self._train_delay_rng = random.Random(int(rl_config.train_delay_seed))
 
     def reset(self) -> dict[str, Any]:
         """Reset the episode to the immutable seed state.
@@ -98,6 +100,7 @@ class RLCAPAEnv:
         """
 
         self._environment = clone_environment_from_seed(self._seed)
+        self._maybe_inject_train_delay(self._environment.tasks)
         self._runtime = initialize_chengdu_batch_runtime(
             tasks=self._environment.tasks,
             local_couriers=self._environment.local_couriers,
@@ -321,6 +324,34 @@ class RLCAPAEnv:
         """Backward-compatible alias for `apply_stage2_decisions`."""
 
         return self.apply_stage2_decisions(decisions)
+
+    def _maybe_inject_train_delay(self, tasks: Sequence[Any]) -> None:
+        """Domain-randomized delay injection used during RL training.
+
+        When ``rl_config.train_delay_max_seconds`` is positive, draw a fresh
+        per-episode delay from ``Uniform[0, train_delay_max_seconds]`` and
+        apply it to tasks whose true arrival lies inside
+        ``train_delay_window``. Sampling 0 about half the time keeps a
+        baseline-equivalent slice in the training distribution so pi2 must
+        learn a conditional (not constant) policy. Without randomization
+        pi2 collapses to either "always local" (no delay seen at training
+        time) or "always cross" (only fixed delay seen). When the field is
+        zero / window unset, this is a no-op.
+        """
+
+        max_delay = float(self._rl_config.train_delay_max_seconds)
+        window = self._rl_config.train_delay_window
+        if max_delay <= 0.0 or window is None:
+            return
+        # Half the episodes use zero delay so pi2 sees the undelayed
+        # distribution and keeps a working "always local" baseline mode.
+        if self._train_delay_rng.random() < 0.5:
+            delay = 0.0
+        else:
+            delay = self._train_delay_rng.uniform(0.0, max_delay)
+        from experiments.deadline_disturbance import apply_processing_delay
+
+        apply_processing_delay(tasks, delay_seconds=delay, window=tuple(window))
 
     def _match_local_subset_via_cama(
         self,

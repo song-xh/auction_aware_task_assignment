@@ -133,6 +133,7 @@ def build_rl_capa_stage1_runner(
     future_feature_window_seconds: int = 300,
     use_service_slack: bool = False,
     device: str | None = None,
+    **_train_delay_kwargs,
 ) -> RLCAPAStage1AlgorithmRunner:
     """Build a stage-1-only RL-CAPA ablation runner."""
 

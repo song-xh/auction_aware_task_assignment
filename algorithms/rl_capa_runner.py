@@ -37,6 +37,8 @@ class RLCAPAAlgorithmRunner(AlgorithmRunner):
         warmup_episodes: int = 0,
         future_feature_window_seconds: int = 300,
         use_service_slack: bool = False,
+        train_delay_max_seconds: float = 0.0,
+        train_delay_window: str | tuple[float, float] | None = None,
         device: str | None = None,
     ) -> None:
         """Store the RL-CAPA hyperparameters exposed through the unified runner.
@@ -74,7 +76,21 @@ class RLCAPAAlgorithmRunner(AlgorithmRunner):
         self._warmup_episodes = warmup_episodes
         self._future_feature_window_seconds = future_feature_window_seconds
         self._use_service_slack = use_service_slack
+        self._train_delay_max_seconds = float(train_delay_max_seconds)
+        self._train_delay_window = self._parse_train_delay_window(train_delay_window)
         self._device = device
+
+    @staticmethod
+    def _parse_train_delay_window(spec: str | tuple[float, float] | None) -> tuple[float, float] | None:
+        """Normalize the train-delay window CLI string into a numeric tuple."""
+
+        if spec is None:
+            return None
+        if isinstance(spec, tuple):
+            return (float(spec[0]), float(spec[1]))
+        from experiments.deadline_disturbance import parse_delay_window
+
+        return parse_delay_window(str(spec))
 
     def run(
         self,
@@ -108,6 +124,8 @@ class RLCAPAAlgorithmRunner(AlgorithmRunner):
             step_seconds=self._step_seconds,
             future_feature_window_seconds=self._future_feature_window_seconds,
             use_service_slack=self._use_service_slack,
+            train_delay_max_seconds=self._train_delay_max_seconds,
+            train_delay_window=self._train_delay_window,
         )
         training_config = RLTrainingConfig(
             episodes=self._episodes,
@@ -173,6 +191,8 @@ def build_rl_capa_runner(
     warmup_episodes: int = 0,
     future_feature_window_seconds: int = 300,
     use_service_slack: bool = False,
+    train_delay_max_seconds: float = 0.0,
+    train_delay_window: str | tuple[float, float] | None = None,
     device: str | None = None,
 ) -> RLCAPAAlgorithmRunner:
     """Build the unified RL-CAPA runner with explicit training hyperparameters."""
@@ -195,5 +215,7 @@ def build_rl_capa_runner(
         warmup_episodes=warmup_episodes,
         future_feature_window_seconds=future_feature_window_seconds,
         use_service_slack=use_service_slack,
+        train_delay_max_seconds=train_delay_max_seconds,
+        train_delay_window=train_delay_window,
         device=device,
     )

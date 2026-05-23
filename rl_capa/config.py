@@ -16,6 +16,9 @@ class RLCAPAConfig:
     step_seconds: int = 60
     future_feature_window_seconds: int = 300
     use_service_slack: bool = False
+    train_delay_max_seconds: float = 0.0
+    train_delay_window: tuple[float, float] | None = None
+    train_delay_seed: int = 17
 
     def batch_action_values(self) -> list[int]:
         """Return the discrete batch-size action values ``A_b``."""
