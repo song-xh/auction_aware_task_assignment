@@ -39,6 +39,8 @@ def is_feasible_cross_match(
     speed_m_per_s: float = 0.0,
 ) -> bool:
     """Check the validity condition required before a courier may enter FPSA."""
+    from .cama import any_insertion_preserves_route_deadlines
+
     if not is_courier_available(courier, now):
         return False
     if courier.current_load + parcel.weight > courier.capacity:
@@ -52,7 +54,9 @@ def is_feasible_cross_match(
     ):
         return False
     arrival_time = now + travel_model.travel_time(courier.current_location, parcel.location)
-    return arrival_time <= parcel.deadline
+    if arrival_time > parcel.deadline:
+        return False
+    return any_insertion_preserves_route_deadlines(courier, parcel, travel_model, now)
 
 
 def is_feasible_cross_candidate(
@@ -197,6 +201,9 @@ def apply_cross_assignment(
         geo_index=geo_index,
     )
     courier.route_locations.insert(insertion_index, parcel.location)
+    route_deadlines = getattr(courier, "route_deadlines", None)
+    if route_deadlines is not None:
+        route_deadlines.insert(insertion_index, float(parcel.deadline))
     courier.current_load += parcel.weight
 
 

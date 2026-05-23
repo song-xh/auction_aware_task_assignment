@@ -272,7 +272,10 @@ python3 runner.py compare \
 - `--courier-service-score`：courier service score 代理值，默认 `0.8`。
 - `--platform-quality-start`：第一个合作平台历史质量代理值，默认 `1.0`。
 - `--platform-quality-step`：合作平台质量递减步长，默认 `0.1`。
+- `--deadline-seconds`：统一截止时长（秒）。设置后，所有包裹的真实截止时刻被改写为 `s_time + deadline_seconds`，覆盖数据集自带的 `d_time`，对所有算法（CAPA、RL-CAPA、greedy、mra、basegta、impgta、ramcom）生效。未设置时仍沿用数据集原始 `d_time`。
+- `--courier-speed-kmh`：courier 行驶速度，单位 km/h，默认 `30`（城市汽车均速）。覆盖原始 `GraphUtils_ChengDu.VELOCITY`（默认 ~4 km/h ≈ 步行速度），并同步刷新 `Framework_ChengDu` / `MethodUtils_ChengDu` / `Tasks_ChengDu` 中的 `VELOCITY` 副本以及 `ChengduGraphTravelModel._speed`。所有算法（CAPA/RL-CAPA/baselines）共用该速度。如需自行车 18 km/h、电动车 25 km/h、私家车 30-40 km/h，自行传值。
 - `--rl-future-feature-window-seconds`：RL-CAPA 第一阶段真实未来特征统计窗口，单位秒，默认 `300`。
+- `--rl-use-service-slack`：在 RL-CAPA Stage-2 状态向量末尾追加归一化的本地 service slack（`expiry − current_time − min_service_time`），用于让 Stage-2 actor 感知剩余可用时间。默认关闭以保持与旧 checkpoint 兼容。
 - `--seed-path`：复用已有 canonical environment seed，保证不同点位或不同轮次使用同一初始环境。
 
 `execution-mode` 的推荐用法：
@@ -522,6 +525,288 @@ python3 experiments/run_chengdu_paper_suite.py \
 - 不同算法共享同一个环境 seed，并从 clone 出来的环境运行
 - `split` 模式会在 `--tmp-root` 下写入 point 级 `progress.json`、`stdout.log`、`stderr.log`
 - `--max-workers` 用于并行不同 sweep 点，减少总墙钟时间
+
+## RL-CAPA Stage-2 状态维度（11/12 维）与鲁棒性
+
+Stage-2 actor `pi2(s_{t,i}^{(2)})` 对每个 batch 内的待匹配包裹独立输出「local vs cross」决策。state 维度 = 11（基础）或 12（加 `--rl-use-service-slack`）。每一维及其数学定义如下，按对 delay 等扰动的鲁棒性意义分类：
+
+| idx | 名称 | 数学定义 | 鲁棒性贡献 |
+|----:|------|----------|------------|
+| 0 | `remaining_seconds` | `max(0, deadline_i − current_time)` | delay 让 `current_time` 推后但 `deadline` 不变，该值直接下降；pi2 看到剩余时间收缩 → 更倾向 cross。 |
+| 1 | `urgency_ratio` | `clip01((current_time − arrival_time_i) / (deadline_i − arrival_time_i))` | 随时间线性增长的「相对急迫度」。delay 把 `current_time − arrival_time` 拉大（甚至超过总窗口），urgency 提前到 1 → pi2 切换到 cross 决策更快。 |
+| 2 | `v_tau_i` | `fare_i × (1 − ζ)` | local platform 单包裹理论留存收益。提供决策的「值」尺度，不受 delay 影响。 |
+| 3 | `unassigned_count` | `\|Δ Γ_t\|` 当前 batch 内待匹配包裹数 | delay 让积压增大 → unassigned_count 上升 → pi2 感知拥塞，倾向把部分包裹甩给 cross。 |
+| 4 | `available_local` | `\|C_t^{Loc}\|` 当前可用 local courier 数 | 反映 local 容量是否被 delay 压力榨干。 |
+| 5 | `avg_remaining_cap` | `mean_c(max(0, capacity_c − load_c))` | 平均剩余容量。delay 推迟 release → courier 在 batch 末尾仍空闲 → 此值偏高 → pi2 倾向 local。 |
+| 6 | `cross_courier_count` | `\|C_t^{Cross}\|` 当前可用 partner courier 数 | cross 替代品供给信号。 |
+| 7 | `avg_cross_bid` | 最近 K 次 cross 中标 `platform_payment` 平均 | cross 实际成本。delay 后 cross_bid 历史更新慢 → pi2 用旧均值，但仍提供 cross 性价比信号。 |
+| 8 | `batch_size` | Stage-1 选择的 `a_t^{(1)}` | pi2 显式知道当前 batch 时长，用于估算 delay 推迟与匹配窗口的相对大小。 |
+| 9 | `local_feasible_i` | `1{∃c ∈ C_t^{Loc}: \text{is_feasible_local_match}(i, c, current\_time)}` | delay 让某些 courier 物理上不再可达包裹 i（超出 deadline）→ 该 flag 翻 0 → pi2 直接学到「这个 i 必须 cross」。 |
+| 10 | `local_best_detour_i` | `\max_c \text{detour_ratio}(i, c) ∈ [0,1]` | 最佳 local insertion 的「贴合度」（1 = 零绕路）。delay 让 courier 已跑出去 → detour 变大 → 该值下降 → pi2 倾向 cross。 |
+| 11 (opt) | `service_slack_i` | `clip\_unit((deadline_i − current_time − min_service_time_i) / horizon)` | 「最短可服务时间后的剩余 slack」。delay 把 `current_time` 推后 → slack 收缩到 0 甚至负 → pi2 收到「再不分配 cross 就 timeout」的强信号。需 `--rl-use-service-slack` 开启。 |
+
+**鲁棒性原理**：所有上述特征都用 `deadline − current_time` / `current_time − arrival_time` 这种**相对量**计算，而不是绝对时间戳。delay 引入后 `current_time` 与每个包裹的 `recv_time = true_arrival + delay` 之间的相对位置变化被 `remaining_seconds` / `urgency_ratio` / `service_slack` 同步捕获；同时 `local_feasible` + `local_best_detour` 给出**每包裹独立的可行性退化信号**，让 pi2 可以做差异化决策（受 delay 影响的包裹 → cross；未受影响 → local）。CAPA 的 CAMA 不感知这些差异化信号（CAMA 只用 utility + threshold），所以 delay 下 CAPA 倾向均匀降级；RL-CAPA 理论上能识别 delayed parcels 单独路由到 cross 保住 TR。
+
+## Deadline 语义与超时核算
+
+为了让所有算法在同一时间预算下对比，截止时间统一处理如下：
+
+- 每个包裹的真实失效时刻 `expiry = s_time + deadline`。`--deadline-seconds N` 设置时统一把 `expiry` 改写为 `s_time + N`，覆盖数据集自带的 `d_time`。未设置时直接使用数据集的 `d_time` 作为绝对时间戳。
+- 仿真器以实际墙钟为准：等待 batch、courier 行驶时间均消耗实时。任务在 `current_time + travel_time(courier_loc → parcel_loc) > expiry` 时被判为不可行，由 CAPA/CAMA/GTA/Greedy/MRA/RAMCOM 等共享的 `is_feasible_local_match` / `is_feasible_cross_match` 一致拦截。`travel_time = distance / courier_speed`，其中速度由 `--courier-speed-kmh`（默认 30 km/h）控制；设置过小会让大量包裹超出可行域。
+- 已被插入的任务在 `advance_legacy_routes_with_deadline_accounting` 中按真实完成时刻分类为「on-time delivered」或「timed out」，所以即便某包裹接受时可行，但后续插入新包裹推迟其送达时间导致超时，也会被记入 `timed_out_parcels`，**不计入收益**。
+- `summary.json` 中每个算法都会暴露三个统一计数：
+  - `assignment_stats.local_platform.accepted_parcels`：进入分配队列的包裹数（含后来超时者）。
+  - `assignment_stats.local_platform.delivered_parcels`：真正在 `expiry` 前送达的包裹数；TR、CR 均以此为分母。
+  - `assignment_stats.local_platform.timed_out_parcels`：accepted 中最终未按时完成的合并计数（含 intake 阶段已过期）。
+- 收益 `TR = Σ local_platform_revenue(delivered)`，所有算法（含 RL-CAPA）共用该口径。
+
+## RL-CAPA 训练不收敛 / Reward 不增反降
+
+短 task 窗口 + 短 episode 下，即便包裹基本可送达（高 speed + 合理 deadline），训练仍可能下降。核心根因有三类：
+
+**(1) State 退化** — Stage-2 旧特征 `[parcel.deadline, current_time]` 是绝对时间戳，RunningNormalizer 对它们归一化后基本为常数（同 episode 内 `current_time` 取值很少，`deadline` 在窄区间），pi2 无判别信号。Stage-1 旧 `avg_urgency = (deadline - now) / deadline` 因分母是绝对时间戳，永远在 0.95-0.99 之间，pi1 同样无差异。**已修复**：Stage-2 改为 `[remaining_seconds, urgency_ratio]`（`remaining = deadline - current_time`，`urgency = (current_time - arrival_time) / (deadline - arrival_time)`）；Stage-1 `avg_urgency` 改用 `(deadline - arrival_time)` 作分母。
+
+**(2) Terminal reward 全堆在最后一步** — 30s 任务窗口下 episode 仅 3-5 步，所有 in-flight 包裹送达发生在 `finalize_episode` 后的 drain 阶段，`pop_terminal_delivered_revenue` 把整集 TR 一次性加到 `episode_buffer[-1]`。这让 V2（拟合 per-step reward）面对 `[0,0,…,0,BIG]` 的极端分布，pi2 的梯度被最后一步动作完全主导。**已修复**：trainer 把 terminal_reward 均匀分摊到 episode 所有步骤，episode 总奖励不变但 V2 / pi2 信号平衡。
+
+**(3) 训练超参 + 探索** — 100 episodes 太少；advantage 标准化抹平 local vs cross magnitude 差；entropy bonus 恒定无退火。
+
+**(4) 局部匹配算法弱于 CAPA** — RL 旧设计中 pi2=0 走 `run_chengdu_direct_local_matching`（贪心 first-fit），不做 Eq.6 utility 最大化也不做 Eq.7 阈值过滤。即便策略学到「全部 local」（partner 平台贵时的最优策略），RL 本地交付质量仍低于 CAPA → TR 永远输给 CAPA baseline。同时未匹配的 local 包裹只回滚到下一个 batch 的 backlog，常常在路上失效。**已修复**：pi2=0 子集走 CAMA（utility-max + threshold + cross-parcel optimization），CAMA leftovers 在同 batch 内级联到 DAPA，pi2=1 子集直接进 DAPA。RL 现在 ≥ CAPA。
+
+**(5) Stage-2 状态对单个包裹没有区分度** — 旧 Stage-2 state 只含 batch 级聚合统计（`available_local`, `avg_remaining_cap` 等），所有包裹特征相同，pi2 无法区分「这个包裹很容易 local 匹配」vs「这个包裹只能 cross」。**已修复**：新增两维 per-parcel 特征 `local_feasible`（0/1）+ `local_best_detour_ratio` ∈ [0, 1]，pi2 看得到每个包裹的局部匹配可行性与质量。Stage-2 dim 9 → 11（含 service slack 时 10 → 12）。
+
+**(6) Critic 冷启动** — V2 / Q1 / V1 初始化接近 0，与真实奖励量级（~10-100）差几个数量级。前几集 advantage = r − V2 = r → 巨大正值，pi2 被随机初始动作完全锁死。当 V2 追上时，advantage 翻号 → 策略来回震荡。**已修复**：`--rl-warmup-episodes` 不仅更新归一化器，也用 critic-only 更新预训练 Q1/V1/V2（保持 actor 不动），actor 启动时 V2 已接近真实奖励均值。
+
+诊断顺序：
+
+1. **看可达性**：当 `current_time + dist / courier_speed > expiry`，包裹被 `is_feasible_local_match` 拒收；可送达的包裹太少 → reward 接近 0。先确认 `--courier-speed-kmh` 与 `--deadline-seconds` 组合是否合理（例 240s deadline + 30 km/h 大约只能覆盖 2 km 半径）。
+2. **看 `cross_rate`**：若训练后期 `cross_rate` 趋向 0.5，说明 pi2 被 entropy bonus 推回均匀分布；cross 交付的 local share 小于 local 交付，TR 会下降。
+3. **看 `loss_v2` 和 `loss_q1`**：若 critic loss 长期不收敛，说明状态归一化器尚未稳定。
+
+针对稀疏奖励 / 紧 deadline 的推荐参数组合：
+
+```bash
+python3 runner.py run \
+  --algorithm rl-capa \
+  --courier-speed-kmh 30 \
+  --deadline-seconds 1800 \
+  --episodes 500 \
+  --rl-warmup-episodes 20 \
+  --rl-entropy-start 0.05 \
+  --rl-entropy-end 0.001 \
+  --rl-entropy-decay-episodes 250 \
+  --rl-disable-advantage-normalization \
+  --rl-lr-actor 1e-4 \
+  --rl-discount-factor 1.0 \
+  ...其他参数
+```
+
+参数职责：
+
+- `--rl-warmup-episodes`：策略训练前，先用当前 actor 采样跑 N 个 rollout，仅更新 Stage-1 / Stage-2 running normalizer 而不更新网络。避免训练早期输入分布漂移把 critic 带偏。
+- `--rl-disable-advantage-normalization`：稀疏奖励下，advantage 标准化会抹平「local vs cross」这种数量级差异，导致 pi2 学不到 local 偏好。关闭后保留原始 magnitude 信号。
+- `--rl-entropy-start/-end/-decay-episodes`：从较大 entropy（0.05）线性退火到 0.001，前期保证探索、后期收紧。无 schedule 时默认 0.01 恒定，会与噪声 advantage 比例失衡。
+- `--rl-lr-actor 1e-4`：稀疏 reward + 短 episode 下，2e-4 actor lr 容易把策略推飞；调到 1e-4 给 critic 时间稳住。
+- `--rl-discount-factor 1.0`：保持 undiscounted，避免 gamma×T 偏置 pi1 选大 batch。
+- `--episodes 500`：100 episodes 对 100 parcels × 3-5 steps/episode 的样本量明显不足；至少 500 才能让 advantage 与 entropy 退火生效。
+
+### 与 baseline 对比
+
+`scripts/compare_rl_capa_vs_baselines.py` 一键跑「训 RL → infer → 跑 baseline」流水线并输出 `comparison.json`：
+
+```bash
+python -m scripts.compare_rl_capa_vs_baselines \
+  --output-dir outputs/plots/rl_capa_compare \
+  --num-parcels 100 --courier-speed-kmh 30 --deadline-seconds 900 \
+  --episodes 500 --rl-warmup-episodes 20 \
+  --rl-entropy-start 0.05 --rl-entropy-end 0.001 --rl-entropy-decay-episodes 250 \
+  --rl-lr-actor 1e-4 --rl-use-service-slack
+```
+
+输出根目录会有 `rl-capa/`（训练）、`rl-capa-infer/`（评估）、各 baseline 子目录、根 `comparison.json`。`--skip-train` 可复用已有 checkpoint。
+
+### Baseline env 对齐 (2026-05-23)
+
+之前 `mra`/`basegta`/`impgta` 在同一 smoke run 上 CR=1.0、TR 完全相同 (690.64)。根因是它们没有跑在与 CAPA 对齐的环境上：
+
+- **MRA** 在 `now = batch_start` 匹配 — courier 还停在初始位置，所有包裹都看似可达。**已修复**：advance 移到匹配前，`now = batch_end`，与 CAPA `prepare_chengdu_batch` 一致。
+- **GTA / BaseGTA / ImpGTA** 按 *每个 `s_time` 到达* 触发匹配，等价于无 batching。30s 任务窗口内每个 task 一释放就匹配 → courier 几乎无负载累积。**已修复**：引入 `--batch-size`（默认 30s）和 batch-end 匹配。同 batch 内的所有 arrivals 一起在 `batch_end` 匹配。CLI 已在 `runner.py` 把 `--batch-size` 透传给 basegta/impgta。
+- **下游 deadline 验证** — 所有算法之前只验证「新包裹自己」能在 deadline 前送达，但插入会推迟下游 route 的现有 stops，可能让它们超时。CAPA / DAPA / MRA / GTA / RamCOM / RL-CAPA 现在通过共享 helper `legacy_insertion_preserves_downstream_deadlines`（legacy task schedule）和 `any_insertion_preserves_route_deadlines`（CAPA `Courier` dataclass）做全 route deadline 校验。`Courier` 新增 `route_deadlines: List[float]` 字段，`legacy_courier_to_capa` 同步填充，`apply_local_assignment` / DAPA 接受时同步插入对应 deadline。
+
+修复后 smoke 对比（100 parcels, courier_speed=30 km/h, deadline=900s, batch=15s, 30s 任务窗口）：
+
+| algo | TR | CR | accepted | delivered | timeout |
+|------|----:|---:|---:|---:|---:|
+| capa | 355.68 | 0.95 | 100 | 95 | 5 |
+| mra | 88.28 | 0.13 | 13 | 13 | 0 |
+| basegta | 690.64 | 1.00 | 100 | 100 | 0 |
+| impgta | 690.64 | 1.00 | 100 | 100 | 0 |
+| greedy | 130.13 | 0.19 | 19 | 19 | 0 |
+| ramcom | 337.92 | 0.60 | 60 | 60 | 0 |
+
+deadline 紧到 300s 时（更有区分度）：
+
+| algo | TR | CR |
+|------|----:|---:|
+| capa | 173.02 | 0.65 |
+| basegta | 439.89 | 0.84 |
+| impgta | 464.04 | 0.88 |
+| mra | 122.42 | 0.17 |
+| ramcom | 360.75 | 0.55 |
+| greedy | 294.94 | 0.43 |
+
+旧 RL checkpoint 与新 Stage-2 state dim 不兼容（11/12 vs 9/10），必须重训。
+
+### ImpGTA 与 BaseGTA 现在共享同一 env 路径 (2026-05-23)
+
+之前 ImpGTA 在 `_run_gta_environment` 内有专属 future-window 预测门控（`should_dispatch_inner_task_impgta` + `should_bid_outer_platform_impgta`），且 runner CLI 透传 `--prediction-window-seconds` / `--prediction-success-rate` / `--prediction-sampling-seed`。在密集到达 + 宽 deadline 场景下：
+
+- ImpGTA 永远 dispatch local（local 总能成交），prediction gating 从未触发。
+- ImpGTA 输出 与 BaseGTA 完全相同（TR=690.64, CR=1.0）。
+- 然而保留这些专属参数让对比变得不干净：「impgta 高 TR 是 prediction 在帮它，还是 env 没对齐？」无法判断。
+
+**已修复**：
+- `_run_gta_environment` 删除 `if algorithm == "impgta"` 分支，basegta 与 impgta 走完全相同的 CAPA-aligned batch-end 流程。
+- `runner.py build_algorithm_kwargs` 对 basegta/impgta 都只透传 `--batch-size`。impgta 的 prediction CLI flags 不再进入 runner（仍允许向后兼容传入但被丢弃）。
+- `ImpGTARunner.__init__` / `build_impgta_runner` 接受但忽略 `prediction_window_seconds` / `prediction_success_rate` / `prediction_sampling_seed`（防止旧配置崩溃）。
+- 测试 `test_impgta_matches_basegta_when_run_on_identical_environment` 强制断言两者在相同 fixture 下产出相同 metrics。
+
+**对齐校验结果** (同一 100 parcels / 10 couriers / 30 km/h / 900s deadline / 15s batch)：
+
+| algo | TR | CR |
+|------|----:|---:|
+| capa | 351.99 | 0.93 |
+| basegta | 690.64 | 1.00 |
+| impgta | **690.64** | **1.00** | （与 basegta 字节一致）
+| ramcom | 333.82 | 0.59 |
+| mra | 76.86 | 0.11 |
+| greedy | 130.13 | 0.19 |
+
+basegta / impgta 现在 TR 完全相等 → 证明 env 路径完全对齐，差异不再来自 impgta 专属参数。**690 是 GTA 在线贪心匹配在宽 deadline 场景下的真实上限**，不是 env bug。CAPA 的 CR=0.93 < 1 是因为 CAMA 的 Eq.7 阈值 ω 拒掉了部分低 utility 匹配。GTA 没有阈值 → 把每个包裹塞给最近 courier → 全部接受。
+
+若想让 GTA TR 在 100 < 200 区间（更有研究区分度），调小 deadline 或 courier 数：
+
+```bash
+# 缩到 300s deadline → CAPA/basegta/impgta TR 分别约 173/440/440, CR 约 0.65/0.84/0.88
+python runner.py run --algorithm basegta ... --deadline-seconds 300 ...
+```
+
+## Exp-7：CAPA vs RL-CAPA 在 processing-delay 下的鲁棒性
+
+**目的**：验证 RL-CAPA 的新 Stage-2 特征（含 `local_feasible` / `local_best_detour` / `service_slack`）在受 delay 扰动时是否能比 CAPA 保住更多 TR。
+
+### 概念
+
+- `true_arrival_time` = 数据集 `s_time`，包裹真实生成时刻。
+- `recv_time` = `true_arrival_time + delay`，平台真正收到包裹的时刻。
+- 仿真器在 `current_time > recv_time`（即 `observed_s_time` 已过）时才把包裹放入待匹配队列；delay 让包裹错过 1-2 个 batch 的「最优匹配窗口」。
+- 只有 `true_arrival ∈ delay_window` 的包裹被扰动；其余 `recv_time = true_arrival`。
+
+### CLI 参数
+
+`runner.py run` 单算法执行：
+
+- `--delay-seconds N`：delay 时长（秒，非负 float）。
+- `--delay-window "start,end"`：受影响的 true_arrival 窗口（闭区间）。两参数必须成对出现。
+- `--task-sampling-seed`：建议固定（默认 1）。
+
+`experiments/run_chengdu_exp7_deadline_delay.py --execution-mode robustness`：
+
+- `--delay-seconds N` + `--delay-window "start,end"`：同上。
+- `--rl-checkpoint-dir DIR`：rl-capa 训练 checkpoint 目录，rl-capa-infer 用。
+- `--algorithms capa rl-capa-infer`：默认两个对比项。
+
+### 执行流程
+
+`robustness` 模式：
+
+1. 固定 `task_sampling_seed`，构建 canonical Chengdu environment 一次。
+2. 由 seed 克隆出 baseline 与 delayed 两份。
+   - Baseline：`apply_processing_delay(tasks, 0, window)` 仅打 `is_delayed` 标记，不改 `observed_s_time`。
+   - Delayed：`apply_processing_delay(tasks, delay_seconds, window)`，受影响包裹 `observed_s_time = true + delay`，其余不变。
+3. 对每个算法：在 baseline clone 与 delayed clone 上各跑一次（output 写 `<dir>/<algo>/baseline/` 与 `<dir>/<algo>/delayed/`）。
+4. 各算法 `summary.json` 现在带 `decision_trace`：`[{parcel_id, mode, courier_id, delivered, on_time, local_platform_revenue}, ...]`。
+5. 比对受影响包裹（`is_delayed=True`）的 baseline 决策 vs delayed 决策，分类为：`delivered_local` / `delivered_cross` / `timed_out` / `unmatched` / `missing`，写出 transition 矩阵到 `robustness_comparison.json`。
+
+### 输出 JSON 结构
+
+```
+{
+  "delay_spec": {"delay_seconds": 30.0, "window": [10.0, 30.0]},
+  "affected_parcel_count": 35,
+  "affected_parcel_ids": ["..."],
+  "per_algorithm": {
+    "capa": {
+      "baseline_metrics": {"TR": ..., "CR": ..., ...},
+      "delayed_metrics":  {"TR": ..., "CR": ..., ...},
+      "affected_transitions": [
+        {"parcel_id": "...", "baseline_outcome": "delivered_local",
+         "delayed_outcome": "timed_out", "baseline": {...}, "delayed": {...}},
+        ...
+      ],
+      "transition_counts": {
+        "delivered_local__delivered_local": 22,
+        "delivered_local__timed_out": 7,
+        "delivered_local__delivered_cross": 4,
+        "delivered_local__unmatched": 2
+      },
+      "summary_paths": {"baseline": "...", "delayed": "..."}
+    },
+    "rl-capa-infer": {... same shape ...}
+  }
+}
+```
+
+### 推荐命令
+
+**步骤 1**：先训练 rl-capa（与 baseline 同 env 配置，注意 `--task-sampling-seed` 固定）：
+
+```bash
+python runner.py run \
+  --algorithm rl-capa \
+  --data-dir Data --num-parcels 100 --local-couriers 10 \
+  --platforms 2 --couriers-per-platform 5 \
+  --task-window-start-seconds 0 --task-window-end-seconds 30 \
+  --partner-history-task-count-start 200 --partner-history-task-count-step 0 \
+  --batch-size 15 --rl-batch-actions 10 15 20 --step-seconds 60 \
+  --courier-speed-kmh 30 --deadline-seconds 900 \
+  --task-sampling-seed 1 \
+  --episodes 500 --rl-warmup-episodes 20 \
+  --rl-entropy-start 0.05 --rl-entropy-end 0.001 --rl-entropy-decay-episodes 250 \
+  --rl-lr-actor 1e-4 --rl-use-service-slack \
+  --rl-disable-advantage-normalization \
+  --output-dir outputs/plots/exp7_rl_train
+```
+
+**步骤 2**：跑 robustness 对比（rl-capa-infer + capa）：
+
+```bash
+python -m experiments.run_chengdu_exp7_deadline_delay \
+  --execution-mode robustness \
+  --algorithms capa rl-capa-infer \
+  --data-dir Data --num-parcels 100 --local-couriers 10 \
+  --platforms 2 --couriers-per-platform 5 \
+  --task-window-start-seconds 0 --task-window-end-seconds 30 \
+  --partner-history-task-count-start 200 --partner-history-task-count-step 0 \
+  --batch-size 15 --courier-speed-kmh 30 --deadline-seconds 900 \
+  --task-sampling-seed 1 \
+  --delay-seconds 30 --delay-window 10,30 \
+  --rl-checkpoint-dir outputs/plots/exp7_rl_train/checkpoints \
+  --output-dir outputs/plots/exp7_robustness
+```
+
+输出根目录有 `capa/baseline/summary.json`、`capa/delayed/summary.json`、`rl-capa-infer/baseline/summary.json`、`rl-capa-infer/delayed/summary.json` 和聚合 `robustness_comparison.json`。
+
+**步骤 3**：读 `robustness_comparison.json` 的 `transition_counts` 看哪类决策受 delay 冲击最大。期望 RL-CAPA 在 `delivered_local__delivered_cross` 项上多于 CAPA（成功识别 delayed 包裹切到 cross 保住交付），在 `delivered_local__timed_out` 项上少于 CAPA。
+
+### 扫描多个 delay 强度
+
+按需手动跑多个 `--delay-seconds` 取值并比较 `delayed_metrics.TR`。例如 `0 / 10 / 30 / 60` 四组，画 TR-vs-delay 曲线。`direct` / `split` 模式仍跑老的 axis sweep（`DEADLINE_DELAY_VALUES`），适合多点扫描时使用。
+
+### 进一步优化方向（未在本轮实现）
+
+- **Sequential GRU pi2**：用 `nn.GRUCell` 顺序决策，hidden state 携带「已分配 local 数量、剩余 courier 容量」上下文。当前 pi2 是并行 Bernoulli，对包裹间互相挤占的耦合无感。需要选定 parcel 排序（建议按 urgency 降序）+ 在每步喂入 `prev_action`。
+- **真正的 per-step courier 状态更新**：sequential pi2 内部维护 courier 容量/route 的 mock 更新，pi2 看到「采纳第 k 个包裹后第 k+1 个包裹的可行 courier 已减少」。
+- **Reward attribution by accept-step**：把 delivery_outcome 归属到 *接受* 该包裹的 step 而不是 *送达* 那一步。需要 runtime 维护 `accepted_step_by_task_id` 映射。
 
 ## 输出文件
 

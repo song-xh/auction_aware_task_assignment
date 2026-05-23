@@ -71,6 +71,8 @@ class ExperimentConfig:
     courier_service_score: float = DEFAULT_COURIER_SERVICE_SCORE
     platform_quality_start: float = DEFAULT_PLATFORM_QUALITY_START
     platform_quality_step: float = DEFAULT_PLATFORM_QUALITY_STEP
+    deadline_seconds: int | None = None
+    courier_speed_kmh: float | None = None
     rl_min_batch_size: int = 10
     rl_max_batch_size: int = 20
     rl_step_seconds: int = 60
@@ -115,6 +117,8 @@ class ExperimentConfig:
             "courier_service_score": self.courier_service_score,
             "platform_quality_start": self.platform_quality_start,
             "platform_quality_step": self.platform_quality_step,
+            "deadline_seconds": self.deadline_seconds,
+            "courier_speed_kmh": self.courier_speed_kmh,
             "rl_min_batch_size": self.rl_min_batch_size,
             "rl_max_batch_size": self.rl_max_batch_size,
             "rl_step_seconds": self.rl_step_seconds,
@@ -162,6 +166,10 @@ class ExperimentConfig:
         kwargs["courier_service_score"] = self.courier_service_score
         kwargs["platform_quality_start"] = self.platform_quality_start
         kwargs["platform_quality_step"] = self.platform_quality_step
+        if self.deadline_seconds is not None:
+            kwargs["deadline_seconds"] = int(self.deadline_seconds)
+        if self.courier_speed_kmh is not None:
+            kwargs["courier_speed_kmh"] = float(self.courier_speed_kmh)
         kwargs.update(self.extra)
         return kwargs
 

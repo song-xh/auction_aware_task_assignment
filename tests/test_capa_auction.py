@@ -113,5 +113,34 @@ class CrossShortlistTest(unittest.TestCase):
             run_dapa([parcel], [platform], travel_model, CAPAConfig(), now=0)
 
 
+    def test_run_dapa_rejects_insertion_that_delays_existing_partner_stop(self) -> None:
+        """Cross-platform bids must exclude routes that make a queued stop late."""
+
+        parcel = Parcel(parcel_id="new", location="new", arrival_time=0, deadline=3, weight=1.0, fare=10.0)
+        courier = Courier(
+            courier_id="partner", current_location="start", depot_location="depot",
+            capacity=10.0, route_locations=["existing"], alpha=0.5, beta=0.5, service_score=0.8,
+        )
+        courier.route_deadlines = [4.0]
+        platform = CooperatingPlatform(
+            platform_id="P1", couriers=[courier], base_price=2.0, sharing_rate_gamma=0.5, historical_quality=1.0,
+        )
+        travel_model = FakeTravelModel(
+            distances={
+                ("start", "existing"): 4.0,
+                ("existing", "depot"): 4.0,
+                ("start", "new"): 1.0,
+                ("new", "existing"): 4.0,
+                ("existing", "new"): 4.0,
+                ("new", "depot"): 4.0,
+            }
+        )
+
+        result = run_dapa([parcel], [platform], travel_model, CAPAConfig(), now=0)
+
+        self.assertEqual(result.cross_assignments, [])
+        self.assertEqual([item.parcel_id for item in result.unassigned_parcels], ["new"])
+
+
 if __name__ == "__main__":
     unittest.main()

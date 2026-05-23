@@ -152,8 +152,30 @@ def run_mra_baseline_environment(
     decision_epoch_count = 0
 
     total_batches = len(batches)
+    current_time = first_batch_start
     for batch_index, bucket in enumerate(batches, start=1):
-        now = first_batch_start + (batch_index - 1) * batch_size
+        batch_end_time = first_batch_start + batch_index * batch_size
+        # Align with CAPA: advance the simulator across the full batch
+        # window FIRST, then match at batch_end. The prior implementation
+        # matched at batch_start, which kept couriers pinned to their
+        # initial location and made every parcel trivially feasible
+        # (CR=1.0 was an artifact of this misalignment, not policy
+        # quality).
+        movement_started = perf_counter()
+        advance_legacy_routes_with_deadline_accounting(
+            local_couriers=local_couriers,
+            partner_couriers_by_platform={},
+            station_set=environment.station_set,
+            movement_callback=movement,
+            step_seconds=batch_size,
+            current_time=current_time,
+            accepted_task_ids=accepted_task_ids,
+            delivered_task_ids=delivered_task_ids,
+            timed_out_task_ids=timed_out_task_ids,
+        )
+        timing.movement_time_seconds += perf_counter() - movement_started
+        current_time = batch_end_time
+        now = current_time
         unresolved = list(backlog) + list(bucket)
         remaining = list(unresolved)
         while remaining:
@@ -247,19 +269,6 @@ def run_mra_baseline_environment(
             decision_epoch_count += 1
 
         backlog = remaining
-        movement_started = perf_counter()
-        advance_legacy_routes_with_deadline_accounting(
-            local_couriers=local_couriers,
-            partner_couriers_by_platform={},
-            station_set=environment.station_set,
-            movement_callback=movement,
-            step_seconds=batch_size,
-            current_time=now,
-            accepted_task_ids=accepted_task_ids,
-            delivered_task_ids=delivered_task_ids,
-            timed_out_task_ids=timed_out_task_ids,
-        )
-        timing.movement_time_seconds += perf_counter() - movement_started
         if progress_callback is not None:
             progress_callback(
                 {
@@ -279,7 +288,7 @@ def run_mra_baseline_environment(
             station_set=environment.station_set,
             step_seconds=60,
             movement_callback=movement,
-            current_time=first_batch_start + len(batches) * batch_size,
+            current_time=current_time,
             accepted_task_ids=accepted_task_ids,
             delivered_task_ids=delivered_task_ids,
             timed_out_task_ids=timed_out_task_ids,

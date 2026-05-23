@@ -7,12 +7,7 @@ import json
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
-from baselines.gta import run_impgta_baseline_environment
-from capa.config import (
-    DEFAULT_IMPGTA_PREDICTION_SAMPLING_SEED,
-    DEFAULT_IMPGTA_PREDICTION_SUCCESS_RATE,
-    DEFAULT_IMPGTA_WINDOW_SECONDS,
-)
+from baselines.gta import DEFAULT_GTA_BATCH_SIZE_SECONDS, run_impgta_baseline_environment
 
 from .base import AlgorithmRunner
 from .summary_utils import build_algorithm_summary
@@ -23,15 +18,19 @@ class ImpGTARunner(AlgorithmRunner):
 
     def __init__(
         self,
-        prediction_window_seconds: int = DEFAULT_IMPGTA_WINDOW_SECONDS,
-        prediction_success_rate: float = DEFAULT_IMPGTA_PREDICTION_SUCCESS_RATE,
-        prediction_sampling_seed: int = DEFAULT_IMPGTA_PREDICTION_SAMPLING_SEED,
+        batch_size: int = DEFAULT_GTA_BATCH_SIZE_SECONDS,
         baseline_runner: Callable[..., dict[str, Any]] | None = None,
+        **_legacy_prediction_kwargs: Any,
     ) -> None:
-        """Store the ImpGTA future window and optional injected baseline runner."""
-        self._prediction_window_seconds = prediction_window_seconds
-        self._prediction_success_rate = prediction_success_rate
-        self._prediction_sampling_seed = prediction_sampling_seed
+        """Store the ImpGTA batch size and optional injected baseline runner.
+
+        Legacy ``prediction_window_seconds`` / ``prediction_success_rate`` /
+        ``prediction_sampling_seed`` kwargs are accepted-and-ignored so older
+        configs still load. They no longer drive env behavior because impgta
+        now shares the CAPA-aligned batch-end flow with basegta.
+        """
+
+        self._batch_size = batch_size
         self._baseline_runner = baseline_runner or run_impgta_baseline_environment
 
     def run(
@@ -44,9 +43,7 @@ class ImpGTARunner(AlgorithmRunner):
         started_at = datetime.now().astimezone()
         metrics = self._baseline_runner(
             environment=environment,
-            prediction_window_seconds=self._prediction_window_seconds,
-            prediction_success_rate=self._prediction_success_rate,
-            prediction_sampling_seed=self._prediction_sampling_seed,
+            batch_size=self._batch_size,
             progress_callback=progress_callback,
         )
         finished_at = datetime.now().astimezone()
@@ -70,9 +67,7 @@ class ImpGTARunner(AlgorithmRunner):
             started_at=started_at,
             finished_at=finished_at,
             extra_fields={
-                "prediction_window_seconds": self._prediction_window_seconds,
-                "prediction_success_rate": self._prediction_success_rate,
-                "prediction_sampling_seed": self._prediction_sampling_seed,
+                "batch_size": self._batch_size,
             },
         )
         if output_dir is not None:
@@ -83,15 +78,9 @@ class ImpGTARunner(AlgorithmRunner):
 
 
 def build_impgta_runner(
-    prediction_window_seconds: int = DEFAULT_IMPGTA_WINDOW_SECONDS,
-    prediction_success_rate: float = DEFAULT_IMPGTA_PREDICTION_SUCCESS_RATE,
-    prediction_sampling_seed: int = DEFAULT_IMPGTA_PREDICTION_SAMPLING_SEED,
+    batch_size: int = DEFAULT_GTA_BATCH_SIZE_SECONDS,
     baseline_runner: Callable[..., dict[str, Any]] | None = None,
+    **_legacy_prediction_kwargs: Any,
 ) -> ImpGTARunner:
-    """Build the unified ImpGTA runner."""
-    return ImpGTARunner(
-        prediction_window_seconds=prediction_window_seconds,
-        prediction_success_rate=prediction_success_rate,
-        prediction_sampling_seed=prediction_sampling_seed,
-        baseline_runner=baseline_runner,
-    )
+    """Build the unified ImpGTA runner (impgta now shares basegta env flow)."""
+    return ImpGTARunner(batch_size=batch_size, baseline_runner=baseline_runner)

@@ -15,6 +15,7 @@ class RLCAPAConfig:
     batch_actions: Sequence[int] | None = None
     step_seconds: int = 60
     future_feature_window_seconds: int = 300
+    use_service_slack: bool = False
 
     def batch_action_values(self) -> list[int]:
         """Return the discrete batch-size action values ``A_b``."""
@@ -64,4 +65,5 @@ class RLTrainingConfig:
     max_grad_norm: float = 0.5
     max_steps_per_episode: int = 500
     normalize_advantages: bool = True
+    warmup_episodes: int = 0
     device: str | None = None

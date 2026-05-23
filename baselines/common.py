@@ -9,7 +9,12 @@ from capa.cama import is_feasible_local_match
 from capa.config import DEFAULT_COURIER_ALPHA, DEFAULT_COURIER_BETA, DEFAULT_COURIER_SERVICE_SCORE
 from capa.models import Courier
 from capa.utility import GeoIndex, InsertionCache, TimedTravelModel, TimingAccumulator, find_best_local_insertion
-from env.chengdu import LegacyCourierSnapshotCache, legacy_courier_to_capa, legacy_task_to_parcel
+from env.chengdu import (
+    LegacyCourierSnapshotCache,
+    legacy_courier_to_capa,
+    legacy_insertion_preserves_downstream_deadlines,
+    legacy_task_to_parcel,
+)
 
 
 def mean_decision_time(total_seconds: float, decision_epochs: int) -> float:
@@ -162,6 +167,16 @@ def build_legacy_feasible_insertions(
             insertion_cache=insertion_cache,
             geo_index=geo_index,
         )
+        if not legacy_insertion_preserves_downstream_deadlines(
+            courier_location=getattr(courier, "location"),
+            schedule=list(getattr(courier, "re_schedule", [])),
+            insertion_index=insertion_index,
+            parcel_location=getattr(task, "l_node"),
+            parcel_deadline=float(getattr(task, "d_time")),
+            travel_model=timed_travel_model,
+            now=float(now),
+        ):
+            continue
         feasible.append(
             LegacyFeasibleInsertion(
                 courier=courier,

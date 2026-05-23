@@ -63,6 +63,7 @@ def train_rl_capa(
             max_grad_norm=training_config.max_grad_norm,
             max_steps_per_episode=training_config.max_steps_per_episode,
             normalize_advantages=training_config.normalize_advantages,
+            warmup_episodes=training_config.warmup_episodes,
             device=training_config.device,
         ),
         num_batch_actions=len(rl_config.batch_action_values()),
@@ -101,6 +102,7 @@ def train_rl_capa(
     )
 
     summary = {
+        "variant": "rl-capa-svc" if rl_config.use_service_slack else "rl-capa",
         "episode_returns": [log.total_reward for log in history],
         "discounted_returns": [getattr(log, "discounted_return", 0.0) for log in history],
         "loss_pi1": [log.loss_pi1 for log in history],
@@ -113,6 +115,7 @@ def train_rl_capa(
         "mean_batch_size": [log.mean_batch_size for log in history],
         "batch_size_sequences": [list(log.batch_sizes) for log in history],
         "batch_action_values": list(rl_config.batch_action_values()),
+        "use_service_slack": rl_config.use_service_slack,
         "discount_factor": training_config.discount_factor,
         "checkpoint_dir": str(checkpoint_dir),
         "device": str(trainer.device),

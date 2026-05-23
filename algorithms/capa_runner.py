@@ -21,7 +21,7 @@ from capa.models import CAPAConfig
 from env.chengdu import run_time_stepped_chengdu_batches
 
 from .base import AlgorithmRunner
-from .summary_utils import build_algorithm_summary
+from .summary_utils import build_algorithm_summary, build_decision_trace
 
 
 class CAPAAlgorithmRunner(AlgorithmRunner):
@@ -129,6 +129,14 @@ class CAPAAlgorithmRunner(AlgorithmRunner):
                 "local_sharing_rate_mu1": self._local_sharing_rate_mu1,
                 "cross_platform_sharing_rate_mu2": self._cross_platform_sharing_rate_mu2,
             },
+                "decision_trace": build_decision_trace(
+                    delivered_assignments=list(result.delivered_assignments),
+                    timed_out_assignments=list(result.timed_out_assignments),
+                    unassigned_parcel_ids=[
+                        str(getattr(parcel, "parcel_id", ""))
+                        for parcel in result.unassigned_parcels
+                    ],
+                ),
             },
         )
         if output_dir is not None:

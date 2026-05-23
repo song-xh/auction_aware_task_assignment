@@ -3,7 +3,61 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Mapping
+from typing import Any, Iterable, Mapping, Sequence
+
+
+def build_decision_trace(
+    delivered_assignments: Sequence[Any] = (),
+    timed_out_assignments: Sequence[Any] = (),
+    unassigned_parcel_ids: Iterable[str] = (),
+) -> list[dict[str, Any]]:
+    """Project per-parcel decision outcomes into one comparison-friendly list.
+
+    Args:
+        delivered_assignments: Accepted assignments completed on time.
+        timed_out_assignments: Accepted assignments that completed after the
+            true deadline.
+        unassigned_parcel_ids: Parcel ids never accepted by the algorithm.
+
+    Returns:
+        List of entries with stable keys ``parcel_id``, ``mode``,
+        ``courier_id``, ``delivered``, ``on_time``, ``local_platform_revenue``.
+        Modes are ``"local"`` / ``"cross"`` for accepted parcels and
+        ``"unmatched"`` for unassigned parcels.
+    """
+
+    trace: list[dict[str, Any]] = []
+    for assignment in delivered_assignments:
+        trace.append(_assignment_to_trace(assignment, delivered=True, on_time=True))
+    for assignment in timed_out_assignments:
+        trace.append(_assignment_to_trace(assignment, delivered=False, on_time=False))
+    for parcel_id in unassigned_parcel_ids:
+        trace.append(
+            {
+                "parcel_id": str(parcel_id),
+                "mode": "unmatched",
+                "courier_id": None,
+                "delivered": False,
+                "on_time": False,
+                "local_platform_revenue": 0.0,
+            }
+        )
+    return trace
+
+
+def _assignment_to_trace(assignment: Any, delivered: bool, on_time: bool) -> dict[str, Any]:
+    """Convert one Assignment into a trace dict; ``on_time`` mirrors delivery success."""
+
+    parcel = getattr(assignment, "parcel", None)
+    courier = getattr(assignment, "courier", None)
+    return {
+        "parcel_id": str(getattr(parcel, "parcel_id", "")),
+        "mode": str(getattr(assignment, "mode", "")),
+        "courier_id": None if courier is None else str(getattr(courier, "courier_id", "")),
+        "delivered": bool(delivered),
+        "on_time": bool(on_time),
+        "local_platform_revenue": float(getattr(assignment, "local_platform_revenue", 0.0)),
+    }
 
 
 def build_algorithm_summary(
@@ -40,6 +94,7 @@ def build_algorithm_summary(
     """
 
     accepted_assignments = int(metrics.get("accepted_assignments", 0))
+    delivered_parcels = int(metrics.get("delivered_parcels", 0))
     timed_out_parcels = int(metrics.get("timed_out_parcels", 0))
     resolved_local_assignments = accepted_assignments if local_assignment_count is None else int(local_assignment_count)
     resolved_cross_assignments = 0 if cross_assignment_count is None else int(cross_assignment_count)
@@ -80,6 +135,8 @@ def build_algorithm_summary(
                 "local_matches": resolved_local_assignments,
                 "cross_platform_matches": resolved_cross_assignments,
                 "unresolved_parcels": resolved_unresolved,
+                "accepted_parcels": accepted_assignments,
+                "delivered_parcels": delivered_parcels,
                 "timed_out_parcels": timed_out_parcels,
             },
             "cooperating_platforms": partner_stats,

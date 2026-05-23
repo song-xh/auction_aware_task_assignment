@@ -81,7 +81,7 @@ def train_stage2_rl_capa(
         output_path=output_dir / "training_curves.png",
     )
     summary = {
-        "variant": "rl-capa-stage2",
+        "variant": "rl-capa-stage2-svc" if rl_config.use_service_slack else "rl-capa-stage2",
         "fixed_batch_size": fixed_batch_size,
         "episode_returns": [log.total_reward for log in history],
         "loss_pi1": [log.loss_pi1 for log in history],
@@ -94,6 +94,7 @@ def train_stage2_rl_capa(
         "mean_batch_size": [log.mean_batch_size for log in history],
         "batch_size_sequences": [list(log.batch_sizes) for log in history],
         "batch_action_values": [int(fixed_batch_size)],
+        "use_service_slack": rl_config.use_service_slack,
         "discount_factor": training_config.discount_factor,
         "device": str(trainer.device),
         "plots": {

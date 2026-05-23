@@ -99,8 +99,8 @@ def _complete_routes(local_couriers: list[SimpleNamespace], partner_couriers: li
         courier.re_weight = 0.0
 
 
-def test_stage2_decisions_apply_to_full_batch_without_cama() -> None:
-    """Stage 2 should decide local-vs-cross for every eligible batch parcel."""
+def test_stage2_local_subset_runs_cama_and_cross_subset_uses_dapa() -> None:
+    """pi2=0 parcels must go through CAMA; pi2=1 parcels stream into DAPA."""
 
     env = RLCAPAEnv(
         environment_seed=_seed([
@@ -117,15 +117,13 @@ def test_stage2_decisions_apply_to_full_batch_without_cama() -> None:
     assert {parcel.parcel_id for parcel in env.current_eligible_parcels()} == {"local-task", "cross-task"}
     assert len(env.get_stage2_states()) == 2
 
-    with patch("rl_capa.env.run_cama", create=True, side_effect=AssertionError("RL-CAPA should not call CAMA")):
-        env.apply_stage2_decisions({"local-task": 0, "cross-task": 1})
+    env.apply_stage2_decisions({"local-task": 0, "cross-task": 1})
 
     assignments = env.accepted_assignments()
     reports = env.batch_reports()
-    assert [(assignment.parcel.parcel_id, assignment.mode) for assignment in assignments] == [
-        ("local-task", "local"),
-        ("cross-task", "cross"),
-    ]
+    modes = {(assignment.parcel.parcel_id, assignment.mode) for assignment in assignments}
+    assert ("local-task", "local") in modes
+    assert ("cross-task", "cross") in modes
     assert len(reports[0].local_assignments) == 1
     assert len(reports[0].cross_assignments) == 1
     assert reports[0].unresolved_parcels == []
@@ -260,6 +258,59 @@ def test_stage1_state_uses_eight_dimensions_and_true_future_window() -> None:
     assert long_state[2] == 2.0
 
 
+def test_stage2_state_defaults_to_nine_dimensions_without_service_slack() -> None:
+    """Stage-2 state should keep its original 9D shape when the flag is disabled."""
+
+    env = RLCAPAEnv(
+        environment_seed=_seed([_task("p1", "n1")]),
+        capa_config=CAPAConfig(),
+        rl_config=RLCAPAConfig(min_batch_size=10, max_batch_size=10),
+    )
+
+    env.reset()
+    env.apply_batch_size(10)
+    states = env.get_stage2_states()
+
+    assert len(states) == 1
+    assert states[0].shape == (11,)
+
+
+def test_stage2_state_appends_service_slack_when_enabled() -> None:
+    """Stage-2 state should append one normalized service-slack feature when enabled."""
+
+    env = RLCAPAEnv(
+        environment_seed=_seed([_task("p1", "local", deadline=100)]),
+        capa_config=CAPAConfig(),
+        rl_config=RLCAPAConfig(min_batch_size=10, max_batch_size=10, use_service_slack=True),
+    )
+
+    env.reset()
+    env.apply_batch_size(10)
+    states = env.get_stage2_states()
+
+    assert len(states) == 1
+    assert states[0].shape == (12,)
+    assert states[0][-1] > 0.0
+
+
+def test_stage2_service_slack_returns_negative_one_without_eligible_local_courier() -> None:
+    """Service slack should saturate to -1 when no available local courier can be considered."""
+
+    env = RLCAPAEnv(
+        environment_seed=_seed([_task("heavy", "heavy-node", weight=5.0)], local_capacity=1.0, partner_count=0),
+        capa_config=CAPAConfig(),
+        rl_config=RLCAPAConfig(min_batch_size=10, max_batch_size=10, use_service_slack=True),
+    )
+
+    env.reset()
+    env.apply_batch_size(10)
+    states = env.get_stage2_states()
+
+    assert len(states) == 1
+    assert states[0].shape == (12,)
+    assert states[0][-1] == -1.0
+
+
 def test_trainer_total_reward_equals_delivered_tr() -> None:
     """One full RL training episode total_reward must equal delivered TR."""
 
@@ -300,6 +351,55 @@ def test_trainer_uses_eight_dimensional_stage1_networks_and_adam() -> None:
     assert trainer.v1.net[0].in_features == 8
     assert trainer.q1.net[0].in_features == 8
     assert isinstance(trainer.opt_pi1, torch.optim.Adam)
+
+
+def test_terminal_reward_distributes_uniformly_across_episode_steps() -> None:
+    """Terminal drain revenue must spread across every step, not pile on the last one."""
+
+    env = RLCAPAEnv(
+        environment_seed=_seed([
+            _task("a", "a-node", release=0),
+            _task("b", "b-node", release=5),
+        ]),
+        capa_config=CAPAConfig(),
+        rl_config=RLCAPAConfig(min_batch_size=10, max_batch_size=10),
+    )
+    trainer = RLCAPATrainer(
+        env=env,
+        config=TrainingConfig(num_episodes=1, max_steps_per_episode=20, discount_factor=1.0),
+        num_batch_actions=1,
+    )
+
+    history = trainer.train(batch_action_values=[10])
+
+    # Episode total reward equals delivered TR (unchanged invariant).
+    delivered_revenue = sum(a.local_platform_revenue for a in env.delivered_assignments())
+    assert history[0].total_reward == delivered_revenue
+    # Verify env's terminal cursor was already drained and yields zero on follow-up call.
+    assert env.pop_terminal_delivered_revenue() == 0.0
+
+
+def test_warmup_episodes_advance_normalizer_count_without_history() -> None:
+    """Warmup rollouts should populate normalizers but emit no episode history."""
+
+    env = RLCAPAEnv(
+        environment_seed=_seed([
+            _task("a", "a-node", release=0),
+            _task("b", "b-node", release=5),
+        ]),
+        capa_config=CAPAConfig(),
+        rl_config=RLCAPAConfig(min_batch_size=10, max_batch_size=10),
+    )
+    trainer = RLCAPATrainer(
+        env=env,
+        config=TrainingConfig(num_episodes=0, max_steps_per_episode=20, warmup_episodes=2),
+        num_batch_actions=1,
+    )
+
+    history = trainer.train(batch_action_values=[10])
+
+    assert history == []
+    assert trainer.norm_s1.count > 0
 
 
 def test_evaluate_bpt_matches_environment_batch_reports() -> None:

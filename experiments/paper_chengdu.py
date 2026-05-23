@@ -109,7 +109,7 @@ DEFAULT_EXP1_ROUNDS: tuple[Exp1RoundSpec, ...] = (
 )
 
 
-PAPER_EXECUTION_MODES = ("direct", "split", "point", "managed")
+PAPER_EXECUTION_MODES = ("direct", "split", "point", "managed", "robustness")
 
 
 def run_chengdu_paper_experiment(
@@ -688,6 +688,18 @@ def build_script_parser(description: str) -> argparse.ArgumentParser:
     parser.add_argument("--partner-history-task-count-step", type=int, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["partner_history_task_count_step"])
     parser.add_argument("--prediction-success-rate", type=float, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["prediction_success_rate"])
     parser.add_argument("--prediction-sampling-seed", type=int, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["prediction_sampling_seed"])
+    parser.add_argument(
+        "--deadline-seconds",
+        type=int,
+        default=None,
+        help="Override dataset d_time for every task with s_time + deadline_seconds. Must be positive.",
+    )
+    parser.add_argument(
+        "--courier-speed-kmh",
+        type=float,
+        default=30.0,
+        help="Courier travel speed in km/h.",
+    )
     parser.add_argument("--courier-alpha", type=float, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["courier_alpha"])
     parser.add_argument("--courier-beta", type=float, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["courier_beta"])
     parser.add_argument("--courier-service-score", type=float, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["courier_service_score"])

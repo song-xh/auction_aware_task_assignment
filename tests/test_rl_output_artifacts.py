@@ -9,6 +9,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import torch
+
 from algorithms.rl_capa_runner import build_rl_capa_runner
 from algorithms.rl_capa_infer_runner import build_rl_capa_infer_runner
 from capa.models import CAPAConfig
@@ -17,8 +19,11 @@ from experiments.framework.models import ExperimentPointSpec
 from experiments.framework.point_runner import run_environment_comparison_point
 from rl_capa.config import RLCAPAConfig, RLTrainingConfig
 from rl_capa.evaluate import evaluate_rl_capa
+from rl_capa.networks import BatchSizeActor, BatchSizeQCritic, ConditionalValueCritic, CrossOrNotActor, StateValueCritic
+from rl_capa.state_builder import RunningNormalizer
 from rl_capa.train import train_rl_capa
-from rl_capa.trainer import EpisodeLog
+from rl_capa.trainer import EpisodeLog, RLCAPATrainer, TrainingConfig
+from tests.test_rl_env_smoke import _seed, _task
 
 
 class RLCAPAOutputArtifactTests(unittest.TestCase):
@@ -124,8 +129,10 @@ class RLCAPAOutputArtifactTests(unittest.TestCase):
         fake_env = SimpleNamespace(
             batch_reports=lambda: [SimpleNamespace()],
             delivered_parcels=lambda: ["p1", "p2"],
-            accepted_assignments=lambda: ["a1", "a2"],
+            accepted_assignments=lambda: (),
+            delivered_assignments=lambda: (),
             timed_out_parcels=lambda: [],
+            terminal_unassigned_tasks=lambda: (),
             disposition_breakdown=lambda: {
                 "expired_at_intake": 0,
                 "accepted_but_timed_out": 0,
@@ -290,6 +297,53 @@ class RLCAPAOutputArtifactTests(unittest.TestCase):
         self.assertIn("rl-capa-infer", summary)
         self.assertEqual(summary["rl-capa-infer"]["metrics"]["TR"], 9.0)
         self.assertTrue((self.temp_root / "point" / "summary.json").exists())
+
+    def test_load_checkpoint_rejects_stage2_dimension_mismatch(self) -> None:
+        """Loading a 9D Stage-2 checkpoint into service-slack mode should fail clearly."""
+
+        checkpoint_dir = self.temp_root / "mismatch-checkpoints"
+        checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        torch.save(BatchSizeActor(state_dim=8, num_actions=1).state_dict(), checkpoint_dir / "pi1.pt")
+        torch.save(CrossOrNotActor(state_dim=9).state_dict(), checkpoint_dir / "pi2.pt")
+        torch.save(BatchSizeQCritic(state_dim=8, num_actions=1).state_dict(), checkpoint_dir / "q1.pt")
+        torch.save(StateValueCritic(state_dim=8).state_dict(), checkpoint_dir / "v1.pt")
+        torch.save(ConditionalValueCritic(state_dim=9).state_dict(), checkpoint_dir / "v2.pt")
+        torch.save(
+            {
+                "norm_s1": RLCAPATrainer._serialize_normalizer(RunningNormalizer(dim=8)),
+                "norm_s2": RLCAPATrainer._serialize_normalizer(RunningNormalizer(dim=9)),
+            },
+            checkpoint_dir / "normalizers.pt",
+        )
+
+        env = build_test_rl_env(use_service_slack=True)
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "Checkpoint state dimension does not match current Stage-2 state dimension",
+        ):
+            RLCAPATrainer.load_checkpoint(
+                env=env,
+                config=TrainingConfig(num_episodes=1),
+                num_batch_actions=1,
+                checkpoint_dir=checkpoint_dir,
+            )
+
+
+def build_test_rl_env(use_service_slack: bool) -> object:
+    """Build a minimal RL-CAPA environment for checkpoint compatibility tests."""
+
+    from rl_capa.env import RLCAPAEnv
+
+    return RLCAPAEnv(
+        environment_seed=_seed([_task("p1", "n1")]),
+        capa_config=CAPAConfig(),
+        rl_config=RLCAPAConfig(
+            min_batch_size=10,
+            max_batch_size=10,
+            use_service_slack=use_service_slack,
+        ),
+    )
 
 
 if __name__ == "__main__":

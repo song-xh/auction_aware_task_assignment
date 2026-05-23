@@ -24,6 +24,60 @@ def is_courier_available(courier: Courier, now: int) -> bool:
     return courier.available_from <= now
 
 
+def any_insertion_preserves_route_deadlines(
+    courier: Courier,
+    parcel: Parcel,
+    travel_model: DistanceMatrixTravelModel,
+    now: int,
+) -> bool:
+    """Return whether at least one insertion index keeps every stop on time.
+
+    Walks the route that would result from inserting ``parcel.location`` at
+    each candidate index ``0..len(route_locations)`` and checks accumulated
+    arrival times against ``parcel.deadline`` and ``courier.route_deadlines``
+    (when present). Returns True as soon as one index satisfies every
+    deadline — that is enough to allow CAMA / DAPA to accept the parcel.
+
+    Args:
+        courier: Candidate courier carrying ``route_locations`` and optional
+            parallel ``route_deadlines`` (any missing per-stop deadline is
+            treated as no deadline).
+        parcel: Parcel proposed for insertion.
+        travel_model: Shared travel model exposing ``travel_time(a, b)``.
+        now: Current matching-round timestamp in seconds.
+    """
+
+    route = list(courier.route_locations)
+    route_deadlines = list(getattr(courier, "route_deadlines", []))
+    parcel_deadline = float(parcel.deadline)
+    for index in range(len(route) + 1):
+        cursor_location = courier.current_location
+        cursor_time = float(now)
+        downstream_violation = False
+        for prefix_index in range(index):
+            cursor_time += float(travel_model.travel_time(cursor_location, route[prefix_index]))
+            if prefix_index < len(route_deadlines) and cursor_time > float(route_deadlines[prefix_index]):
+                downstream_violation = True
+                break
+            cursor_location = route[prefix_index]
+        if downstream_violation:
+            continue
+        cursor_time += float(travel_model.travel_time(cursor_location, parcel.location))
+        if cursor_time > parcel_deadline:
+            continue
+        cursor_location = parcel.location
+        downstream_violation = False
+        for suffix_index in range(index, len(route)):
+            cursor_time += float(travel_model.travel_time(cursor_location, route[suffix_index]))
+            if suffix_index < len(route_deadlines) and cursor_time > float(route_deadlines[suffix_index]):
+                downstream_violation = True
+                break
+            cursor_location = route[suffix_index]
+        if not downstream_violation:
+            return True
+    return False
+
+
 def is_feasible_local_match(
     parcel: Parcel,
     courier: Courier,
@@ -47,7 +101,9 @@ def is_feasible_local_match(
     ):
         return False
     arrival_time = now + travel_model.travel_time(courier.current_location, parcel.location)
-    return arrival_time <= parcel.deadline
+    if arrival_time > parcel.deadline:
+        return False
+    return any_insertion_preserves_route_deadlines(courier, parcel, travel_model, now)
 
 
 def is_feasible_local_candidate(
@@ -105,9 +161,18 @@ def build_local_candidate_shortlist(
     return shortlist
 
 
-def apply_local_assignment(parcel: Parcel, courier: Courier, insertion_index: int) -> None:
+def apply_local_assignment(parcel: Parcel, courier: Courier, insertion_index: int) -> None:  # noqa: D401
+    """Insert one accepted local assignment into the courier route bookkeeping."""
+
+    _insert_parcel_into_courier_route(courier, parcel, insertion_index)
+
+
+def _insert_parcel_into_courier_route(courier: Courier, parcel: Parcel, insertion_index: int) -> None:
     """Update a courier route and carried load after a local assignment is accepted."""
     courier.route_locations.insert(insertion_index, parcel.location)
+    route_deadlines = getattr(courier, "route_deadlines", None)
+    if route_deadlines is not None:
+        route_deadlines.insert(insertion_index, float(parcel.deadline))
     courier.current_load += parcel.weight
 
 

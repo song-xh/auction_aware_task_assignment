@@ -109,6 +109,7 @@ class Courier:
     capacity: float
     current_load: float = 0.0
     route_locations: List[Location] = field(default_factory=list)
+    route_deadlines: List[float] = field(default_factory=list)
     available_from: int = 0
     alpha: float = 0.0
     beta: float = 0.0

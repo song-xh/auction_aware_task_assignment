@@ -80,6 +80,8 @@ class ChengduEnvironment:
     geo_index: GeoIndex | None = None
     travel_speed_m_per_s: float = 0.0
     partner_tasks_by_platform: Mapping[str, Sequence[Any]] = field(default_factory=dict)
+    deadline_seconds: int | None = None
+    courier_speed_kmh: float | None = None
 
     @classmethod
     def build(
@@ -101,6 +103,8 @@ class ChengduEnvironment:
         courier_service_score: float = DEFAULT_COURIER_SERVICE_SCORE,
         platform_quality_start: float = DEFAULT_PLATFORM_QUALITY_START,
         platform_quality_step: float = DEFAULT_PLATFORM_QUALITY_STEP,
+        deadline_seconds: int | None = None,
+        courier_speed_kmh: float | None = None,
     ) -> "ChengduEnvironment":
         """Build a Chengdu environment from the legacy framework inputs."""
         return build_framework_chengdu_environment(
@@ -121,6 +125,8 @@ class ChengduEnvironment:
             courier_service_score=courier_service_score,
             platform_quality_start=platform_quality_start,
             platform_quality_step=platform_quality_step,
+            deadline_seconds=deadline_seconds,
+            courier_speed_kmh=courier_speed_kmh,
         )
 
     def all_partner_couriers(self) -> list[Any]:
@@ -161,6 +167,8 @@ class ChengduEnvironment:
                 platform_id: list(tasks)
                 for platform_id, tasks in self.partner_tasks_by_platform.items()
             },
+            "deadline_seconds": self.deadline_seconds,
+            "courier_speed_kmh": self.courier_speed_kmh,
         }
 
     def advance(self, seconds: int) -> None:
@@ -706,6 +714,85 @@ def generate_origin_schedule_with_retry(
     return []
 
 
+def legacy_insertion_preserves_downstream_deadlines(
+    courier_location: Any,
+    schedule: Sequence[Any],
+    insertion_index: int,
+    parcel_location: Any,
+    parcel_deadline: float,
+    travel_model: Any,
+    now: float,
+) -> bool:
+    """Return whether inserting one parcel keeps every downstream stop on time.
+
+    Walks the route that would result from inserting ``parcel_location`` at
+    ``insertion_index`` and checks each accumulated arrival time against the
+    matching task's deadline. The legacy framework only validates the new
+    parcel's arrival, which lets greedy / MRA / GTA / RAMCOM accept
+    insertions that doom queued stops to timeout. This shared helper closes
+    that gap so every algorithm sees consistent feasibility.
+
+    Args:
+        courier_location: Courier's current location node.
+        schedule: Current pending legacy task sequence on the courier.
+        insertion_index: Index where the new parcel would be inserted.
+        parcel_location: Location node for the new parcel.
+        parcel_deadline: Absolute deadline timestamp for the new parcel.
+        travel_model: Shared travel model exposing ``travel_time(a, b)``.
+        now: Current simulation time when the insertion would commit.
+
+    Returns:
+        ``True`` if every stop after insertion still arrives at or before its
+        own deadline. ``False`` if any stop (including the new parcel) would
+        exceed its deadline.
+    """
+
+    cursor_location = courier_location
+    cursor_time = float(now)
+    stop_count = len(schedule)
+    clamped_index = max(0, min(int(insertion_index), stop_count))
+    for stop in schedule[:clamped_index]:
+        cursor_time += float(travel_model.travel_time(cursor_location, getattr(stop, "l_node")))
+        stop_deadline = getattr(stop, "d_time", None)
+        if stop_deadline is not None and cursor_time > float(stop_deadline):
+            return False
+        cursor_location = getattr(stop, "l_node")
+    cursor_time += float(travel_model.travel_time(cursor_location, parcel_location))
+    if cursor_time > float(parcel_deadline):
+        return False
+    cursor_location = parcel_location
+    for stop in schedule[clamped_index:]:
+        cursor_time += float(travel_model.travel_time(cursor_location, getattr(stop, "l_node")))
+        stop_deadline = getattr(stop, "d_time", None)
+        if stop_deadline is not None and cursor_time > float(stop_deadline):
+            return False
+        cursor_location = getattr(stop, "l_node")
+    return True
+
+
+def override_task_deadlines(tasks: Iterable[Any], deadline_seconds: int) -> None:
+    """Rewrite each task's true deadline as ``s_time + deadline_seconds``.
+
+    Args:
+        tasks: Legacy Chengdu tasks whose ``d_time`` should be replaced.
+        deadline_seconds: Positive duration in seconds added to each ``s_time``.
+
+    Raises:
+        ValueError: ``deadline_seconds`` is not strictly positive.
+    """
+
+    if deadline_seconds <= 0:
+        raise ValueError("deadline_seconds must be strictly positive.")
+    for task in tasks:
+        release_time = int(float(getattr(task, "s_time")))
+        task.d_time = int(release_time + deadline_seconds)
+        if hasattr(task, "observed_d_time"):
+            try:
+                delattr(task, "observed_d_time")
+            except AttributeError:
+                pass
+
+
 def legacy_task_to_parcel(task: Any, use_observed_deadline: bool = True) -> Parcel:
     """Convert a legacy Chengdu task object into the CAPA parcel model.
 
@@ -751,6 +838,7 @@ def legacy_courier_to_capa(courier: Any, courier_id: str) -> Courier:
         capacity=float(getattr(courier, "max_weight")),
         current_load=float(getattr(courier, "re_weight")),
         route_locations=[getattr(task, "l_node") for task in getattr(courier, "re_schedule", [])],
+        route_deadlines=[float(getattr(task, "d_time")) for task in getattr(courier, "re_schedule", [])],
         available_from=int(float(getattr(courier, "available_from", 0))),
         alpha=float(getattr(courier, "w", DEFAULT_COURIER_ALPHA)),
         beta=float(getattr(courier, "c", DEFAULT_COURIER_BETA)),
@@ -821,6 +909,7 @@ class LegacyCourierSnapshotCache:
             float(getattr(courier, "max_weight")),
             station_node,
             tuple(getattr(task, "l_node") for task in getattr(courier, "re_schedule", [])),
+            tuple(float(getattr(task, "d_time")) for task in getattr(courier, "re_schedule", [])),
             float(getattr(courier, "w", DEFAULT_COURIER_ALPHA)),
             float(getattr(courier, "c", DEFAULT_COURIER_BETA)),
             float(getattr(courier, "service_score", DEFAULT_COURIER_SERVICE_SCORE)),
@@ -1373,6 +1462,39 @@ def build_geo_index_from_travel_model(travel_model: Any) -> GeoIndex | None:
     if nmap is None:
         return None
     return GeoIndex(nmap)
+
+
+def set_courier_speed_kmh(speed_kmh: float) -> float:
+    """Patch the Chengdu courier speed constant across every importer namespace.
+
+    The legacy Chengdu framework binds ``VELOCITY`` (km/s) at import time via
+    ``from GraphUtils_ChengDu import *``. Reassigning only the source module
+    leaves the downstream copies untouched, so this helper updates the source
+    and every loaded importer module that holds its own binding.
+
+    Args:
+        speed_kmh: Strictly positive courier speed in kilometers per hour.
+
+    Returns:
+        The new ``VELOCITY`` value in km/s applied across the framework.
+
+    Raises:
+        ValueError: ``speed_kmh`` is not strictly positive.
+    """
+
+    import sys
+
+    if speed_kmh <= 0:
+        raise ValueError("courier_speed_kmh must be strictly positive.")
+    velocity_km_per_s = float(speed_kmh) / 3600.0
+    import GraphUtils_ChengDu
+
+    GraphUtils_ChengDu.VELOCITY = velocity_km_per_s
+    for module_name in ("Tasks_ChengDu", "MethodUtils_ChengDu", "Framework_ChengDu"):
+        module = sys.modules.get(module_name)
+        if module is not None:
+            setattr(module, "VELOCITY", velocity_km_per_s)
+    return velocity_km_per_s
 
 
 def get_travel_speed_m_per_s(travel_model: Any) -> float:
@@ -2147,10 +2269,15 @@ def build_framework_chengdu_environment(
     courier_service_score: float = DEFAULT_COURIER_SERVICE_SCORE,
     platform_quality_start: float = DEFAULT_PLATFORM_QUALITY_START,
     platform_quality_step: float = DEFAULT_PLATFORM_QUALITY_STEP,
+    deadline_seconds: int | None = None,
+    courier_speed_kmh: float | None = None,
 ) -> LegacyChengduEnvironment:
     """Build the official Chengdu experiment state from the repository's legacy framework."""
     import Framework_ChengDu as framework
     from Tasks_ChengDu import readTask
+
+    if courier_speed_kmh is not None:
+        set_courier_speed_kmh(courier_speed_kmh)
 
     resolved_alpha, resolved_beta = validate_courier_preference(courier_alpha, courier_beta)
     pick_task_set, delivery_task_set = readTask()
@@ -2233,6 +2360,11 @@ def build_framework_chengdu_environment(
         partner_couriers_by_platform[platform_id] = seeded_couriers[offset: offset + couriers_per_platform]
         offset += couriers_per_platform
 
+    if deadline_seconds is not None:
+        override_task_deadlines(tasks, deadline_seconds)
+        for platform_tasks in partner_tasks_by_platform.values():
+            override_task_deadlines(platform_tasks, deadline_seconds)
+
     from capa.experiments import ChengduGraphTravelModel
 
     travel_model = ChengduGraphTravelModel()
@@ -2264,4 +2396,6 @@ def build_framework_chengdu_environment(
         geo_index=build_geo_index_from_travel_model(travel_model),
         travel_speed_m_per_s=get_travel_speed_m_per_s(travel_model),
         partner_tasks_by_platform=partner_tasks_by_platform,
+        deadline_seconds=deadline_seconds,
+        courier_speed_kmh=courier_speed_kmh,
     )

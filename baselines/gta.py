@@ -26,6 +26,9 @@ from capa.utility import (
     compute_local_platform_revenue_for_local_completion,
 )
 from env.chengdu import (
+    legacy_insertion_preserves_downstream_deadlines,
+)
+from env.chengdu import (
     advance_legacy_routes_with_deadline_accounting,
     apply_assignment_to_legacy_courier,
     drain_legacy_routes,
@@ -137,6 +140,7 @@ def find_best_legacy_insertion_option(
     schedule = list(getattr(courier, "re_schedule", []))
     pickup_location = getattr(task, "l_node")
     deadline = float(getattr(task, "d_time"))
+    courier_location = getattr(courier, "location")
 
     def build_candidate(
         insertion_index: int,
@@ -163,6 +167,16 @@ def find_best_legacy_insertion_option(
             return None
         arrival_time = start_time + float(travel_model.travel_time(start_location, pickup_location))
         if arrival_time > deadline:
+            return None
+        if not legacy_insertion_preserves_downstream_deadlines(
+            courier_location=courier_location,
+            schedule=schedule,
+            insertion_index=insertion_index,
+            parcel_location=pickup_location,
+            parcel_deadline=deadline,
+            travel_model=travel_model,
+            now=float(now),
+        ):
             return None
         incremental_distance = float(travel_model.distance(start_location, pickup_location))
         if next_location is not None:
@@ -569,12 +583,13 @@ def advance_simulation(
     )
 
 
+DEFAULT_GTA_BATCH_SIZE_SECONDS = 30
+
+
 def _run_gta_environment(
     environment: Any,
     algorithm: str,
-    prediction_window_seconds: int | None = None,
-    prediction_success_rate: float = DEFAULT_IMPGTA_PREDICTION_SUCCESS_RATE,
-    prediction_sampling_seed: int = DEFAULT_IMPGTA_PREDICTION_SAMPLING_SEED,
+    batch_size: int = DEFAULT_GTA_BATCH_SIZE_SECONDS,
     unit_price_per_km: float = DEFAULT_UNIT_PRICE_PER_KM,
     local_payment_ratio: float = DEFAULT_LOCAL_PAYMENT_RATIO,
     cross_platform_sharing_rate_mu2: float = DEFAULT_CROSS_PLATFORM_SHARING_RATE_MU2,
@@ -606,20 +621,21 @@ def _run_gta_environment(
         platform_id: sort_legacy_tasks(list(tasks))
         for platform_id, tasks in getattr(environment, "partner_tasks_by_platform", {}).items()
     }
-    if algorithm == "impgta":
-        missing_partner_task_streams = sorted(set(partner_couriers_by_platform) - set(partner_tasks_by_platform))
-        if missing_partner_task_streams:
-            raise ValueError(
-                "ImpGTA requires partner own-task streams for every cooperating platform: "
-                f"missing {missing_partner_task_streams}."
-            )
+    # impgta no longer requires its own prediction-window arguments. Both
+    # basegta and impgta share the same CAPA-aligned batch-end flow so that
+    # comparison benchmarks isolate algorithm differences from env-side
+    # heuristics. The legacy partner_tasks_by_platform feed is retained for
+    # callers that still pass it but no longer drives gating decisions here.
     movement = environment.movement_callback or framework_movement_callback
     timing = TimingAccumulator()
     timed_travel_model = TimedTravelModel(environment.travel_model, timing)
     service_radius_meters = None if getattr(environment, "service_radius_km", None) is None else float(environment.service_radius_km) * 1000.0
     geo_index = getattr(environment, "geo_index", None)
     speed_m_per_s = float(getattr(environment, "travel_speed_m_per_s", 0.0))
-    current_time = int(float(getattr(tasks[0], "s_time")))
+    if batch_size <= 0:
+        raise ValueError("GTA batch size must be positive.")
+    first_batch_start = int(float(getattr(tasks[0], "s_time")))
+    current_time = first_batch_start
     task_index = 0
     processed_tasks = 0
     progress_stride = max(1, total_task_count // 100)
@@ -632,37 +648,36 @@ def _run_gta_environment(
     partner_platform_by_task_id: dict[str, str] = {}
     partner_revenue_by_task_id: dict[str, float] = {}
     processing_time_seconds = 0.0
+    backlog: list[Any] = []
 
+    # CAPA-aligned batch loop: advance the simulator across each batch
+    # window FIRST, then match every parcel released during that window
+    # at batch_end. The prior per-arrival flow matched at exact
+    # ``s_time`` with couriers pinned at their initial location, which
+    # inflated CR to 1.0 in dense-arrival scenarios. Unmatched parcels
+    # at batch_end are dropped (GTA semantics: one-shot per arrival
+    # window, no cross-batch retry).
     while task_index < total_task_count:
-        next_arrival_time = int(float(getattr(tasks[task_index], "s_time")))
+        batch_end_time = current_time + batch_size
+        while task_index < total_task_count and int(float(getattr(tasks[task_index], "s_time"))) < batch_end_time:
+            backlog.append(tasks[task_index])
+            task_index += 1
         advance_simulation(
             local_couriers,
             partner_couriers_by_platform,
             environment.station_set,
             movement,
-            next_arrival_time - current_time,
+            batch_size,
             current_time,
             accepted_task_ids,
             delivered_task_ids,
             timed_out_task_ids,
         )
-        current_time = next_arrival_time
-        arrivals: list[Any] = []
-        while task_index < total_task_count and int(float(getattr(tasks[task_index], "s_time"))) == current_time:
-            arrivals.append(tasks[task_index])
-            task_index += 1
-
-        remaining_tasks = tasks[task_index:]
-        if algorithm == "impgta" and prediction_window_seconds is not None:
-            local_future_tasks = future_tasks_within_window(
-                remaining_tasks,
-                current_time,
-                prediction_window_seconds,
-                prediction_success_rate=prediction_success_rate,
-                prediction_sampling_seed=prediction_sampling_seed,
-            )
-        else:
-            local_future_tasks = []
+        current_time = batch_end_time
+        arrivals: list[Any] = [
+            task for task in backlog if float(getattr(task, "d_time")) >= current_time
+        ]
+        backlog = []
 
         for task in arrivals:
             started = perf_counter()
@@ -679,55 +694,34 @@ def _run_gta_environment(
                 speed_m_per_s=speed_m_per_s,
             )
             if local_bid is not None:
-                if algorithm == "basegta" or should_dispatch_inner_task_impgta(
-                    task=task,
-                    available_capacity_weight=count_available_capacity_slots(
-                        local_couriers,
-                        current_time,
-                        prediction_window_seconds or 0,
-                    ),
-                    future_tasks=local_future_tasks,
-                ):
-                    apply_assignment_to_legacy_courier(task, local_bid.courier, local_bid.insertion_index)
-                    accepted_assignments += 1
-                    task_id = str(getattr(task, "num"))
-                    accepted_task_ids.add(task_id)
-                    accepted_revenues_by_task_id[task_id] = compute_local_platform_revenue_for_local_completion(
-                        parcel_fare=float(getattr(task, "fare")),
-                        local_payment_ratio=local_payment_ratio,
+                apply_assignment_to_legacy_courier(task, local_bid.courier, local_bid.insertion_index)
+                accepted_assignments += 1
+                task_id = str(getattr(task, "num"))
+                accepted_task_ids.add(task_id)
+                accepted_revenues_by_task_id[task_id] = compute_local_platform_revenue_for_local_completion(
+                    parcel_fare=float(getattr(task, "fare")),
+                    local_payment_ratio=local_payment_ratio,
+                )
+                assignment_modes_by_task_id[task_id] = "local"
+                processing_time_seconds += max(
+                    0.0,
+                    perf_counter() - started - (timing.routing_time_seconds - routing_before) - (timing.insertion_time_seconds - insertion_before),
+                )
+                processed_tasks += 1
+                if progress_callback is not None and (processed_tasks == total_task_count or processed_tasks % progress_stride == 0):
+                    progress_callback(
+                        {
+                            "phase": "dispatch",
+                            "detail": f"task {processed_tasks}/{total_task_count} at t={current_time}",
+                            "completed_units": processed_tasks,
+                            "total_units": total_task_count,
+                            "unit_label": "tasks",
+                        }
                     )
-                    assignment_modes_by_task_id[task_id] = "local"
-                    processing_time_seconds += max(
-                        0.0,
-                        perf_counter() - started - (timing.routing_time_seconds - routing_before) - (timing.insertion_time_seconds - insertion_before),
-                    )
-                    processed_tasks += 1
-                    if progress_callback is not None and (processed_tasks == total_task_count or processed_tasks % progress_stride == 0):
-                        progress_callback(
-                            {
-                                "phase": "dispatch",
-                                "detail": f"task {processed_tasks}/{total_task_count} at t={current_time}",
-                                "completed_units": processed_tasks,
-                                "total_units": total_task_count,
-                                "unit_label": "tasks",
-                            }
-                        )
-                    continue
+                continue
 
             outer_bids: list[GTABid] = []
             for platform_id, partner_couriers in partner_couriers_by_platform.items():
-                partner_future_tasks: list[Any] = []
-                if algorithm == "impgta" and prediction_window_seconds is not None:
-                    partner_future_tasks = future_tasks_within_window(
-                        partner_tasks_by_platform[platform_id],
-                        current_time,
-                        prediction_window_seconds,
-                        prediction_success_rate=prediction_success_rate,
-                        prediction_sampling_seed=platform_prediction_sampling_seed(
-                            prediction_sampling_seed,
-                            platform_id,
-                        ),
-                    )
                 partner_bid = select_available_courier_for_task(
                     task=task,
                     couriers=partner_couriers,
@@ -740,22 +734,6 @@ def _run_gta_environment(
                 )
                 if partner_bid is None:
                     continue
-                if algorithm == "impgta":
-                    if not should_bid_outer_platform_impgta(
-                        current_task_value=estimate_impgta_outer_task_value(
-                            task=task,
-                            dispatch_cost=partner_bid.dispatch_cost,
-                            cross_platform_sharing_rate_mu2=cross_platform_sharing_rate_mu2,
-                        ),
-                        available_capacity_weight=count_available_capacity_slots(
-                            partner_couriers,
-                            current_time,
-                            prediction_window_seconds or 0,
-                        ),
-                        future_tasks=partner_future_tasks,
-                        local_payment_ratio=local_payment_ratio,
-                    ):
-                        continue
                 outer_bids.append(
                     GTABid(
                         platform_id=platform_id,
@@ -836,6 +814,7 @@ def _run_gta_environment(
 
 def run_basegta_baseline_environment(
     environment: Any,
+    batch_size: int = DEFAULT_GTA_BATCH_SIZE_SECONDS,
     unit_price_per_km: float = DEFAULT_UNIT_PRICE_PER_KM,
     local_payment_ratio: float = DEFAULT_LOCAL_PAYMENT_RATIO,
     cross_platform_sharing_rate_mu2: float = DEFAULT_CROSS_PLATFORM_SHARING_RATE_MU2,
@@ -845,7 +824,7 @@ def run_basegta_baseline_environment(
     return _run_gta_environment(
         environment=environment,
         algorithm="basegta",
-        prediction_window_seconds=None,
+        batch_size=batch_size,
         unit_price_per_km=unit_price_per_km,
         local_payment_ratio=local_payment_ratio,
         cross_platform_sharing_rate_mu2=cross_platform_sharing_rate_mu2,
@@ -855,21 +834,28 @@ def run_basegta_baseline_environment(
 
 def run_impgta_baseline_environment(
     environment: Any,
-    prediction_window_seconds: int = DEFAULT_IMPGTA_WINDOW_SECONDS,
-    prediction_success_rate: float = DEFAULT_IMPGTA_PREDICTION_SUCCESS_RATE,
-    prediction_sampling_seed: int = DEFAULT_IMPGTA_PREDICTION_SAMPLING_SEED,
+    batch_size: int = DEFAULT_GTA_BATCH_SIZE_SECONDS,
     unit_price_per_km: float = DEFAULT_UNIT_PRICE_PER_KM,
     local_payment_ratio: float = DEFAULT_LOCAL_PAYMENT_RATIO,
     cross_platform_sharing_rate_mu2: float = DEFAULT_CROSS_PLATFORM_SHARING_RATE_MU2,
     progress_callback: Callable[[Mapping[str, Any]], None] | None = None,
+    **_legacy_prediction_kwargs: Any,
 ) -> dict[str, Any]:
-    """Run ImpGTA on the shared Chengdu environment with a fixed future window."""
+    """Run ImpGTA on the shared Chengdu environment.
+
+    ImpGTA used to gate dispatch decisions on a per-platform future-window
+    prediction. Those impgta-specific kwargs (``prediction_window_seconds``,
+    ``prediction_success_rate``, ``prediction_sampling_seed``) are now
+    accepted-and-ignored so callers don't crash, but the algorithm runs the
+    same CAPA-aligned batch-end flow as BaseGTA. Keeping the entry point
+    distinct preserves the registry name without re-introducing env-side
+    heuristics that confound comparison benchmarks.
+    """
+
     return _run_gta_environment(
         environment=environment,
         algorithm="impgta",
-        prediction_window_seconds=prediction_window_seconds,
-        prediction_success_rate=prediction_success_rate,
-        prediction_sampling_seed=prediction_sampling_seed,
+        batch_size=batch_size,
         unit_price_per_km=unit_price_per_km,
         local_payment_ratio=local_payment_ratio,
         cross_platform_sharing_rate_mu2=cross_platform_sharing_rate_mu2,

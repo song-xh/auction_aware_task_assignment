@@ -52,13 +52,40 @@ class MRABPTTest(unittest.TestCase):
             patch("baselines.mra.compute_local_platform_revenue_for_local_completion", return_value=5.0),
             patch("baselines.mra.apply_assignment_to_legacy_courier"),
             patch("baselines.mra.drain_legacy_routes"),
-            patch("baselines.mra.perf_counter", side_effect=[0.0, 8.0, 9.0, 10.0, 20.0, 28.0, 29.0, 30.0]),
+            # New batch-end alignment: per batch the trainer calls perf_counter
+            # in order (movement_started, movement_end, round_started, round_end).
+            # Pick values so each round has elapsed=8s, routing+insertion=5s,
+            # decision_delta=3s per batch, decision_time=6.0 across two batches.
+            patch("baselines.mra.perf_counter", side_effect=[0.0, 1.0, 2.0, 10.0, 11.0, 12.0, 13.0, 21.0]),
         ):
             result = run_mra_baseline_environment(environment=environment, batch_size=30)
 
         self.assertEqual(len(timing_instances), 1)
         self.assertEqual(timing_instances[0].decision_time_seconds, 6.0)
         self.assertEqual(result["BPT"], 3.0)
+
+
+    def test_run_mra_builds_edges_at_batch_end(self) -> None:
+        """MRA should evaluate all bucket tasks after advancing to each batch boundary."""
+
+        task = SimpleNamespace(num="t1", fare=10.0, s_time=0.0)
+        task_two = SimpleNamespace(num="t2", fare=10.0, s_time=30.0)
+        environment = SimpleNamespace(
+            tasks=[task, task_two], local_couriers=[], movement_callback=lambda *args, **kwargs: None,
+            station_set=[],
+            travel_model=SimpleNamespace(distance=lambda start, end: 0.0, travel_time=lambda start, end: 0.0),
+            service_radius_km=None,
+        )
+        observed_now: list[int] = []
+
+        def observe_now(**kwargs: object) -> list[object]:
+            observed_now.append(int(kwargs["now"]))
+            return []
+
+        with patch("baselines.mra.group_legacy_tasks_by_batch", return_value=[[task], [task_two]]), patch("baselines.mra.build_legacy_feasible_insertions", side_effect=observe_now):
+            run_mra_baseline_environment(environment=environment, batch_size=30)
+
+        self.assertEqual(observed_now, [30, 60, 60])
 
 
 if __name__ == "__main__":

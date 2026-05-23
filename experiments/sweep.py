@@ -75,6 +75,8 @@ def run_parameter_sweep(
         courier_service_score=fixed_config.get("courier_service_score", DEFAULT_COURIER_SERVICE_SCORE),
         platform_quality_start=fixed_config.get("platform_quality_start", DEFAULT_PLATFORM_QUALITY_START),
         platform_quality_step=fixed_config.get("platform_quality_step", DEFAULT_PLATFORM_QUALITY_STEP),
+        deadline_seconds=fixed_config.get("deadline_seconds"),
+        courier_speed_kmh=fixed_config.get("courier_speed_kmh"),
         extra=dict(fixed_config.get("extra", {})),
     )
 
@@ -197,6 +199,8 @@ def _run_sweep_point(
         courier_service_score=fixed_config.get("courier_service_score", DEFAULT_COURIER_SERVICE_SCORE),
         platform_quality_start=fixed_config.get("platform_quality_start", DEFAULT_PLATFORM_QUALITY_START),
         platform_quality_step=fixed_config.get("platform_quality_step", DEFAULT_PLATFORM_QUALITY_STEP),
+        deadline_seconds=fixed_config.get("deadline_seconds"),
+        courier_speed_kmh=fixed_config.get("courier_speed_kmh"),
         rl_min_batch_size=fixed_config.get("rl_min_batch_size", 10),
         rl_max_batch_size=fixed_config.get("rl_max_batch_size", 20),
         rl_step_seconds=fixed_config.get("rl_step_seconds", 60),

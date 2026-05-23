@@ -108,6 +108,8 @@ def test_capa_runner_summary_exposes_assignment_and_partner_stats() -> None:
     assert summary["assignment_stats"]["local_platform"]["local_matches"] == 1
     assert summary["assignment_stats"]["local_platform"]["cross_platform_matches"] == 1
     assert summary["assignment_stats"]["local_platform"]["unresolved_parcels"] == 1
+    assert summary["assignment_stats"]["local_platform"]["accepted_parcels"] == 2
+    assert summary["assignment_stats"]["local_platform"]["delivered_parcels"] == 2
     assert summary["assignment_stats"]["local_platform"]["timed_out_parcels"] == 1
     assert summary["assignment_stats"]["cooperating_platforms"]["P1"]["own_task_count"] == 2
     assert summary["assignment_stats"]["cooperating_platforms"]["P1"]["accepted_cross_platform_tasks"] == 1

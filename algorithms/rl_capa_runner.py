@@ -34,7 +34,9 @@ class RLCAPAAlgorithmRunner(AlgorithmRunner):
         entropy_decay_episodes: int | None = None,
         max_grad_norm: float = 0.5,
         normalize_advantages: bool = True,
+        warmup_episodes: int = 0,
         future_feature_window_seconds: int = 300,
+        use_service_slack: bool = False,
         device: str | None = None,
     ) -> None:
         """Store the RL-CAPA hyperparameters exposed through the unified runner.
@@ -69,7 +71,9 @@ class RLCAPAAlgorithmRunner(AlgorithmRunner):
         self._entropy_decay_episodes = entropy_decay_episodes
         self._max_grad_norm = max_grad_norm
         self._normalize_advantages = normalize_advantages
+        self._warmup_episodes = warmup_episodes
         self._future_feature_window_seconds = future_feature_window_seconds
+        self._use_service_slack = use_service_slack
         self._device = device
 
     def run(
@@ -103,6 +107,7 @@ class RLCAPAAlgorithmRunner(AlgorithmRunner):
             batch_actions=self._batch_actions,
             step_seconds=self._step_seconds,
             future_feature_window_seconds=self._future_feature_window_seconds,
+            use_service_slack=self._use_service_slack,
         )
         training_config = RLTrainingConfig(
             episodes=self._episodes,
@@ -115,6 +120,7 @@ class RLCAPAAlgorithmRunner(AlgorithmRunner):
             entropy_decay_episodes=self._entropy_decay_episodes,
             max_grad_norm=self._max_grad_norm,
             normalize_advantages=self._normalize_advantages,
+            warmup_episodes=self._warmup_episodes,
             device=self._device,
         )
         training_summary = train_rl_capa(
@@ -138,6 +144,7 @@ class RLCAPAAlgorithmRunner(AlgorithmRunner):
             "training": training_summary,
             "evaluation": evaluation_summary,
             "metrics": evaluation_summary["metrics"],
+            "decision_trace": list(evaluation_summary.get("decision_trace", [])),
             "plots": {
                 "training": dict(training_summary.get("plots", {})),
                 "evaluation": dict(evaluation_summary.get("plots", {})),
@@ -163,7 +170,9 @@ def build_rl_capa_runner(
     entropy_decay_episodes: int | None = None,
     max_grad_norm: float = 0.5,
     normalize_advantages: bool = True,
+    warmup_episodes: int = 0,
     future_feature_window_seconds: int = 300,
+    use_service_slack: bool = False,
     device: str | None = None,
 ) -> RLCAPAAlgorithmRunner:
     """Build the unified RL-CAPA runner with explicit training hyperparameters."""
@@ -183,6 +192,8 @@ def build_rl_capa_runner(
         entropy_decay_episodes=entropy_decay_episodes,
         max_grad_norm=max_grad_norm,
         normalize_advantages=normalize_advantages,
+        warmup_episodes=warmup_episodes,
         future_feature_window_seconds=future_feature_window_seconds,
+        use_service_slack=use_service_slack,
         device=device,
     )

@@ -62,6 +62,7 @@ class TrainingConfig:
     max_grad_norm: float = 0.5
     max_steps_per_episode: int = 500
     normalize_advantages: bool = True
+    warmup_episodes: int = 0
     device: str | None = None
 
 
@@ -156,18 +157,23 @@ class RLCAPATrainer:
         self.env = env
         self.config = config
         self.device = select_torch_device(config.device if device is None else device)
+        self.stage2_state_dim = (
+            int(env.stage2_state_dim())
+            if hasattr(env, "stage2_state_dim")
+            else STAGE2_STATE_DIM
+        )
 
         # 4 networks (spec Section 7; Q1 replaces V1 to avoid V1==V2 target
         # collapse described in docs/review_0507.md §3.2).
         self.pi1 = BatchSizeActor(
             state_dim=STAGE1_STATE_DIM, num_actions=num_batch_actions, hidden_dim=128
         ).to(self.device)
-        self.pi2 = CrossOrNotActor(state_dim=STAGE2_STATE_DIM, hidden_dim=128).to(self.device)
+        self.pi2 = CrossOrNotActor(state_dim=self.stage2_state_dim, hidden_dim=128).to(self.device)
         self.q1 = BatchSizeQCritic(
             state_dim=STAGE1_STATE_DIM, num_actions=num_batch_actions, hidden_dim=128
         ).to(self.device)
         self.v1 = StateValueCritic(state_dim=STAGE1_STATE_DIM, hidden_dim=128).to(self.device)
-        self.v2 = ConditionalValueCritic(state_dim=STAGE2_STATE_DIM, hidden_dim=128).to(self.device)
+        self.v2 = ConditionalValueCritic(state_dim=self.stage2_state_dim, hidden_dim=128).to(self.device)
 
         # 4 independent optimizers (spec Section 6.4)
         self.opt_pi1 = torch.optim.Adam(self.pi1.parameters(), lr=config.lr_actor)
@@ -178,7 +184,7 @@ class RLCAPATrainer:
 
         # Running normalizers for feature vectors
         self.norm_s1 = RunningNormalizer(dim=STAGE1_STATE_DIM)
-        self.norm_s2 = RunningNormalizer(dim=STAGE2_STATE_DIM)
+        self.norm_s2 = RunningNormalizer(dim=self.stage2_state_dim)
 
         # Batch action values for index-to-duration mapping
         self._batch_action_values: List[int] = []
@@ -208,6 +214,9 @@ class RLCAPATrainer:
         self._batch_action_values = list(batch_action_values)
         self.history = []
 
+        for _ in range(max(0, int(self.config.warmup_episodes))):
+            self._run_normalizer_warmup_episode()
+
         for episode_idx in range(self.config.num_episodes):
             log = self._run_episode(episode_idx)
             self.history.append(log)
@@ -220,6 +229,42 @@ class RLCAPATrainer:
                 )
 
         return self.history
+
+    def _run_normalizer_warmup_episode(self) -> None:
+        """Run one warmup rollout that updates normalizers AND critics only.
+
+        Warmup rollouts sample actions stochastically via the current actors
+        and advance the env through realistic batch durations and decisions.
+        Beyond seeding ``norm_s1`` / ``norm_s2``, this rollout also updates
+        Q1 / V1 / V2 (no actor gradients) so the critics are calibrated by
+        the time policy-gradient training begins. Without critic warmup the
+        cold-init V2 mispredicts per-step rewards by orders of magnitude,
+        producing adv_2 sign-flips that drive pi2 toward whichever choice it
+        happened to take first — frequently away from local matching.
+        """
+
+        self.env.reset()
+        episode_buffer: List[StepRecord] = []
+        step = 0
+        while not self.env.is_done() and step < self.config.max_steps_per_episode:
+            step += 1
+            record = self._collect_step()
+            episode_buffer.append(record)
+        self.env.finalize_episode()
+        terminal_reward = self.env.pop_terminal_delivered_revenue()
+        if not episode_buffer:
+            return
+        if terminal_reward:
+            per_step_share = float(terminal_reward) / float(len(episode_buffer))
+            for record in episode_buffer:
+                record.reward += per_step_share
+        returns = self._compute_discounted_returns(episode_buffer)
+        self._update_networks(
+            episode_buffer,
+            returns,
+            entropy_coeff=0.0,
+            update_actors=False,
+        )
 
     def _run_episode(self, episode_idx: int) -> EpisodeLog:
         """Collect one episode and update all 4 networks.
@@ -255,7 +300,16 @@ class RLCAPATrainer:
         self.env.finalize_episode()
         terminal_reward = self.env.pop_terminal_delivered_revenue()
         if terminal_reward:
-            episode_buffer[-1].reward += terminal_reward
+            # Distribute drain-phase deliveries uniformly across episode steps
+            # instead of dumping all of them on the last step. Concentrating
+            # the entire post-arrival TR on one step gives V2 (which fits
+            # per-step rewards) a near-impossible target and biases pi2's
+            # gradient toward the actions taken at the final step. Even
+            # spreading keeps the total episode return unchanged while
+            # giving the per-step critic a balanced signal.
+            per_step_share = float(terminal_reward) / float(len(episode_buffer))
+            for record in episode_buffer:
+                record.reward += per_step_share
 
         # Compute discounted returns (backward cumulation)
         returns = self._compute_discounted_returns(episode_buffer)
@@ -363,7 +417,7 @@ class RLCAPATrainer:
             num_cross = sum(1 for a in actions_2 if a.item() == 1)
 
             # Mean-pool for V2 input
-            s2_agg_raw = aggregate_stage2_states(s2_list)
+            s2_agg_raw = aggregate_stage2_states(s2_list, state_dim=self.stage2_state_dim)
             s2_agg_norm = self.norm_s2.normalize(s2_agg_raw)
             s2_agg_tensor = torch.from_numpy(s2_agg_norm).to(self.device)
         else:
@@ -371,7 +425,7 @@ class RLCAPATrainer:
             log_prob_2 = torch.tensor(0.0, device=self.device)
             entropy_2 = torch.tensor(0.0, device=self.device)
             decisions = {}
-            s2_agg_tensor = torch.zeros(STAGE2_STATE_DIM, device=self.device)
+            s2_agg_tensor = torch.zeros(self.stage2_state_dim, device=self.device)
 
         # Apply local/cross decisions -> direct local + DAPA, returns R_t
         reward = self.env.apply_stage2_decisions(decisions)
@@ -429,6 +483,7 @@ class RLCAPATrainer:
         buffer: List[StepRecord],
         returns: List[float],
         entropy_coeff: float | None = None,
+        update_actors: bool = True,
     ) -> tuple[float, float, float, float]:
         """Update all 4 networks from episode data.
 
@@ -504,6 +559,9 @@ class RLCAPATrainer:
             if self.config.normalize_advantages:
                 adv_1 = self._normalize_advantages(adv_1)
                 adv_2 = self._normalize_advantages(adv_2)
+
+        if not update_actors:
+            return (0.0, 0.0, loss_v1.item(), loss_v2.item())
 
         # --- Actor 1 update ---
         loss_pi1 = -(log_probs_1 * adv_1).mean() - entropy_coeff * entropies_1.mean()
@@ -595,14 +653,26 @@ class RLCAPATrainer:
             num_batch_actions=num_batch_actions,
             device=config.device,
         )
+        normalizers = torch.load(checkpoint_dir / "normalizers.pt", map_location="cpu")
+        checkpoint_stage2_dim = int(normalizers["norm_s2"]["dim"])
+        if checkpoint_stage2_dim != trainer.stage2_state_dim:
+            raise ValueError(
+                "Checkpoint state dimension does not match current Stage-2 state dimension. "
+                "Please retrain or disable --rl-use-service-slack."
+            )
         trainer.pi1.load_state_dict(torch.load(checkpoint_dir / "pi1.pt", map_location=trainer.device))
-        trainer.pi2.load_state_dict(torch.load(checkpoint_dir / "pi2.pt", map_location=trainer.device))
+        try:
+            trainer.pi2.load_state_dict(torch.load(checkpoint_dir / "pi2.pt", map_location=trainer.device))
+            trainer.v2.load_state_dict(torch.load(checkpoint_dir / "v2.pt", map_location=trainer.device))
+        except RuntimeError as exc:
+            raise ValueError(
+                "Checkpoint state dimension does not match current Stage-2 state dimension. "
+                "Please retrain or disable --rl-use-service-slack."
+            ) from exc
         q1_path = checkpoint_dir / "q1.pt"
         if q1_path.exists():
             trainer.q1.load_state_dict(torch.load(q1_path, map_location=trainer.device))
         trainer.v1.load_state_dict(torch.load(checkpoint_dir / "v1.pt", map_location=trainer.device))
-        trainer.v2.load_state_dict(torch.load(checkpoint_dir / "v2.pt", map_location=trainer.device))
-        normalizers = torch.load(checkpoint_dir / "normalizers.pt", map_location="cpu")
         trainer._restore_normalizer(trainer.norm_s1, normalizers["norm_s1"])
         trainer._restore_normalizer(trainer.norm_s2, normalizers["norm_s2"])
         return trainer

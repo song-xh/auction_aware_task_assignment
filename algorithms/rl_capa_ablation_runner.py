@@ -37,7 +37,9 @@ class RLCAPAAblationAlgorithmRunner(AlgorithmRunner):
         entropy_decay_episodes: int | None = None,
         max_grad_norm: float = 0.5,
         normalize_advantages: bool = True,
+        warmup_episodes: int = 0,
         future_feature_window_seconds: int = 300,
+        use_service_slack: bool = False,
         device: str | None = None,
     ) -> None:
         """Store combined ablation hyperparameters."""
@@ -57,7 +59,9 @@ class RLCAPAAblationAlgorithmRunner(AlgorithmRunner):
         self._entropy_decay_episodes = entropy_decay_episodes
         self._max_grad_norm = max_grad_norm
         self._normalize_advantages = normalize_advantages
+        self._warmup_episodes = warmup_episodes
         self._future_feature_window_seconds = future_feature_window_seconds
+        self._use_service_slack = use_service_slack
         self._device = device
 
     def run(
@@ -83,6 +87,7 @@ class RLCAPAAblationAlgorithmRunner(AlgorithmRunner):
             batch_actions=self._batch_actions,
             step_seconds=self._step_seconds,
             future_feature_window_seconds=self._future_feature_window_seconds,
+            use_service_slack=self._use_service_slack,
         )
         training_config = RLTrainingConfig(
             episodes=self._episodes,
@@ -95,6 +100,7 @@ class RLCAPAAblationAlgorithmRunner(AlgorithmRunner):
             entropy_decay_episodes=self._entropy_decay_episodes,
             max_grad_norm=self._max_grad_norm,
             normalize_advantages=self._normalize_advantages,
+            warmup_episodes=self._warmup_episodes,
             device=self._device,
         )
         full_summary = train_rl_capa(
@@ -117,6 +123,7 @@ class RLCAPAAblationAlgorithmRunner(AlgorithmRunner):
             batch_actions=[self._fixed_batch_size],
             step_seconds=self._step_seconds,
             future_feature_window_seconds=self._future_feature_window_seconds,
+            use_service_slack=self._use_service_slack,
         )
         stage2_summary = train_stage2_rl_capa(
             environment_seed=environment_seed,
@@ -167,7 +174,9 @@ def build_rl_capa_ablation_runner(
     entropy_decay_episodes: int | None = None,
     max_grad_norm: float = 0.5,
     normalize_advantages: bool = True,
+    warmup_episodes: int = 0,
     future_feature_window_seconds: int = 300,
+    use_service_slack: bool = False,
     device: str | None = None,
 ) -> RLCAPAAblationAlgorithmRunner:
     """Build a combined RL-CAPA ablation runner."""
@@ -188,6 +197,8 @@ def build_rl_capa_ablation_runner(
         entropy_decay_episodes=entropy_decay_episodes,
         max_grad_norm=max_grad_norm,
         normalize_advantages=normalize_advantages,
+        warmup_episodes=warmup_episodes,
         future_feature_window_seconds=future_feature_window_seconds,
+        use_service_slack=use_service_slack,
         device=device,
     )

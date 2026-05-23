@@ -37,6 +37,17 @@ class RLCAPARunnerUXTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             config.batch_action_values()
 
+    def test_rl_config_records_optional_service_slack_flag(self) -> None:
+        """RL config should expose the optional Stage-2 service-slack feature flag."""
+
+        config = RLCAPAConfig(
+            min_batch_size=10,
+            max_batch_size=20,
+            use_service_slack=True,
+        )
+
+        self.assertTrue(config.use_service_slack)
+
     def test_runner_build_kwargs_include_explicit_rl_batch_actions(self) -> None:
         """Runner argument translation should forward explicit RL batch actions."""
 
@@ -58,6 +69,25 @@ class RLCAPARunnerUXTests(unittest.TestCase):
 
         self.assertEqual(kwargs["batch_actions"], [10, 15, 20])
         self.assertTrue(kwargs["normalize_advantages"])
+        self.assertFalse(kwargs["use_service_slack"])
+
+    def test_runner_build_kwargs_include_service_slack_flag(self) -> None:
+        """Runner argument translation should forward the optional service-slack flag."""
+
+        args = parse_args(
+            [
+                "run",
+                "--algorithm",
+                "rl-capa",
+                "--data-dir",
+                "Data",
+                "--rl-use-service-slack",
+            ]
+        )
+
+        kwargs = build_algorithm_kwargs(args)
+
+        self.assertTrue(kwargs["use_service_slack"])
 
     def test_runner_build_kwargs_include_rl_checkpoint_dir_for_inference(self) -> None:
         """Inference runner should accept a checkpoint directory and RL action-space settings."""
@@ -85,6 +115,7 @@ class RLCAPARunnerUXTests(unittest.TestCase):
         self.assertEqual(kwargs["checkpoint_dir"], "outputs/plots/rl_capa_ablation_v2_500/rl-capa/checkpoints")
         self.assertEqual(kwargs["batch_actions"], [10, 15, 20, 25, 30])
         self.assertTrue(kwargs["normalize_advantages"])
+        self.assertFalse(kwargs["use_service_slack"])
 
     def test_runner_build_kwargs_include_stage1_ablation_rl_params(self) -> None:
         """Stage-1 ablation should receive the same RL hyperparameters as RL-CAPA."""
@@ -109,6 +140,7 @@ class RLCAPARunnerUXTests(unittest.TestCase):
         self.assertEqual(kwargs["batch_actions"], [10, 15])
         self.assertEqual(kwargs["episodes"], 3)
         self.assertTrue(kwargs["normalize_advantages"])
+        self.assertFalse(kwargs["use_service_slack"])
 
     def test_runner_build_kwargs_include_stage2_fixed_batch_size(self) -> None:
         """Stage-2 ablation should receive fixed batch-size and RL hyperparameters."""
@@ -132,6 +164,28 @@ class RLCAPARunnerUXTests(unittest.TestCase):
         self.assertEqual(kwargs["fixed_batch_size"], 30)
         self.assertEqual(kwargs["episodes"], 3)
         self.assertTrue(kwargs["normalize_advantages"])
+        self.assertFalse(kwargs["use_service_slack"])
+
+    def test_runner_build_kwargs_include_stage2_service_slack_flag(self) -> None:
+        """Stage-2 ablation should receive the optional service-slack flag."""
+
+        args = parse_args(
+            [
+                "run",
+                "--algorithm",
+                "rl-capa-stage2",
+                "--data-dir",
+                "Data",
+                "--batch-size",
+                "30",
+                "--rl-use-service-slack",
+            ]
+        )
+
+        kwargs = build_algorithm_kwargs(args)
+
+        self.assertEqual(kwargs["fixed_batch_size"], 30)
+        self.assertTrue(kwargs["use_service_slack"])
 
     def test_runner_can_disable_rl_advantage_normalization(self) -> None:
         """Runner should expose an ablation switch for actor advantage scaling."""

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import unittest
 
-from capa.cama import build_local_candidate_shortlist, run_cama
+from capa.cama import build_local_candidate_shortlist, is_feasible_local_match, run_cama
 from capa.models import CAPAConfig, Courier, Parcel, ThresholdHistory
 
 from tests.capa_test_support import FakeGeoIndex, FakeTravelModel
@@ -144,6 +144,26 @@ class LocalShortlistTest(unittest.TestCase):
         self.assertEqual(second_result.local_assignments, [])
         self.assertEqual([parcel.parcel_id for parcel in second_result.auction_pool], ["low"])
         self.assertEqual([assignment.parcel.parcel_id for assignment in batch_local_result.local_assignments], ["low"])
+
+
+    def test_feasibility_rejects_new_stop_when_it_delays_existing_route_past_deadline(self) -> None:
+        """A new parcel must not be accepted when every insertion makes an existing stop late."""
+
+        parcel = Parcel(parcel_id="new", location="new", arrival_time=0, deadline=3, weight=1.0, fare=10.0)
+        courier = Courier(courier_id="c1", current_location="start", depot_location="depot", capacity=10.0, route_locations=["existing"])
+        courier.route_deadlines = [4.0]
+        travel_model = FakeTravelModel(
+            distances={
+                ("start", "existing"): 4.0,
+                ("existing", "depot"): 4.0,
+                ("start", "new"): 1.0,
+                ("new", "existing"): 4.0,
+                ("existing", "new"): 4.0,
+                ("new", "depot"): 4.0,
+            }
+        )
+
+        self.assertFalse(is_feasible_local_match(parcel, courier, travel_model, now=0))
 
 
 if __name__ == "__main__":

@@ -17,6 +17,7 @@ from baselines.greedy import run_greedy_baseline_environment
 from baselines.gta import (
     GTABid,
     estimate_impgta_outer_task_value,
+    find_best_legacy_insertion_option,
     future_tasks_within_window,
     run_basegta_baseline_environment,
     run_impgta_baseline_environment,
@@ -26,6 +27,7 @@ from baselines.gta import (
 )
 from baselines.mra import run_mra_baseline_environment
 from baselines.ramcom import choose_outer_payment_by_expected_revenue, run_ramcom_baseline_environment, worker_acceptance_probability
+from baselines.common import build_legacy_feasible_insertions
 from algorithms.ramcom_runner import build_ramcom_runner
 from env.chengdu import ChengduEnvironment, select_station_pick_tasks
 from experiments.config import ExperimentConfig
@@ -340,13 +342,13 @@ class MetricAlignmentTest(unittest.TestCase):
             )
         )
 
-    def test_impgta_outer_prediction_success_rate_changes_partner_bid_decision(self) -> None:
-        """ImpGTA outer bidding should use partner own-task predictions, not an empty future window."""
+    def test_impgta_matches_basegta_when_run_on_identical_environment(self) -> None:
+        """ImpGTA and BaseGTA must produce identical metrics after env alignment."""
 
         task = SimpleNamespace(num="t1", fare=20.0, s_time=0.0, d_time=300.0, weight=1.0, l_node="p1")
         future_tasks = [
-            SimpleNamespace(num="p-f1", fare=100.0, s_time=10.0, d_time=400.0, weight=1.0, l_node="p2"),
-            SimpleNamespace(num="p-f2", fare=100.0, s_time=20.0, d_time=500.0, weight=1.0, l_node="p3"),
+            SimpleNamespace(num="p-f1", fare=100.0, s_time=40.0, d_time=400.0, weight=1.0, l_node="p2"),
+            SimpleNamespace(num="p-f2", fare=100.0, s_time=60.0, d_time=500.0, weight=1.0, l_node="p3"),
         ]
 
         def build_environment() -> SimpleNamespace:
@@ -387,19 +389,13 @@ class MetricAlignmentTest(unittest.TestCase):
             patch("baselines.gta.select_available_courier_for_task", side_effect=fake_select),
             patch("baselines.gta.drain_legacy_routes", return_value=1),
         ):
-            zero_success = run_impgta_baseline_environment(
-                environment=build_environment(),
-                prediction_window_seconds=100,
-                prediction_success_rate=0.0,
-            )
-            full_success = run_impgta_baseline_environment(
-                environment=build_environment(),
-                prediction_window_seconds=100,
-                prediction_success_rate=1.0,
-            )
+            impgta_metrics = run_impgta_baseline_environment(environment=build_environment())
+            basegta_metrics = run_basegta_baseline_environment(environment=build_environment())
 
-        self.assertEqual(zero_success["accepted_assignments"], 1)
-        self.assertEqual(full_success["accepted_assignments"], 0)
+        # impgta now shares basegta's flow; identical fixtures must yield identical accept/deliver counts.
+        self.assertEqual(impgta_metrics["accepted_assignments"], basegta_metrics["accepted_assignments"])
+        self.assertEqual(impgta_metrics["delivered_parcels"], basegta_metrics["delivered_parcels"])
+        self.assertEqual(impgta_metrics["TR"], basegta_metrics["TR"])
 
     def test_impgta_outer_condition_uses_estimated_cross_reward_not_dispatch_cost(self) -> None:
         """Outer ImpGTA should compare predicted demand with expected cooperative payment, not cost only."""
@@ -691,11 +687,12 @@ class MetricAlignmentTest(unittest.TestCase):
         self.assertGreaterEqual(result["BPT"], 0.0)
         self.assertLess(result["BPT"], travel_model.routing_delay_seconds)
 
-    def test_runner_builds_impgta_prediction_success_kwargs(self) -> None:
-        """Unified runner kwargs should expose ImpGTA prediction-success controls."""
+    def test_runner_builds_impgta_kwargs_without_prediction_overrides(self) -> None:
+        """ImpGTA runner kwargs should only carry batch_size — prediction params no longer drive behavior."""
 
         args = SimpleNamespace(
             algorithm="impgta",
+            batch_size=30,
             prediction_window_seconds=180,
             prediction_success_rate=0.6,
             prediction_sampling_seed=17,
@@ -703,9 +700,7 @@ class MetricAlignmentTest(unittest.TestCase):
 
         kwargs = build_algorithm_kwargs(args)
 
-        self.assertEqual(kwargs["prediction_window_seconds"], 180)
-        self.assertEqual(kwargs["prediction_success_rate"], 0.6)
-        self.assertEqual(kwargs["prediction_sampling_seed"], 17)
+        self.assertEqual(kwargs, {"batch_size": 30})
 
     def test_paper_runner_overrides_include_impgta_prediction_controls(self) -> None:
         """Paper point/split execution should forward ImpGTA prediction controls into the point runner."""
@@ -797,9 +792,11 @@ class MetricAlignmentTest(unittest.TestCase):
     def test_basegta_bpt_is_mean_assignment_time_per_task(self) -> None:
         """BaseGTA BPT should report mean assignment-decision time per task epoch."""
 
+        # Use d_time well past the batch_end (30s default) so both arrivals
+        # survive expiry-filter and trigger the per-task BPT accounting.
         tasks = [
-            SimpleNamespace(num="t1", fare=10.0, s_time=0.0, d_time=10.0, weight=1.0, l_node="p1"),
-            SimpleNamespace(num="t2", fare=10.0, s_time=0.0, d_time=10.0, weight=1.0, l_node="p2"),
+            SimpleNamespace(num="t1", fare=10.0, s_time=0.0, d_time=300.0, weight=1.0, l_node="p1"),
+            SimpleNamespace(num="t2", fare=10.0, s_time=0.0, d_time=300.0, weight=1.0, l_node="p2"),
         ]
         courier = SimpleNamespace(num=1, location="start", re_schedule=[], re_weight=0.0, max_weight=5.0)
         environment = SimpleNamespace(
@@ -1301,6 +1298,100 @@ class MetricAlignmentTest(unittest.TestCase):
         self.assertEqual(captured["batch_size"], 45)
         self.assertNotIn("decision_trace", summary["metrics"])
         self.assertEqual(summary["decision_trace"], [{"parcel_id": "p1"}])
+
+
+    def test_gta_legacy_insertion_rejects_downstream_deadline_violation(self) -> None:
+        """GTA must reject an insertion when its queued successor would become late."""
+
+        existing = SimpleNamespace(num="old", l_node="existing", d_time=4.0, reach_time=4.0)
+        task = SimpleNamespace(num="new", l_node="new", s_time=0.0, d_time=3.0, weight=1.0, fare=10.0)
+        courier = SimpleNamespace(num=1, location="start", re_schedule=[existing], re_weight=0.0, max_weight=5.0)
+        travel_model = DistanceMatrixTravelModel(
+            distances={
+                ("start", "existing"): 4.0, ("existing", "start"): 4.0,
+                ("start", "new"): 1.0, ("new", "start"): 1.0,
+                ("new", "existing"): 4.0, ("existing", "new"): 4.0,
+            },
+            speed=1.0,
+        )
+
+        self.assertIsNone(find_best_legacy_insertion_option(task, courier, travel_model, now=0))
+
+    def test_shared_legacy_insertion_rejects_downstream_deadline_violation(self) -> None:
+        """Shared MRA/RamCOM feasibility must preserve deadlines of queued stops."""
+
+        existing = SimpleNamespace(num="old", l_node="existing", d_time=4.0, reach_time=4.0)
+        task = SimpleNamespace(num="new", l_node="new", s_time=0.0, d_time=3.0, weight=1.0, fare=10.0)
+        courier = SimpleNamespace(num=1, location="start", re_schedule=[existing], re_weight=0.0, max_weight=5.0)
+        travel_model = DistanceMatrixTravelModel(
+            distances={
+                ("start", "existing"): 4.0, ("existing", "start"): 4.0,
+                ("start", "new"): 1.0, ("new", "start"): 1.0,
+                ("new", "existing"): 4.0, ("existing", "new"): 4.0,
+            },
+            speed=1.0,
+        )
+
+        insertions = build_legacy_feasible_insertions(
+            task=task, couriers=[courier], travel_model=travel_model, now=0,
+            service_radius_meters=None, courier_id_prefix="shared",
+        )
+
+        self.assertEqual(insertions, [])
+
+    def test_basegta_dispatches_arrivals_at_default_batch_end(self) -> None:
+        """BaseGTA should observe tasks only at its CAPA-aligned batch boundary."""
+
+        task = SimpleNamespace(num="t1", fare=10.0, s_time=0.0, d_time=1000.0, weight=1.0, l_node="p1")
+        environment = SimpleNamespace(
+            tasks=[task], local_couriers=[], partner_couriers_by_platform={},
+            movement_callback=_complete_routes, station_set=[],
+            travel_model=SimpleNamespace(distance=lambda start, end: 0.0, travel_time=lambda start, end: 0.0),
+            service_radius_km=None,
+        )
+        observed_now: list[int] = []
+
+        def record_now(**kwargs: object) -> None:
+            observed_now.append(int(kwargs["now"]))
+            return None
+
+        with patch("baselines.gta.select_available_courier_for_task", side_effect=record_now):
+            run_basegta_baseline_environment(environment=environment)
+
+        self.assertEqual(observed_now, [30])
+
+    def test_impgta_dispatches_arrivals_at_default_batch_end(self) -> None:
+        """ImpGTA should observe tasks only at its CAPA-aligned batch boundary."""
+
+        task = SimpleNamespace(num="t1", fare=10.0, s_time=0.0, d_time=1000.0, weight=1.0, l_node="p1")
+        environment = SimpleNamespace(
+            tasks=[task], local_couriers=[], partner_couriers_by_platform={}, partner_tasks_by_platform={},
+            movement_callback=_complete_routes, station_set=[],
+            travel_model=SimpleNamespace(distance=lambda start, end: 0.0, travel_time=lambda start, end: 0.0),
+            service_radius_km=None,
+        )
+        observed_now: list[int] = []
+
+        def record_now(**kwargs: object) -> None:
+            observed_now.append(int(kwargs["now"]))
+            return None
+
+        with patch("baselines.gta.select_available_courier_for_task", side_effect=record_now):
+            run_impgta_baseline_environment(environment=environment)
+
+        self.assertEqual(observed_now, [30])
+
+    def test_runner_builds_gta_batch_size_kwargs(self) -> None:
+        """The root runner should pass the comparison batch size into GTA runners."""
+
+        base_args = SimpleNamespace(algorithm="basegta", batch_size=45)
+        imp_args = SimpleNamespace(
+            algorithm="impgta", batch_size=45, prediction_window_seconds=180,
+            prediction_success_rate=0.8, prediction_sampling_seed=1,
+        )
+
+        self.assertEqual(build_algorithm_kwargs(base_args), {"batch_size": 45})
+        self.assertEqual(build_algorithm_kwargs(imp_args)["batch_size"], 45)
 
 
 if __name__ == "__main__":

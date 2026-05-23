@@ -33,7 +33,9 @@ class RLCAPAStage1AlgorithmRunner(AlgorithmRunner):
         entropy_decay_episodes: int | None = None,
         max_grad_norm: float = 0.5,
         normalize_advantages: bool = True,
+        warmup_episodes: int = 0,
         future_feature_window_seconds: int = 300,
+        use_service_slack: bool = False,
         device: str | None = None,
     ) -> None:
         """Store stage-1 ablation hyperparameters."""
@@ -52,7 +54,9 @@ class RLCAPAStage1AlgorithmRunner(AlgorithmRunner):
         self._entropy_decay_episodes = entropy_decay_episodes
         self._max_grad_norm = max_grad_norm
         self._normalize_advantages = normalize_advantages
+        self._warmup_episodes = warmup_episodes
         self._future_feature_window_seconds = future_feature_window_seconds
+        self._use_service_slack = use_service_slack
         self._device = device
 
     def run(
@@ -78,6 +82,7 @@ class RLCAPAStage1AlgorithmRunner(AlgorithmRunner):
             batch_actions=self._batch_actions,
             step_seconds=self._step_seconds,
             future_feature_window_seconds=self._future_feature_window_seconds,
+            use_service_slack=self._use_service_slack,
         )
         training_config = RLTrainingConfig(
             episodes=self._episodes,
@@ -90,6 +95,7 @@ class RLCAPAStage1AlgorithmRunner(AlgorithmRunner):
             entropy_decay_episodes=self._entropy_decay_episodes,
             max_grad_norm=self._max_grad_norm,
             normalize_advantages=self._normalize_advantages,
+            warmup_episodes=self._warmup_episodes,
             device=self._device,
         )
         training_summary = train_stage1_rl_capa(
@@ -123,7 +129,9 @@ def build_rl_capa_stage1_runner(
     entropy_coeff: float = 0.01,
     max_grad_norm: float = 0.5,
     normalize_advantages: bool = True,
+    warmup_episodes: int = 0,
     future_feature_window_seconds: int = 300,
+    use_service_slack: bool = False,
     device: str | None = None,
 ) -> RLCAPAStage1AlgorithmRunner:
     """Build a stage-1-only RL-CAPA ablation runner."""
@@ -143,6 +151,8 @@ def build_rl_capa_stage1_runner(
         entropy_decay_episodes=entropy_decay_episodes,
         max_grad_norm=max_grad_norm,
         normalize_advantages=normalize_advantages,
+        warmup_episodes=warmup_episodes,
         future_feature_window_seconds=future_feature_window_seconds,
+        use_service_slack=use_service_slack,
         device=device,
     )

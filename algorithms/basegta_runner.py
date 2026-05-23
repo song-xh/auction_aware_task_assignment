@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
-from baselines.gta import run_basegta_baseline_environment
+from baselines.gta import DEFAULT_GTA_BATCH_SIZE_SECONDS, run_basegta_baseline_environment
 
 from .base import AlgorithmRunner
 from .summary_utils import build_algorithm_summary
@@ -16,8 +16,13 @@ from .summary_utils import build_algorithm_summary
 class BaseGTARunner(AlgorithmRunner):
     """Run BaseGTA through the unified environment interface."""
 
-    def __init__(self, baseline_runner: Callable[..., dict[str, Any]] | None = None) -> None:
-        """Store the optional injected baseline runner."""
+    def __init__(
+        self,
+        batch_size: int = DEFAULT_GTA_BATCH_SIZE_SECONDS,
+        baseline_runner: Callable[..., dict[str, Any]] | None = None,
+    ) -> None:
+        """Store the batch size and optional injected baseline runner."""
+        self._batch_size = batch_size
         self._baseline_runner = baseline_runner or run_basegta_baseline_environment
 
     def run(
@@ -28,7 +33,11 @@ class BaseGTARunner(AlgorithmRunner):
     ) -> dict[str, Any]:
         """Execute BaseGTA against a prepared Chengdu environment and return a summary."""
         started_at = datetime.now().astimezone()
-        metrics = self._baseline_runner(environment=environment, progress_callback=progress_callback)
+        metrics = self._baseline_runner(
+            environment=environment,
+            batch_size=self._batch_size,
+            progress_callback=progress_callback,
+        )
         finished_at = datetime.now().astimezone()
         summary = build_algorithm_summary(
             algorithm="basegta",
@@ -58,7 +67,8 @@ class BaseGTARunner(AlgorithmRunner):
 
 
 def build_basegta_runner(
+    batch_size: int = DEFAULT_GTA_BATCH_SIZE_SECONDS,
     baseline_runner: Callable[..., dict[str, Any]] | None = None,
 ) -> BaseGTARunner:
     """Build the unified BaseGTA runner."""
-    return BaseGTARunner(baseline_runner=baseline_runner)
+    return BaseGTARunner(batch_size=batch_size, baseline_runner=baseline_runner)

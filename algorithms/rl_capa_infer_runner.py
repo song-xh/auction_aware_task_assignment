@@ -34,7 +34,9 @@ class RLCAPAInferenceAlgorithmRunner(AlgorithmRunner):
         entropy_decay_episodes: int | None = None,
         max_grad_norm: float = 0.5,
         normalize_advantages: bool = True,
+        warmup_episodes: int = 0,
         future_feature_window_seconds: int = 300,
+        use_service_slack: bool = False,
         device: str | None = None,
     ) -> None:
         """Store the checkpoint path and RL config required for inference.
@@ -74,7 +76,9 @@ class RLCAPAInferenceAlgorithmRunner(AlgorithmRunner):
         self._entropy_decay_episodes = entropy_decay_episodes
         self._max_grad_norm = max_grad_norm
         self._normalize_advantages = normalize_advantages
+        self._warmup_episodes = warmup_episodes
         self._future_feature_window_seconds = future_feature_window_seconds
+        self._use_service_slack = use_service_slack
         self._device = device
 
     def run(
@@ -115,6 +119,7 @@ class RLCAPAInferenceAlgorithmRunner(AlgorithmRunner):
             batch_actions=self._batch_actions,
             step_seconds=self._step_seconds,
             future_feature_window_seconds=self._future_feature_window_seconds,
+            use_service_slack=self._use_service_slack,
         )
         training_config = RLTrainingConfig(
             episodes=self._episodes,
@@ -127,6 +132,7 @@ class RLCAPAInferenceAlgorithmRunner(AlgorithmRunner):
             entropy_decay_episodes=self._entropy_decay_episodes,
             max_grad_norm=self._max_grad_norm,
             normalize_advantages=self._normalize_advantages,
+            warmup_episodes=self._warmup_episodes,
             device=self._device,
         )
         evaluation_summary = evaluate_rl_capa(
@@ -142,6 +148,7 @@ class RLCAPAInferenceAlgorithmRunner(AlgorithmRunner):
             "checkpoint_dir": str(self._checkpoint_dir),
             "evaluation": evaluation_summary,
             "metrics": evaluation_summary["metrics"],
+            "decision_trace": list(evaluation_summary.get("decision_trace", [])),
             "plots": {
                 "evaluation": dict(evaluation_summary.get("plots", {})),
             },
@@ -150,6 +157,7 @@ class RLCAPAInferenceAlgorithmRunner(AlgorithmRunner):
                 "step_seconds": self._step_seconds,
                 "future_feature_window_seconds": self._future_feature_window_seconds,
                 "discount_factor": self._discount_factor,
+                "use_service_slack": self._use_service_slack,
             },
         }
         with (normalized_output_dir / "summary.json").open("w", encoding="utf-8") as handle:
@@ -173,7 +181,9 @@ def build_rl_capa_infer_runner(
     entropy_decay_episodes: int | None = None,
     max_grad_norm: float = 0.5,
     normalize_advantages: bool = True,
+    warmup_episodes: int = 0,
     future_feature_window_seconds: int = 300,
+    use_service_slack: bool = False,
     device: str | None = None,
 ) -> RLCAPAInferenceAlgorithmRunner:
     """Build one inference-only RL-CAPA runner."""
@@ -194,6 +204,8 @@ def build_rl_capa_infer_runner(
         entropy_decay_episodes=entropy_decay_episodes,
         max_grad_norm=max_grad_norm,
         normalize_advantages=normalize_advantages,
+        warmup_episodes=warmup_episodes,
         future_feature_window_seconds=future_feature_window_seconds,
+        use_service_slack=use_service_slack,
         device=device,
     )

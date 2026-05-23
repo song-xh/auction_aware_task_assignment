@@ -81,6 +81,30 @@ def _add_common_environment_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--courier-service-score", type=float, default=DEFAULT_COURIER_SERVICE_SCORE, help="Courier service-score proxy used by CAPA/DAPA bids.")
     parser.add_argument("--platform-quality-start", type=float, default=DEFAULT_PLATFORM_QUALITY_START, help="Initial cooperating-platform quality proxy f(P1).")
     parser.add_argument("--platform-quality-step", type=float, default=DEFAULT_PLATFORM_QUALITY_STEP, help="Per-platform quality decrement for generated f(P).")
+    parser.add_argument(
+        "--deadline-seconds",
+        type=int,
+        default=None,
+        help="Override dataset d_time for every task with s_time + deadline_seconds. Must be positive.",
+    )
+    parser.add_argument(
+        "--courier-speed-kmh",
+        type=float,
+        default=30.0,
+        help="Courier travel speed in km/h. Default 30 (urban car). Applied across CAPA travel model and legacy Framework_ChengDu/MethodUtils_ChengDu VELOCITY.",
+    )
+    parser.add_argument(
+        "--delay-seconds",
+        type=float,
+        default=None,
+        help="Exp-7 robustness: processing delay in seconds added to parcels whose true arrival falls inside --delay-window. Must be non-negative.",
+    )
+    parser.add_argument(
+        "--delay-window",
+        type=str,
+        default=None,
+        help="Exp-7 robustness: inclusive `start,end` window of true arrival times in seconds whose parcels receive --delay-seconds. Required when --delay-seconds is set.",
+    )
     parser.add_argument("--min-batch-size", type=int, default=10, help="Lower bound of the RL-CAPA batch-size action space.")
     parser.add_argument("--max-batch-size", type=int, default=20, help="Upper bound of the RL-CAPA batch-size action space.")
     parser.add_argument("--rl-batch-actions", type=int, nargs="+", default=None, help="Optional explicit RL-CAPA batch-duration action set in seconds, for example `10 15 20`.")
@@ -95,7 +119,14 @@ def _add_common_environment_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--rl-entropy-decay-episodes", type=int, default=None, help="Number of episodes over which entropy linearly decays from start to end.")
     parser.add_argument("--rl-max-grad-norm", type=float, default=0.5, help="Gradient clipping threshold for RL-CAPA.")
     parser.add_argument("--rl-disable-advantage-normalization", action="store_true", help="Disable RL-CAPA actor advantage standardization for ablation runs.")
+    parser.add_argument(
+        "--rl-warmup-episodes",
+        type=int,
+        default=0,
+        help="Number of normalizer-only warmup episodes run before policy training. Stabilizes input distribution under sparse-reward / tight-deadline settings.",
+    )
     parser.add_argument("--rl-future-feature-window-seconds", type=int, default=300, help="True future window in seconds used by RL-CAPA stage-1 features.")
+    parser.add_argument("--rl-use-service-slack", action="store_true", help="Append normalized local service slack to the RL-CAPA Stage-2 state.")
     parser.add_argument("--rl-checkpoint-dir", default=None, help="Checkpoint directory used by eval-only RL-CAPA inference runs.")
     parser.add_argument("--rl-device", default=None, help="Optional torch device override for RL-CAPA, for example `cpu` or `cuda`.")
     parser.add_argument(
@@ -123,12 +154,11 @@ def build_algorithm_kwargs(args: argparse.Namespace) -> dict[str, Any]:
     """Translate parsed CLI arguments into algorithm-specific runner configuration."""
     if args.algorithm in {"capa", "greedy", "mra", "ramcom"}:
         return {"batch_size": args.batch_size}
-    if args.algorithm == "impgta":
-        return {
-            "prediction_window_seconds": args.prediction_window_seconds,
-            "prediction_success_rate": args.prediction_success_rate,
-            "prediction_sampling_seed": args.prediction_sampling_seed,
-        }
+    if args.algorithm in {"basegta", "impgta"}:
+        # impgta now shares the CAPA-aligned batch-end flow with basegta; its
+        # prediction-window kwargs are no longer forwarded so the comparison
+        # isolates algorithm differences from env-side heuristics.
+        return {"batch_size": args.batch_size}
     if args.algorithm in {"rl-capa", "rl-capa-infer", "rl-capa-stage1", "rl-capa-ablation"}:
         kwargs = {
             "min_batch_size": args.min_batch_size,
@@ -145,7 +175,9 @@ def build_algorithm_kwargs(args: argparse.Namespace) -> dict[str, Any]:
             "entropy_decay_episodes": args.rl_entropy_decay_episodes,
             "max_grad_norm": args.rl_max_grad_norm,
             "normalize_advantages": not args.rl_disable_advantage_normalization,
+            "warmup_episodes": args.rl_warmup_episodes,
             "future_feature_window_seconds": args.rl_future_feature_window_seconds,
+            "use_service_slack": args.rl_use_service_slack,
             "device": args.rl_device,
         }
         if args.algorithm == "rl-capa-infer":
@@ -167,7 +199,9 @@ def build_algorithm_kwargs(args: argparse.Namespace) -> dict[str, Any]:
             "entropy_decay_episodes": args.rl_entropy_decay_episodes,
             "max_grad_norm": args.rl_max_grad_norm,
             "normalize_advantages": not args.rl_disable_advantage_normalization,
+            "warmup_episodes": args.rl_warmup_episodes,
             "future_feature_window_seconds": args.rl_future_feature_window_seconds,
+            "use_service_slack": args.rl_use_service_slack,
             "device": args.rl_device,
         }
     return {}
@@ -207,7 +241,23 @@ def _run_single_experiment(args: argparse.Namespace) -> int:
         courier_service_score=args.courier_service_score,
         platform_quality_start=args.platform_quality_start,
         platform_quality_step=args.platform_quality_step,
+        deadline_seconds=args.deadline_seconds,
+        courier_speed_kmh=args.courier_speed_kmh,
     )
+    if (args.delay_seconds is None) != (args.delay_window is None):
+        print(
+            "Both --delay-seconds and --delay-window must be provided together.",
+            file=sys.stderr,
+        )
+        return 2
+    if args.delay_seconds is not None:
+        from experiments.deadline_disturbance import apply_processing_delay, parse_delay_window
+
+        apply_processing_delay(
+            environment.tasks,
+            delay_seconds=float(args.delay_seconds),
+            window=parse_delay_window(args.delay_window),
+        )
     runner = build_algorithm_runner(args.algorithm, **build_algorithm_kwargs(args))
     try:
         summary = runner.run(
@@ -294,6 +344,8 @@ def _build_fixed_config(args: argparse.Namespace) -> dict[str, Any]:
         "courier_service_score": args.courier_service_score,
         "platform_quality_start": args.platform_quality_start,
         "platform_quality_step": args.platform_quality_step,
+        "deadline_seconds": args.deadline_seconds,
+        "courier_speed_kmh": args.courier_speed_kmh,
         "prediction_window_seconds": args.prediction_window_seconds,
         "prediction_success_rate": args.prediction_success_rate,
         "prediction_sampling_seed": args.prediction_sampling_seed,

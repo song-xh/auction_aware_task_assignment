@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from algorithms.summary_utils import build_decision_trace
 from capa.models import CAPAConfig
 from experiments.seeding import ChengduEnvironmentSeed
 
@@ -65,8 +66,28 @@ def evaluate_rl_capa(
         trainer=trainer,
         batch_action_values=rl_config.batch_action_values(),
     )
+    delivered_assignments = list(env.delivered_assignments())
+    delivered_ids = {
+        str(getattr(assignment.parcel, "parcel_id", ""))
+        for assignment in delivered_assignments
+    }
+    timed_out_assignments_objects = [
+        assignment for assignment in env.accepted_assignments()
+        if str(getattr(assignment.parcel, "parcel_id", "")) not in delivered_ids
+    ]
+    accepted_ids = {
+        str(getattr(assignment.parcel, "parcel_id", ""))
+        for assignment in env.accepted_assignments()
+    }
+    unmatched_ids = [
+        str(getattr(task, "num"))
+        for task in env.terminal_unassigned_tasks()
+        if str(getattr(task, "num")) not in accepted_ids
+    ]
     summary = {
         "algorithm": "rl-capa",
+        "variant": "rl-capa-svc" if rl_config.use_service_slack else "rl-capa",
+        "use_service_slack": rl_config.use_service_slack,
         "metrics": {
             "TR": result.total_revenue,
             "CR": result.completion_rate,
@@ -76,6 +97,11 @@ def evaluate_rl_capa(
             "timed_out_parcels": len(env.timed_out_parcels()),
             **env.disposition_breakdown(),
         },
+        "decision_trace": build_decision_trace(
+            delivered_assignments=delivered_assignments,
+            timed_out_assignments=timed_out_assignments_objects,
+            unassigned_parcel_ids=unmatched_ids,
+        ),
     }
     output_dir.mkdir(parents=True, exist_ok=True)
     summary["plots"] = plot_evaluation_curves(

@@ -78,11 +78,16 @@ class Stage2RLCAPATrainer:
         self.config = config
         self.fixed_batch_size = fixed_batch_size
         self.device = select_torch_device(config.device if device is None else device)
-        self.pi2 = CrossOrNotActor(state_dim=STAGE2_STATE_DIM, hidden_dim=128).to(self.device)
-        self.v2 = ConditionalValueCritic(state_dim=STAGE2_STATE_DIM, hidden_dim=128).to(self.device)
+        self.stage2_state_dim = (
+            int(env.stage2_state_dim())
+            if hasattr(env, "stage2_state_dim")
+            else STAGE2_STATE_DIM
+        )
+        self.pi2 = CrossOrNotActor(state_dim=self.stage2_state_dim, hidden_dim=128).to(self.device)
+        self.v2 = ConditionalValueCritic(state_dim=self.stage2_state_dim, hidden_dim=128).to(self.device)
         self.opt_pi2 = torch.optim.Adam(self.pi2.parameters(), lr=config.lr_actor)
         self.opt_v2 = torch.optim.Adam(self.v2.parameters(), lr=config.lr_critic)
-        self.norm_s2 = RunningNormalizer(dim=STAGE2_STATE_DIM)
+        self.norm_s2 = RunningNormalizer(dim=self.stage2_state_dim)
         self.history: list[Stage2EpisodeLog] = []
 
     def train(
@@ -162,7 +167,7 @@ class Stage2RLCAPATrainer:
                 parcel.parcel_id: int(action.item())
                 for parcel, action in zip(batch_parcels, actions_2)
             }
-            s2_agg_raw = aggregate_stage2_states(s2_list)
+            s2_agg_raw = aggregate_stage2_states(s2_list, state_dim=self.stage2_state_dim)
             s2_agg_norm = self.norm_s2.normalize(s2_agg_raw)
             s2_agg_tensor = torch.from_numpy(s2_agg_norm).to(self.device)
             log_prob_2 = dist2.log_prob(actions_2).sum()
@@ -171,7 +176,7 @@ class Stage2RLCAPATrainer:
             acted = True
         else:
             decisions = {}
-            s2_agg_tensor = torch.zeros(STAGE2_STATE_DIM, device=self.device)
+            s2_agg_tensor = torch.zeros(self.stage2_state_dim, device=self.device)
             log_prob_2 = torch.tensor(0.0, device=self.device)
             entropy_2 = torch.tensor(0.0, device=self.device)
             num_cross = 0

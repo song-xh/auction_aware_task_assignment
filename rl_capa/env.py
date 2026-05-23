@@ -17,8 +17,10 @@ from typing import Any, Dict, List, Mapping, Sequence, Tuple
 
 import numpy as np
 
+from capa.cama import is_courier_available, is_feasible_local_match, run_cama
+from capa.utility import find_best_local_insertion
+from capa.constraints import is_within_service_radius
 from capa.models import Assignment, CAPAConfig, Courier, Parcel
-from capa.cama import run_cama
 from env.chengdu import (
     ChengduBatchRuntime,
     ChengduEnvironment,
@@ -38,7 +40,7 @@ from env.chengdu import (
 )
 from experiments.seeding import ChengduEnvironmentSeed, clone_environment_from_seed
 from rl_capa.config import RLCAPAConfig
-from rl_capa.state_builder import build_stage1_state, build_stage2_states
+from rl_capa.state_builder import build_stage1_state, build_stage2_states, get_stage2_state_dim
 
 
 @dataclass(frozen=True)
@@ -180,6 +182,11 @@ class RLCAPAEnv:
         prepared_batch = self._require_current_batch()
         return [legacy_task_to_parcel(task) for task in prepared_batch.eligible_tasks]
 
+    def stage2_state_dim(self) -> int:
+        """Return the effective Stage-2 state dimension for this environment."""
+
+        return get_stage2_state_dim(self._rl_config.use_service_slack)
+
     def get_stage2_states(self, parcels: Sequence[Parcel] | None = None) -> List[np.ndarray]:
         """Construct per-parcel second-stage states for the current full batch.
 
@@ -200,6 +207,22 @@ class RLCAPAEnv:
             if self._cross_bid_history
             else 0.0
         )
+        normalized_service_slacks = (
+            self._build_normalized_service_slacks(
+                parcels=target_parcels,
+                local_couriers=local_couriers,
+                current_time=runtime.current_time,
+            )
+            if self._rl_config.use_service_slack
+            else None
+        )
+        local_feasible_flags, local_best_detour_ratios = (
+            self._build_local_match_features(
+                parcels=target_parcels,
+                local_couriers=local_couriers,
+                current_time=runtime.current_time,
+            )
+        )
         return build_stage2_states(
             unassigned_parcels=target_parcels,
             local_couriers=local_couriers,
@@ -208,6 +231,9 @@ class RLCAPAEnv:
             batch_size=self._current_batch_duration,
             local_payment_ratio=self._capa_config.local_payment_ratio_zeta,
             avg_cross_bid=avg_cross_bid,
+            normalized_service_slacks=normalized_service_slacks,
+            local_feasible_flags=local_feasible_flags,
+            local_best_detour_ratios=local_best_detour_ratios,
         )
 
     def apply_stage2_decisions(self, decisions: Dict[str, int]) -> float:
@@ -249,14 +275,21 @@ class RLCAPAEnv:
             else:
                 raise ValueError(f"Invalid action {action} for parcel {getattr(task, 'num')}.")
 
-        local_assignments, unresolved_local_tasks = run_chengdu_direct_local_matching(
+        local_assignments, unresolved_local_tasks = self._match_local_subset_via_cama(
             runtime=runtime,
+            prepared_batch=prepared_batch,
             local_tasks=local_tasks,
-            timing=prepared_batch.timing,
         )
+        # Cascade CAMA leftovers into the same-batch DAPA pool so pi2=0 keeps
+        # CAPA's local guarantee: parcels CAMA cannot place still get one shot
+        # at cross-platform delivery in the current step. Without this cascade
+        # an unmatched pi2=0 parcel rolled to the next batch and frequently
+        # expired against its deadline, which depressed RL-CAPA's TR below the
+        # CAPA baseline.
+        auction_pool = [*auction_tasks, *unresolved_local_tasks]
         cross_assignments = run_chengdu_cross_matching(
             runtime=runtime,
-            auction_tasks=auction_tasks,
+            auction_tasks=auction_pool,
             timing=prepared_batch.timing,
         )
         for assignment in cross_assignments:
@@ -265,8 +298,7 @@ class RLCAPAEnv:
 
         cross_assigned_ids = {assignment.parcel.parcel_id for assignment in cross_assignments}
         unresolved_tasks = [
-            *unresolved_local_tasks,
-            *(task for task in auction_tasks if str(getattr(task, "num")) not in cross_assigned_ids),
+            task for task in auction_pool if str(getattr(task, "num")) not in cross_assigned_ids
         ]
         processing_time_seconds = (
             0.0
@@ -289,6 +321,60 @@ class RLCAPAEnv:
         """Backward-compatible alias for `apply_stage2_decisions`."""
 
         return self.apply_stage2_decisions(decisions)
+
+    def _match_local_subset_via_cama(
+        self,
+        runtime: ChengduBatchRuntime,
+        prepared_batch: PreparedChengduBatch,
+        local_tasks: Sequence[Any],
+    ) -> tuple[list[Assignment], list[Any]]:
+        """Run CAMA on the pi2=local subset and return assignments plus leftovers.
+
+        The shared CAMA implementation handles cross-parcel optimization and
+        Eq.7 threshold pruning that the prior greedy direct matcher skipped.
+        This delivers CAPA's local performance for parcels pi2 keeps on the
+        local platform, ensuring RL-CAPA cannot underperform CAPA on the
+        local-flagged subset.
+
+        Args:
+            runtime: Mutable Chengdu runtime.
+            prepared_batch: Active prepared batch (for timing accumulator reuse).
+            local_tasks: Legacy tasks pi2 routed to local matching.
+
+        Returns:
+            ``(local_assignments, unresolved_local_tasks)`` for cascade to DAPA.
+        """
+
+        if not local_tasks:
+            return [], []
+        sub_prepared = PreparedChengduBatch(
+            batch_index=prepared_batch.batch_index,
+            batch_end_time=prepared_batch.batch_end_time,
+            input_tasks=tuple(local_tasks),
+            eligible_tasks=tuple(local_tasks),
+            expired_tasks=tuple(),
+            timing=prepared_batch.timing,
+        )
+        matching_runtime = build_chengdu_local_matching_runtime(runtime, sub_prepared)
+        cama_result = run_cama(
+            matching_runtime.batch_parcels,
+            matching_runtime.local_snapshots,
+            matching_runtime.distance_matrix,
+            self._capa_config,
+            now=runtime.current_time,
+            service_radius_meters=runtime.service_radius_meters,
+            timing=matching_runtime.timing,
+            insertion_cache=runtime.insertion_cache,
+            geo_index=runtime.geo_index,
+            speed_m_per_s=runtime.speed_m_per_s,
+            candidate_couriers_by_parcel=matching_runtime.local_candidate_couriers_by_parcel,
+            threshold_history=runtime.threshold_history,
+        )
+        return commit_chengdu_local_assignments(
+            runtime=runtime,
+            matching_runtime=matching_runtime,
+            cama_result=cama_result,
+        )
 
     def apply_capa_batch(self) -> float:
         """Run the active batch through standard CAPA CAMA/DAPA matching.
@@ -538,6 +624,135 @@ class RLCAPAEnv:
                     )
                 )
         return snapshots
+
+    def _build_local_match_features(
+        self,
+        parcels: Sequence[Parcel],
+        local_couriers: Sequence[Courier],
+        current_time: int,
+    ) -> tuple[list[float], list[float]]:
+        """Compute per-parcel (local_feasible, best_detour_ratio) signals.
+
+        These per-parcel features give pi2 a concrete view of how attractive
+        local matching is for each parcel: whether any local courier can meet
+        the deadline, and how clean the best insertion looks (detour ratio in
+        [0, 1] where 1 is "fits with zero extra travel"). Without them the
+        Stage-2 state averaged courier statistics across the whole batch and
+        every parcel saw identical features, so pi2 could not differentiate.
+
+        Args:
+            parcels: Per-parcel Parcel projections currently eligible.
+            local_couriers: Local courier snapshots.
+            current_time: Current Chengdu runtime time.
+
+        Returns:
+            Tuple ``(feasible_flags, best_detour_ratios)`` aligned with
+            ``parcels``. Feasibility flag is 1.0 if any local courier can
+            serve the parcel before its deadline; ratio defaults to 0.0 when
+            no courier is feasible.
+        """
+
+        runtime = self._require_runtime()
+        feasible_flags: list[float] = []
+        best_detour_ratios: list[float] = []
+        for parcel in parcels:
+            best_ratio = float("-inf")
+            any_feasible = False
+            for courier in local_couriers:
+                if not is_feasible_local_match(
+                    parcel,
+                    courier,
+                    runtime.persistent_travel_model,
+                    current_time,
+                    service_radius_meters=runtime.service_radius_meters,
+                    geo_index=runtime.geo_index,
+                    speed_m_per_s=runtime.speed_m_per_s,
+                ):
+                    continue
+                any_feasible = True
+                ratio, _ = find_best_local_insertion(
+                    parcel,
+                    courier,
+                    runtime.persistent_travel_model,
+                    insertion_cache=runtime.insertion_cache,
+                    geo_index=runtime.geo_index,
+                )
+                if ratio > best_ratio:
+                    best_ratio = ratio
+            feasible_flags.append(1.0 if any_feasible else 0.0)
+            best_detour_ratios.append(max(0.0, best_ratio) if any_feasible else 0.0)
+        return feasible_flags, best_detour_ratios
+
+    def _build_normalized_service_slacks(
+        self,
+        parcels: Sequence[Parcel],
+        local_couriers: Sequence[Courier],
+        current_time: int,
+    ) -> list[float]:
+        """Compute one normalized service-slack feature per parcel."""
+
+        if not parcels:
+            return []
+        horizon_seconds = max(
+            1.0,
+            max(float(parcel.deadline) - float(current_time) for parcel in parcels),
+        )
+        return [
+            self._normalize_service_slack(
+                parcel=parcel,
+                local_couriers=local_couriers,
+                current_time=current_time,
+                horizon_seconds=horizon_seconds,
+            )
+            for parcel in parcels
+        ]
+
+    def _normalize_service_slack(
+        self,
+        parcel: Parcel,
+        local_couriers: Sequence[Courier],
+        current_time: int,
+        horizon_seconds: float,
+    ) -> float:
+        """Compute one clipped service-slack value in [-1, 1]."""
+
+        min_service_time = self._min_local_service_time(
+            parcel=parcel,
+            local_couriers=local_couriers,
+        )
+        if min_service_time is None:
+            return -1.0
+        service_slack = float(parcel.deadline) - float(current_time) - min_service_time
+        return float(np.clip(service_slack / horizon_seconds, -1.0, 1.0))
+
+    def _min_local_service_time(
+        self,
+        parcel: Parcel,
+        local_couriers: Sequence[Courier],
+    ) -> float | None:
+        """Estimate the minimum direct local travel time for one parcel."""
+
+        runtime = self._require_runtime()
+        candidate_travel_times: list[float] = []
+        for courier in local_couriers:
+            if not is_courier_available(courier, runtime.current_time):
+                continue
+            if courier.current_load + parcel.weight > courier.capacity:
+                continue
+            if not is_within_service_radius(
+                courier.current_location,
+                parcel.location,
+                runtime.persistent_travel_model,
+                runtime.service_radius_meters,
+                geo_index=runtime.geo_index,
+            ):
+                continue
+            candidate_travel_times.append(
+                float(runtime.persistent_travel_model.travel_time(courier.current_location, parcel.location))
+            )
+        if not candidate_travel_times:
+            return None
+        return min(candidate_travel_times)
 
     def _drain_new_delivered_revenue(self) -> float:
         """Sum on-time local-platform revenue from outcomes since last drain.
