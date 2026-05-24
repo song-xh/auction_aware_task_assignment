@@ -31,6 +31,14 @@ class BatchSizeActor(nn.Module):
             state_dim: Dimension of first-stage state (default 4).
             num_actions: Number of discrete batch-size actions |A_b|.
             hidden_dim: Hidden layer width.
+
+        Notes:
+            The final layer is zero-initialized so pi1 starts with a uniform
+            distribution over all batch-size actions. Default PyTorch init
+            produces *random* logits, which together with sparse per-step
+            advantage signals frequently lets one action dominate by
+            accident on early episodes and never recover — the prior
+            training run collapsed to ``a_t^(1) = 10s`` for every step.
         """
         super().__init__()
         self.net = nn.Sequential(
@@ -40,6 +48,9 @@ class BatchSizeActor(nn.Module):
             nn.ReLU(),
             nn.Linear(hidden_dim, num_actions),
         )
+        final = self.net[-1]
+        nn.init.zeros_(final.weight)
+        nn.init.zeros_(final.bias)
 
     def forward(self, state: torch.Tensor) -> Categorical:
         """Compute action distribution.
@@ -60,14 +71,33 @@ class CrossOrNotActor(nn.Module):
     Input:  s_{t,i}^(2) in R^9 (already includes Delta_b = a_t^(1))
     Hidden: 2-layer MLP, 128 units, ReLU
     Output: sigmoid -> P(a_{t,i} = 1)
+
+    The final layer is bias-initialized so the *default* per-parcel decision
+    starts close to "local" (sigmoid(-2.0) ≈ 0.12). Without this bias, default
+    PyTorch init yields ~0.5 cross probability, which under the env's
+    pi2=0/CAMA-cascade design is a much worse starting point than CAPA's
+    "always local first" policy: ~50% of parcels skip the higher-revenue local
+    matching and end up taking a smaller cross-platform share. With a low
+    initial cross probability, RL begins near the CAPA-equivalent operating
+    point and only learns *deltas* (when to switch a parcel to cross because
+    local is at risk under delay or capacity pressure).
     """
 
-    def __init__(self, state_dim: int = STAGE2_STATE_DIM, hidden_dim: int = 128) -> None:
+    def __init__(
+        self,
+        state_dim: int = STAGE2_STATE_DIM,
+        hidden_dim: int = 128,
+        init_cross_logit_bias: float = -2.0,
+    ) -> None:
         """Initialize pi2.
 
         Args:
             state_dim: Dimension of per-parcel state (default 9).
             hidden_dim: Hidden layer width.
+            init_cross_logit_bias: Final-layer bias for the cross logit.
+                Negative biases tilt the default decision toward local,
+                positive biases toward cross. ``-2.0`` ⇒ p(cross) ≈ 0.12 at
+                init.
         """
         super().__init__()
         self.net = nn.Sequential(
@@ -77,6 +107,9 @@ class CrossOrNotActor(nn.Module):
             nn.ReLU(),
             nn.Linear(hidden_dim, 1),
         )
+        final = self.net[-1]
+        nn.init.zeros_(final.weight)
+        nn.init.constant_(final.bias, float(init_cross_logit_bias))
 
     def forward(self, state: torch.Tensor) -> Bernoulli:
         """Compute per-parcel cross probability.

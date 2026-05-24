@@ -882,6 +882,29 @@ python -m experiments.run_chengdu_exp7_fixed_delay_compare \
 
 这里的 compare 只针对 `delay_window` 内被标记为 `is_delayed=True` 的包裹，而不是全部包裹。
 
+### 评估侧两个隐藏 bug + 修复（2026-05-24）
+
+排查 RL-CAPA 训练时 reward~810 但 infer TR=490 的「评估远低于训练」诡异现象时发现两个独立 bug：
+
+**Bug 1 — `evaluate_core.evaluate` 用 argmax/threshold 评估随机策略**：训练用 `Bernoulli.sample()` 随机采样动作，eval 用 `(probs > 0.5).long()` 阈值化。当 pi2 没收敛（`entropy_pi2 ≈ ln(2) ≈ 0.687`），probs 在 0.5 附近随机漂移。一旦略 > 0.5，eval 把**所有**包裹都判 cross；训练时只有 ~55%，TR 立刻塌方。
+
+**修复**：`evaluate(eval_stochastic=True)` 默认改为随机采样，匹配训练分布。同时 `evaluate_rl_capa(eval_seeds=5)` 默认跑 5 个种子求平均消除单 trial 噪声。同一 checkpoint 实测 `STOCHASTIC TR=908 vs DETERMIN. TR=464`，差距 100%——这就是「训练高 / infer 低」的全部来源。
+
+**Bug 2 — paper 脚本 `--courier-capacity` / `--service-radius-km` 默认值与 `runner.py` 不一致**：用户用 `runner.py` 训练 → `--courier-capacity` 默认 `None` → 框架默认 75；用 `experiments/run_chengdu_exp7_deadline_delay.py --execution-mode robustness` 评估 → paper 默认 `50.0` / `1.0 km`。同一份 checkpoint 在 capacity=50 + radius=1km 的紧约束环境下评估，等于换了一个 env，TR 自然降几倍。
+
+**修复**：`experiments/paper_chengdu.py` 把 `--courier-capacity` 和 `--service-radius-km` 默认值都改为 `None`，与 `runner.py` 对齐。需要复现 paper 风格的紧约束时，显式传 `--courier-capacity 50 --service-radius-km 1.0`。
+
+**修复后实测**（同一 checkpoint `exp7_rl_train_randomized_300p`，300 parcels / 20 local / 4 platforms × 5 / 720s deadline / delay=30s @ window 20-40）：
+
+| 算法 | baseline TR | delayed TR | TR drop | drop ratio |
+|------|------------:|-----------:|--------:|-----------:|
+| CAPA | 688.86 | 652.53 | 36.34 | 5.3% |
+| RL-CAPA | **823.25** | **801.69** | **21.56** | **2.6%** |
+
+- 基准 RL-CAPA 比 CAPA TR 高 **19.5%**。
+- 受 delay 扰动后 RL-CAPA 仍高出 CAPA **22.8%**，且自身 TR drop 只有 CAPA 的 **59%** —— 满足「delay 鲁棒性 RL-CAPA 优于 CAPA」目标。
+- transition 分析：CAPA 受 delay 后有 `delivered_local__timed_out` (2 个本地被推到 timeout)；RL-CAPA 主动把 8 个原本 local 的延迟包裹切换到 cross (`delivered_local__delivered_cross`)，更好利用新特征 `service_slack` + `local_feasible` 做条件路由。
+
 ### 训练时 delay 域随机化（domain randomization）
 
 实测发现：

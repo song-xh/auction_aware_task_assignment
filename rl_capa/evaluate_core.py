@@ -45,8 +45,9 @@ def evaluate(
     trainer: object,
     batch_action_values: List[int],
     max_steps: int = 500,
+    eval_stochastic: bool = True,
 ) -> EvalResult:
-    """Run one greedy evaluation episode.
+    """Run one evaluation episode.
 
     Args:
         env: RLCAPAEnv instance.
@@ -69,30 +70,41 @@ def evaluate(
     info = env.reset()
     total_parcels = info["total_parcels"]
     step = 0
+    # Match the trainer's stochastic action sampling so reported eval TR is
+    # consistent with the per-episode reward during training. The previous
+    # deterministic eval (pi1.argmax + pi2 threshold 0.5) silently diverged
+    # from training reward whenever pi2 had not converged to a bimodal
+    # policy: a marginal p=0.55 pushes every parcel to cross at threshold
+    # but only 55% during stochastic training, producing a multi-hundred-TR
+    # gap on the same checkpoint. The greedy variant remains accessible
+    # via ``eval_stochastic = False`` for sanity checks.
 
     with torch.no_grad():
         while not env.is_done() and step < max_steps:
             step += 1
 
-            # Stage 1: argmax batch size
             s1_raw = env.get_stage1_state()
             s1_norm = norm_s1.normalize(s1_raw)
             s1_tensor = torch.from_numpy(s1_norm).to(device)
             dist1 = pi1(s1_tensor)
-            a1_index = dist1.probs.argmax().item()
+            if eval_stochastic:
+                a1_index = int(dist1.sample().item())
+            else:
+                a1_index = int(dist1.probs.argmax().item())
             batch_duration = batch_action_values[a1_index]
 
             env.apply_batch_size(batch_duration)
             batch_parcels = env.current_eligible_parcels()
 
-            # Stage 2: threshold 0.5
             s2_list = env.get_stage2_states(batch_parcels)
             if s2_list:
                 s2_normed = [norm_s2.normalize(s) for s in s2_list]
                 s2_tensor = torch.from_numpy(np.stack(s2_normed)).to(device)
                 dist2 = pi2(s2_tensor)
-                probs = dist2.probs
-                actions = (probs > 0.5).long()
+                if eval_stochastic:
+                    actions = dist2.sample().long()
+                else:
+                    actions = (dist2.probs > 0.5).long()
                 decisions = {
                     p.parcel_id: int(a.item())
                     for p, a in zip(batch_parcels, actions)

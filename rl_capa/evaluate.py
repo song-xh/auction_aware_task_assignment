@@ -24,6 +24,8 @@ def evaluate_rl_capa(
     checkpoint_dir: Path,
     output_dir: Path,
     training_config: RLTrainingConfig | None = None,
+    eval_stochastic: bool = True,
+    eval_seeds: int = 5,
 ) -> dict[str, Any]:
     """Evaluate one trained actor-critic RL-CAPA checkpoint set.
 
@@ -61,11 +63,27 @@ def evaluate_rl_capa(
         num_batch_actions=len(rl_config.batch_action_values()),
         checkpoint_dir=checkpoint_dir,
     )
-    result = evaluate(
-        env=env,
-        trainer=trainer,
-        batch_action_values=rl_config.batch_action_values(),
-    )
+    import torch
+
+    seed_count = max(1, int(eval_seeds))
+    per_seed_results: list[Any] = []
+    for seed_index in range(seed_count):
+        torch.manual_seed(seed_index)
+        per_seed_results.append(
+            evaluate(
+                env=env,
+                trainer=trainer,
+                batch_action_values=rl_config.batch_action_values(),
+                eval_stochastic=eval_stochastic,
+            )
+        )
+    # Use the final per-seed env state for decision_trace, but report
+    # averaged metrics so stochastic-policy variance does not dominate
+    # the reported TR.
+    result = per_seed_results[-1]
+    averaged_total_revenue = sum(r.total_revenue for r in per_seed_results) / len(per_seed_results)
+    averaged_completion_rate = sum(r.completion_rate for r in per_seed_results) / len(per_seed_results)
+    averaged_bpt = sum(r.batch_processing_time for r in per_seed_results) / len(per_seed_results)
     delivered_assignments = list(env.delivered_assignments())
     delivered_ids = {
         str(getattr(assignment.parcel, "parcel_id", ""))
@@ -89,13 +107,16 @@ def evaluate_rl_capa(
         "variant": "rl-capa-svc" if rl_config.use_service_slack else "rl-capa",
         "use_service_slack": rl_config.use_service_slack,
         "metrics": {
-            "TR": result.total_revenue,
-            "CR": result.completion_rate,
-            "BPT": result.batch_processing_time,
+            "TR": averaged_total_revenue,
+            "CR": averaged_completion_rate,
+            "BPT": averaged_bpt,
             "delivered_parcels": len(env.delivered_parcels()),
             "accepted_assignments": len(env.accepted_assignments()),
             "timed_out_parcels": len(env.timed_out_parcels()),
             **env.disposition_breakdown(),
+            "eval_stochastic": bool(eval_stochastic),
+            "eval_seeds": seed_count,
+            "eval_per_seed_TR": [r.total_revenue for r in per_seed_results],
         },
         "decision_trace": build_decision_trace(
             delivered_assignments=delivered_assignments,

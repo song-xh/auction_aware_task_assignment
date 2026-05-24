@@ -677,8 +677,13 @@ def build_script_parser(description: str) -> argparse.ArgumentParser:
     parser.add_argument("--local-couriers", type=int, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["local_couriers"])
     parser.add_argument("--platforms", type=int, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["platforms"])
     parser.add_argument("--couriers-per-platform", type=int, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["couriers_per_platform"])
-    parser.add_argument("--courier-capacity", type=float, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["courier_capacity"])
-    parser.add_argument("--service-radius-km", type=float, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["service_radius_km"])
+    # ``--courier-capacity`` default is ``None`` so callers that omit it match
+    # runner.py's behavior (framework default ~75). Pass ``--courier-capacity``
+    # explicitly to reproduce the paper-style 50.0 cap.
+    parser.add_argument("--courier-capacity", type=float, default=None)
+    # ``--service-radius-km`` default ``None`` so robustness mode matches
+    # runner.py (no radius filter unless explicitly set).
+    parser.add_argument("--service-radius-km", type=float, default=None)
     parser.add_argument("--batch-size", type=int, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["batch_size"])
     parser.add_argument("--prediction-window-seconds", type=int, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["prediction_window_seconds"])
     parser.add_argument("--task-window-start-seconds", type=float, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["task_window_start_seconds"])
@@ -748,6 +753,8 @@ def build_fixed_config_from_args(args: argparse.Namespace) -> dict[str, Any]:
         "task_window_start_seconds": args.task_window_start_seconds,
         "task_window_end_seconds": args.task_window_end_seconds,
         "task_sampling_seed": args.task_sampling_seed,
+        "deadline_seconds": getattr(args, "deadline_seconds", None),
+        "courier_speed_kmh": getattr(args, "courier_speed_kmh", 30.0),
         "partner_history_task_count_start": getattr(
             args,
             "partner_history_task_count_start",

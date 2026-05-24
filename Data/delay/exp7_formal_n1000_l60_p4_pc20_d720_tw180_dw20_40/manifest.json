@@ -1,0 +1,22 @@
+{
+  "data_cache_dir": "Data/delay/exp7_formal_n1000_l60_p4_pc20_d720_tw180_dw20_40",
+  "seed_path": "Data/delay/exp7_formal_n1000_l60_p4_pc20_d720_tw180_dw20_40/canonical-environment-seed.pkl",
+  "canonical_pickup_path": "Data/delay/exp7_formal_n1000_l60_p4_pc20_d720_tw180_dw20_40/pick-up-parcels.csv",
+  "partner_task_paths": {
+    "P1": "Data/delay/exp7_formal_n1000_l60_p4_pc20_d720_tw180_dw20_40/partner-tasks-P1.csv",
+    "P2": "Data/delay/exp7_formal_n1000_l60_p4_pc20_d720_tw180_dw20_40/partner-tasks-P2.csv",
+    "P3": "Data/delay/exp7_formal_n1000_l60_p4_pc20_d720_tw180_dw20_40/partner-tasks-P3.csv",
+    "P4": "Data/delay/exp7_formal_n1000_l60_p4_pc20_d720_tw180_dw20_40/partner-tasks-P4.csv"
+  },
+  "delayed_pickup_paths": {
+    "5.0": "Data/delay/exp7_formal_n1000_l60_p4_pc20_d720_tw180_dw20_40/pick-up-parcels-delay-5s.csv",
+    "10.0": "Data/delay/exp7_formal_n1000_l60_p4_pc20_d720_tw180_dw20_40/pick-up-parcels-delay-10s.csv",
+    "20.0": "Data/delay/exp7_formal_n1000_l60_p4_pc20_d720_tw180_dw20_40/pick-up-parcels-delay-20s.csv",
+    "30.0": "Data/delay/exp7_formal_n1000_l60_p4_pc20_d720_tw180_dw20_40/pick-up-parcels-delay-30s.csv",
+    "60.0": "Data/delay/exp7_formal_n1000_l60_p4_pc20_d720_tw180_dw20_40/pick-up-parcels-delay-60s.csv"
+  },
+  "delay_window": [
+    20.0,
+    40.0
+  ]
+}
