@@ -1,0 +1,2424 @@
+{
+  "algorithm": "rl-capa",
+  "variant": "rl-capa-svc",
+  "use_service_slack": true,
+  "metrics": {
+    "TR": 459.48308686599677,
+    "CR": 0.7766666666666666,
+    "BPT": 0.00596278176238808,
+    "delivered_parcels": 233,
+    "accepted_assignments": 280,
+    "timed_out_parcels": 47,
+    "expired_at_intake": 20,
+    "accepted_but_timed_out": 47,
+    "rejected_observed_deadline": 0,
+    "expired_due_to_true_deadline": 67
+  },
+  "decision_trace": [
+    {
+      "parcel_id": "113685",
+      "mode": "cross",
+      "courier_id": "P3-26",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.6888836577086916
+    },
+    {
+      "parcel_id": "200265",
+      "mode": "cross",
+      "courier_id": "P3-26",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.937494027303754
+    },
+    {
+      "parcel_id": "60407",
+      "mode": "cross",
+      "courier_id": "P4-2",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.788801591234135
+    },
+    {
+      "parcel_id": "121475",
+      "mode": "cross",
+      "courier_id": "P4-28",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.136312904999084
+    },
+    {
+      "parcel_id": "137696",
+      "mode": "cross",
+      "courier_id": "P4-39",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.1602535243743537
+    },
+    {
+      "parcel_id": "3909",
+      "mode": "cross",
+      "courier_id": "P4-12",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.086798942002946
+    },
+    {
+      "parcel_id": "24756",
+      "mode": "cross",
+      "courier_id": "P2-24",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.2361834663127258
+    },
+    {
+      "parcel_id": "3002",
+      "mode": "cross",
+      "courier_id": "P3-26",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.939398958495259
+    },
+    {
+      "parcel_id": "142136",
+      "mode": "cross",
+      "courier_id": "P3-7",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.7160531038380311
+    },
+    {
+      "parcel_id": "61902",
+      "mode": "cross",
+      "courier_id": "P3-6",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.6710165247871807
+    },
+    {
+      "parcel_id": "45807",
+      "mode": "cross",
+      "courier_id": "P4-3",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.0670353076103876
+    },
+    {
+      "parcel_id": "207663",
+      "mode": "cross",
+      "courier_id": "P1-11",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.4329167752018748
+    },
+    {
+      "parcel_id": "199747",
+      "mode": "cross",
+      "courier_id": "P2-22",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.7381755183653347
+    },
+    {
+      "parcel_id": "192905",
+      "mode": "cross",
+      "courier_id": "P2-21",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.3200943736785105
+    },
+    {
+      "parcel_id": "184499",
+      "mode": "cross",
+      "courier_id": "P3-18",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.6833931154520112
+    },
+    {
+      "parcel_id": "181719",
+      "mode": "cross",
+      "courier_id": "P4-39",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.5117384366069988
+    },
+    {
+      "parcel_id": "38085",
+      "mode": "cross",
+      "courier_id": "P2-38",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.668712420454833
+    },
+    {
+      "parcel_id": "148723",
+      "mode": "cross",
+      "courier_id": "P3-10",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.2733583981813412
+    },
+    {
+      "parcel_id": "188314",
+      "mode": "cross",
+      "courier_id": "P4-39",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.2148634120126154
+    },
+    {
+      "parcel_id": "198628",
+      "mode": "cross",
+      "courier_id": "P2-24",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.6003087538003502
+    },
+    {
+      "parcel_id": "91707",
+      "mode": "cross",
+      "courier_id": "P4-2",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 3.6147674203399234
+    },
+    {
+      "parcel_id": "44281",
+      "mode": "cross",
+      "courier_id": "P2-30",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.4098477471009296
+    },
+    {
+      "parcel_id": "203071",
+      "mode": "cross",
+      "courier_id": "P3-26",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.9718764480560758
+    },
+    {
+      "parcel_id": "11588",
+      "mode": "cross",
+      "courier_id": "P3-7",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.491799881772671
+    },
+    {
+      "parcel_id": "78135",
+      "mode": "cross",
+      "courier_id": "P1-19",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.6328123587458956
+    },
+    {
+      "parcel_id": "92591",
+      "mode": "cross",
+      "courier_id": "P2-21",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.5214643836912307
+    },
+    {
+      "parcel_id": "27479",
+      "mode": "cross",
+      "courier_id": "P4-12",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.102463544434043
+    },
+    {
+      "parcel_id": "77638",
+      "mode": "cross",
+      "courier_id": "P4-3",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.1304079812668917
+    },
+    {
+      "parcel_id": "91455",
+      "mode": "cross",
+      "courier_id": "P1-41",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.7592557756745633
+    },
+    {
+      "parcel_id": "157520",
+      "mode": "cross",
+      "courier_id": "P1-34",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.5726222184933487
+    },
+    {
+      "parcel_id": "202307",
+      "mode": "cross",
+      "courier_id": "P1-11",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.8681502446823455
+    },
+    {
+      "parcel_id": "183603",
+      "mode": "cross",
+      "courier_id": "P1-40",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.669882881318081
+    },
+    {
+      "parcel_id": "192430",
+      "mode": "cross",
+      "courier_id": "P2-22",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.8675152810700988
+    },
+    {
+      "parcel_id": "148960",
+      "mode": "cross",
+      "courier_id": "P3-26",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.6593346701629903
+    },
+    {
+      "parcel_id": "15252",
+      "mode": "cross",
+      "courier_id": "P3-7",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.5503263872784494
+    },
+    {
+      "parcel_id": "198399",
+      "mode": "cross",
+      "courier_id": "P4-39",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.0369689909107036
+    },
+    {
+      "parcel_id": "129812",
+      "mode": "cross",
+      "courier_id": "P4-2",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.188905472636816
+    },
+    {
+      "parcel_id": "181727",
+      "mode": "cross",
+      "courier_id": "P4-12",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.0703922376310127
+    },
+    {
+      "parcel_id": "21710",
+      "mode": "cross",
+      "courier_id": "P2-22",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.585447959003357
+    },
+    {
+      "parcel_id": "163167",
+      "mode": "cross",
+      "courier_id": "P1-19",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.9788927834061552
+    },
+    {
+      "parcel_id": "76451",
+      "mode": "cross",
+      "courier_id": "P2-22",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.999655125523013
+    },
+    {
+      "parcel_id": "202149",
+      "mode": "cross",
+      "courier_id": "P3-6",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 3.2449177906205158
+    },
+    {
+      "parcel_id": "36595",
+      "mode": "cross",
+      "courier_id": "P4-28",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.5188191125643957
+    },
+    {
+      "parcel_id": "157178",
+      "mode": "cross",
+      "courier_id": "P4-12",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.059443748743874
+    },
+    {
+      "parcel_id": "139451",
+      "mode": "cross",
+      "courier_id": "P1-34",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.1491476629836352
+    },
+    {
+      "parcel_id": "152703",
+      "mode": "cross",
+      "courier_id": "P2-24",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.589101328191945
+    },
+    {
+      "parcel_id": "182735",
+      "mode": "cross",
+      "courier_id": "P3-26",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.3898906002830733
+    },
+    {
+      "parcel_id": "66336",
+      "mode": "cross",
+      "courier_id": "P3-7",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.5496749337076903
+    },
+    {
+      "parcel_id": "26901",
+      "mode": "cross",
+      "courier_id": "P4-2",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.1853726134264013
+    },
+    {
+      "parcel_id": "38626",
+      "mode": "cross",
+      "courier_id": "P1-19",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.7083320080387665
+    },
+    {
+      "parcel_id": "178824",
+      "mode": "cross",
+      "courier_id": "P1-11",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.0530759983619333
+    },
+    {
+      "parcel_id": "75398",
+      "mode": "cross",
+      "courier_id": "P2-22",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.9756035181342027
+    },
+    {
+      "parcel_id": "2070",
+      "mode": "cross",
+      "courier_id": "P3-18",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.3383472070860485
+    },
+    {
+      "parcel_id": "35862",
+      "mode": "cross",
+      "courier_id": "P1-41",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.6596896361271192
+    },
+    {
+      "parcel_id": "4283",
+      "mode": "cross",
+      "courier_id": "P2-21",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.778037370638378
+    },
+    {
+      "parcel_id": "114176",
+      "mode": "cross",
+      "courier_id": "P3-10",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.6662479763941356
+    },
+    {
+      "parcel_id": "205145",
+      "mode": "cross",
+      "courier_id": "P4-3",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.6020533172343665
+    },
+    {
+      "parcel_id": "191648",
+      "mode": "cross",
+      "courier_id": "P3-7",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.3267598007364088
+    },
+    {
+      "parcel_id": "94292",
+      "mode": "cross",
+      "courier_id": "P4-12",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.083181896850121
+    },
+    {
+      "parcel_id": "140178",
+      "mode": "cross",
+      "courier_id": "P2-24",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.7805470113799569
+    },
+    {
+      "parcel_id": "183531",
+      "mode": "cross",
+      "courier_id": "P2-30",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.675027590321382
+    },
+    {
+      "parcel_id": "138055",
+      "mode": "cross",
+      "courier_id": "P4-2",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.226574157465782
+    },
+    {
+      "parcel_id": "168691",
+      "mode": "cross",
+      "courier_id": "P1-11",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.589591784931349
+    },
+    {
+      "parcel_id": "7555",
+      "mode": "cross",
+      "courier_id": "P4-39",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 3.1866251873334805
+    },
+    {
+      "parcel_id": "64403",
+      "mode": "cross",
+      "courier_id": "P4-12",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.4015788052614955
+    },
+    {
+      "parcel_id": "166044",
+      "mode": "cross",
+      "courier_id": "P1-40",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.7300620093147039
+    },
+    {
+      "parcel_id": "34069",
+      "mode": "cross",
+      "courier_id": "P4-28",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.670215519164696
+    },
+    {
+      "parcel_id": "51788",
+      "mode": "cross",
+      "courier_id": "P4-39",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.9533641745292964
+    },
+    {
+      "parcel_id": "171630",
+      "mode": "cross",
+      "courier_id": "P1-34",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.507107271567259
+    },
+    {
+      "parcel_id": "167331",
+      "mode": "cross",
+      "courier_id": "P1-11",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 3.0911805342648204
+    },
+    {
+      "parcel_id": "103296",
+      "mode": "cross",
+      "courier_id": "P2-22",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.4841535138040456
+    },
+    {
+      "parcel_id": "192855",
+      "mode": "cross",
+      "courier_id": "P2-38",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.6674767430183408
+    },
+    {
+      "parcel_id": "124825",
+      "mode": "cross",
+      "courier_id": "P2-21",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.5560740587789939
+    },
+    {
+      "parcel_id": "53027",
+      "mode": "cross",
+      "courier_id": "P3-26",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.408560980003603
+    },
+    {
+      "parcel_id": "107769",
+      "mode": "cross",
+      "courier_id": "P3-18",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.832533027295609
+    },
+    {
+      "parcel_id": "5771",
+      "mode": "cross",
+      "courier_id": "P3-6",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.0234212378248824
+    },
+    {
+      "parcel_id": "52778",
+      "mode": "cross",
+      "courier_id": "P4-39",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.7570817697879395
+    },
+    {
+      "parcel_id": "46298",
+      "mode": "cross",
+      "courier_id": "P4-2",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.4242992173340596
+    },
+    {
+      "parcel_id": "91392",
+      "mode": "cross",
+      "courier_id": "P1-41",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 3.3000333004938547
+    },
+    {
+      "parcel_id": "14676",
+      "mode": "cross",
+      "courier_id": "P1-19",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.4645295885164487
+    },
+    {
+      "parcel_id": "93583",
+      "mode": "cross",
+      "courier_id": "P3-7",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 3.300828298282621
+    },
+    {
+      "parcel_id": "94502",
+      "mode": "cross",
+      "courier_id": "P1-11",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.5272392310180436
+    },
+    {
+      "parcel_id": "184889",
+      "mode": "cross",
+      "courier_id": "P2-24",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.348347250465106
+    },
+    {
+      "parcel_id": "77810",
+      "mode": "cross",
+      "courier_id": "P2-30",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.4798287356105995
+    },
+    {
+      "parcel_id": "10942",
+      "mode": "cross",
+      "courier_id": "P2-21",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.0715710914109495
+    },
+    {
+      "parcel_id": "135303",
+      "mode": "cross",
+      "courier_id": "P4-28",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.8457424239946363
+    },
+    {
+      "parcel_id": "58225",
+      "mode": "cross",
+      "courier_id": "P4-12",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.0541992049843536
+    },
+    {
+      "parcel_id": "34549",
+      "mode": "cross",
+      "courier_id": "P1-41",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.8574062308678627
+    },
+    {
+      "parcel_id": "6871",
+      "mode": "cross",
+      "courier_id": "P2-38",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.4820570655238523
+    },
+    {
+      "parcel_id": "38145",
+      "mode": "cross",
+      "courier_id": "P3-10",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.2931642686052154
+    },
+    {
+      "parcel_id": "73201",
+      "mode": "cross",
+      "courier_id": "P2-21",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.4698762482457868
+    },
+    {
+      "parcel_id": "127626",
+      "mode": "cross",
+      "courier_id": "P3-18",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.7158861596270265
+    },
+    {
+      "parcel_id": "11619",
+      "mode": "cross",
+      "courier_id": "P4-28",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.004136443493538
+    },
+    {
+      "parcel_id": "78001",
+      "mode": "cross",
+      "courier_id": "P4-3",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.6533083484104418
+    },
+    {
+      "parcel_id": "204590",
+      "mode": "cross",
+      "courier_id": "P1-41",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.5358365775968856
+    },
+    {
+      "parcel_id": "34495",
+      "mode": "cross",
+      "courier_id": "P1-11",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.8356990534625313
+    },
+    {
+      "parcel_id": "18223",
+      "mode": "cross",
+      "courier_id": "P3-26",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.691202102036348
+    },
+    {
+      "parcel_id": "69704",
+      "mode": "cross",
+      "courier_id": "P4-39",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.3041905659137214
+    },
+    {
+      "parcel_id": "185978",
+      "mode": "cross",
+      "courier_id": "P4-2",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.37320560272879
+    },
+    {
+      "parcel_id": "153867",
+      "mode": "cross",
+      "courier_id": "P4-12",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.970974704124158
+    },
+    {
+      "parcel_id": "165172",
+      "mode": "cross",
+      "courier_id": "P2-21",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.8455363392689463
+    },
+    {
+      "parcel_id": "78837",
+      "mode": "cross",
+      "courier_id": "P3-18",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.6346381137684745
+    },
+    {
+      "parcel_id": "42022",
+      "mode": "cross",
+      "courier_id": "P4-28",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.8538426831102424
+    },
+    {
+      "parcel_id": "44197",
+      "mode": "cross",
+      "courier_id": "P3-7",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.6193784477579332
+    },
+    {
+      "parcel_id": "69633",
+      "mode": "cross",
+      "courier_id": "P1-40",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.6427958271236962
+    },
+    {
+      "parcel_id": "92003",
+      "mode": "cross",
+      "courier_id": "P1-19",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.5493389752236526
+    },
+    {
+      "parcel_id": "22492",
+      "mode": "cross",
+      "courier_id": "P2-30",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.7460080508474576
+    },
+    {
+      "parcel_id": "54000",
+      "mode": "cross",
+      "courier_id": "P2-38",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.2442921930153474
+    },
+    {
+      "parcel_id": "81249",
+      "mode": "cross",
+      "courier_id": "P1-41",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.4660437545832314
+    },
+    {
+      "parcel_id": "2430",
+      "mode": "cross",
+      "courier_id": "P1-34",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.7244084263178143
+    },
+    {
+      "parcel_id": "102647",
+      "mode": "cross",
+      "courier_id": "P4-28",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.1754534185803758
+    },
+    {
+      "parcel_id": "447",
+      "mode": "cross",
+      "courier_id": "P4-3",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.9512877415151575
+    },
+    {
+      "parcel_id": "74860",
+      "mode": "cross",
+      "courier_id": "P2-24",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.4445046160903718
+    },
+    {
+      "parcel_id": "126883",
+      "mode": "cross",
+      "courier_id": "P2-21",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.238081178468816
+    },
+    {
+      "parcel_id": "35012",
+      "mode": "cross",
+      "courier_id": "P4-3",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.326384337213245
+    },
+    {
+      "parcel_id": "137794",
+      "mode": "cross",
+      "courier_id": "P2-22",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.055896761754525
+    },
+    {
+      "parcel_id": "173607",
+      "mode": "cross",
+      "courier_id": "P3-6",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.7405257727243626
+    },
+    {
+      "parcel_id": "102511",
+      "mode": "cross",
+      "courier_id": "P4-28",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.770337312452086
+    },
+    {
+      "parcel_id": "158332",
+      "mode": "cross",
+      "courier_id": "P3-18",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.9505117476146063
+    },
+    {
+      "parcel_id": "55543",
+      "mode": "cross",
+      "courier_id": "P3-6",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.9979814814814816
+    },
+    {
+      "parcel_id": "44539",
+      "mode": "cross",
+      "courier_id": "P4-39",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.6391109559550827
+    },
+    {
+      "parcel_id": "7988",
+      "mode": "cross",
+      "courier_id": "P4-12",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 3.2383129985270003
+    },
+    {
+      "parcel_id": "44330",
+      "mode": "cross",
+      "courier_id": "P1-41",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.509548825098083
+    },
+    {
+      "parcel_id": "60513",
+      "mode": "cross",
+      "courier_id": "P1-11",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.8307774493588171
+    },
+    {
+      "parcel_id": "49200",
+      "mode": "cross",
+      "courier_id": "P3-26",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.7061009835459728
+    },
+    {
+      "parcel_id": "18394",
+      "mode": "cross",
+      "courier_id": "P3-7",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.1123933170258926
+    },
+    {
+      "parcel_id": "107226",
+      "mode": "cross",
+      "courier_id": "P4-2",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.005400804919188
+    },
+    {
+      "parcel_id": "135881",
+      "mode": "cross",
+      "courier_id": "P2-38",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.4661783140081477
+    },
+    {
+      "parcel_id": "133531",
+      "mode": "cross",
+      "courier_id": "P3-18",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 3.342125882632173
+    },
+    {
+      "parcel_id": "144937",
+      "mode": "cross",
+      "courier_id": "P4-39",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.6115105285450637
+    },
+    {
+      "parcel_id": "15523",
+      "mode": "cross",
+      "courier_id": "P4-3",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.974858951046226
+    },
+    {
+      "parcel_id": "158495",
+      "mode": "cross",
+      "courier_id": "P1-41",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.6873176052394516
+    },
+    {
+      "parcel_id": "33367",
+      "mode": "cross",
+      "courier_id": "P1-19",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.1188764453494295
+    },
+    {
+      "parcel_id": "207091",
+      "mode": "cross",
+      "courier_id": "P1-34",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.6754163763066199
+    },
+    {
+      "parcel_id": "50020",
+      "mode": "cross",
+      "courier_id": "P2-24",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.3473162977045945
+    },
+    {
+      "parcel_id": "166767",
+      "mode": "cross",
+      "courier_id": "P2-30",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.021627937765553
+    },
+    {
+      "parcel_id": "12442",
+      "mode": "cross",
+      "courier_id": "P3-7",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 3.395611051397303
+    },
+    {
+      "parcel_id": "101787",
+      "mode": "cross",
+      "courier_id": "P3-6",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.5652830415049062
+    },
+    {
+      "parcel_id": "101115",
+      "mode": "cross",
+      "courier_id": "P1-11",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.744555521654073
+    },
+    {
+      "parcel_id": "131360",
+      "mode": "cross",
+      "courier_id": "P3-18",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.043055107960038
+    },
+    {
+      "parcel_id": "64004",
+      "mode": "cross",
+      "courier_id": "P3-10",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.2563569458684025
+    },
+    {
+      "parcel_id": "193628",
+      "mode": "cross",
+      "courier_id": "P4-28",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.640724656858617
+    },
+    {
+      "parcel_id": "61032",
+      "mode": "cross",
+      "courier_id": "P3-18",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.6626147916986405
+    },
+    {
+      "parcel_id": "5235",
+      "mode": "cross",
+      "courier_id": "P3-6",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.1929736635220127
+    },
+    {
+      "parcel_id": "54307",
+      "mode": "cross",
+      "courier_id": "P2-24",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.272670296053855
+    },
+    {
+      "parcel_id": "142111",
+      "mode": "cross",
+      "courier_id": "P2-30",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.3134981256051441
+    },
+    {
+      "parcel_id": "195521",
+      "mode": "cross",
+      "courier_id": "P3-18",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.6619776521810952
+    },
+    {
+      "parcel_id": "185784",
+      "mode": "cross",
+      "courier_id": "P4-39",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.9011227339941943
+    },
+    {
+      "parcel_id": "59139",
+      "mode": "cross",
+      "courier_id": "P4-2",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.584982969219828
+    },
+    {
+      "parcel_id": "51304",
+      "mode": "cross",
+      "courier_id": "P2-38",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.8661614247821143
+    },
+    {
+      "parcel_id": "182314",
+      "mode": "cross",
+      "courier_id": "P2-21",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.5531373872820007
+    },
+    {
+      "parcel_id": "50652",
+      "mode": "cross",
+      "courier_id": "P4-12",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.086248247220455
+    },
+    {
+      "parcel_id": "44189",
+      "mode": "cross",
+      "courier_id": "P4-3",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.191437020000821
+    },
+    {
+      "parcel_id": "179971",
+      "mode": "cross",
+      "courier_id": "P1-40",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.7965824415019043
+    },
+    {
+      "parcel_id": "168382",
+      "mode": "cross",
+      "courier_id": "P3-7",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.278049558178335
+    },
+    {
+      "parcel_id": "189251",
+      "mode": "cross",
+      "courier_id": "P3-6",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.699651252679674
+    },
+    {
+      "parcel_id": "131221",
+      "mode": "cross",
+      "courier_id": "P1-41",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.3803139782813503
+    },
+    {
+      "parcel_id": "152809",
+      "mode": "cross",
+      "courier_id": "P1-11",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.9898347208971607
+    },
+    {
+      "parcel_id": "23019",
+      "mode": "cross",
+      "courier_id": "P1-19",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.9359289788102076
+    },
+    {
+      "parcel_id": "163581",
+      "mode": "cross",
+      "courier_id": "P1-34",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.070728398626753
+    },
+    {
+      "parcel_id": "60132",
+      "mode": "cross",
+      "courier_id": "P3-26",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.6760255135110969
+    },
+    {
+      "parcel_id": "15281",
+      "mode": "cross",
+      "courier_id": "P3-7",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.9265269044611308
+    },
+    {
+      "parcel_id": "53206",
+      "mode": "cross",
+      "courier_id": "P3-18",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.2801995629502017
+    },
+    {
+      "parcel_id": "63574",
+      "mode": "cross",
+      "courier_id": "P3-6",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.9748475648006423
+    },
+    {
+      "parcel_id": "126582",
+      "mode": "cross",
+      "courier_id": "P4-2",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.356826406010935
+    },
+    {
+      "parcel_id": "65607",
+      "mode": "cross",
+      "courier_id": "P4-3",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.7573140722940943
+    },
+    {
+      "parcel_id": "161943",
+      "mode": "cross",
+      "courier_id": "P1-41",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.790442742340531
+    },
+    {
+      "parcel_id": "85131",
+      "mode": "cross",
+      "courier_id": "P3-26",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.7087026987256824
+    },
+    {
+      "parcel_id": "73152",
+      "mode": "cross",
+      "courier_id": "P2-30",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.9338998232952953
+    },
+    {
+      "parcel_id": "37560",
+      "mode": "cross",
+      "courier_id": "P2-22",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.2931611271154466
+    },
+    {
+      "parcel_id": "200128",
+      "mode": "cross",
+      "courier_id": "P2-38",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.000021917121969
+    },
+    {
+      "parcel_id": "108152",
+      "mode": "cross",
+      "courier_id": "P3-7",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.4760034782235296
+    },
+    {
+      "parcel_id": "164005",
+      "mode": "cross",
+      "courier_id": "P3-6",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.7634893540392387
+    },
+    {
+      "parcel_id": "105982",
+      "mode": "cross",
+      "courier_id": "P1-11",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.8655313462509984
+    },
+    {
+      "parcel_id": "172054",
+      "mode": "cross",
+      "courier_id": "P2-24",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.524483785228103
+    },
+    {
+      "parcel_id": "151017",
+      "mode": "cross",
+      "courier_id": "P4-39",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.043238143843613
+    },
+    {
+      "parcel_id": "9949",
+      "mode": "cross",
+      "courier_id": "P2-24",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.9636947127703195
+    },
+    {
+      "parcel_id": "165723",
+      "mode": "cross",
+      "courier_id": "P2-38",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.4970051110474412
+    },
+    {
+      "parcel_id": "106750",
+      "mode": "cross",
+      "courier_id": "P3-6",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.1727899603698813
+    },
+    {
+      "parcel_id": "29847",
+      "mode": "cross",
+      "courier_id": "P3-18",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.3474835627280273
+    },
+    {
+      "parcel_id": "27454",
+      "mode": "cross",
+      "courier_id": "P4-28",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.7861239032153566
+    },
+    {
+      "parcel_id": "120048",
+      "mode": "cross",
+      "courier_id": "P4-2",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.5774584042413933
+    },
+    {
+      "parcel_id": "8855",
+      "mode": "cross",
+      "courier_id": "P4-12",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.6833306049612133
+    },
+    {
+      "parcel_id": "98997",
+      "mode": "cross",
+      "courier_id": "P2-21",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.31979735336507
+    },
+    {
+      "parcel_id": "87616",
+      "mode": "cross",
+      "courier_id": "P3-18",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.2843307057188564
+    },
+    {
+      "parcel_id": "185401",
+      "mode": "cross",
+      "courier_id": "P3-6",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.051875669882101
+    },
+    {
+      "parcel_id": "99803",
+      "mode": "cross",
+      "courier_id": "P4-39",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.6412448554433166
+    },
+    {
+      "parcel_id": "1637",
+      "mode": "cross",
+      "courier_id": "P1-41",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.6927915660004391
+    },
+    {
+      "parcel_id": "67143",
+      "mode": "cross",
+      "courier_id": "P1-19",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 3.1460830964892548
+    },
+    {
+      "parcel_id": "52166",
+      "mode": "cross",
+      "courier_id": "P1-34",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.7074801140743023
+    },
+    {
+      "parcel_id": "199558",
+      "mode": "cross",
+      "courier_id": "P1-11",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.2391837651399698
+    },
+    {
+      "parcel_id": "44391",
+      "mode": "cross",
+      "courier_id": "P3-7",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.5402107434971626
+    },
+    {
+      "parcel_id": "1678",
+      "mode": "cross",
+      "courier_id": "P3-6",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.8174780072845191
+    },
+    {
+      "parcel_id": "66491",
+      "mode": "cross",
+      "courier_id": "P4-3",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.0471634067285125
+    },
+    {
+      "parcel_id": "7463",
+      "mode": "cross",
+      "courier_id": "P1-40",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.9350267699091015
+    },
+    {
+      "parcel_id": "208889",
+      "mode": "cross",
+      "courier_id": "P2-22",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.5016598177685783
+    },
+    {
+      "parcel_id": "88483",
+      "mode": "cross",
+      "courier_id": "P3-7",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.0593377798951877
+    },
+    {
+      "parcel_id": "57139",
+      "mode": "cross",
+      "courier_id": "P1-40",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.8892356857523307
+    },
+    {
+      "parcel_id": "182339",
+      "mode": "cross",
+      "courier_id": "P1-19",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.2818162602240317
+    },
+    {
+      "parcel_id": "142795",
+      "mode": "cross",
+      "courier_id": "P2-24",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.324384426326148
+    },
+    {
+      "parcel_id": "62731",
+      "mode": "cross",
+      "courier_id": "P2-30",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.4546719443510714
+    },
+    {
+      "parcel_id": "69679",
+      "mode": "cross",
+      "courier_id": "P2-21",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.2514012684264655
+    },
+    {
+      "parcel_id": "171071",
+      "mode": "cross",
+      "courier_id": "P2-38",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.209217422208182
+    },
+    {
+      "parcel_id": "146961",
+      "mode": "cross",
+      "courier_id": "P3-18",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.8341444905393098
+    },
+    {
+      "parcel_id": "188727",
+      "mode": "cross",
+      "courier_id": "P4-39",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.819151338766007
+    },
+    {
+      "parcel_id": "109014",
+      "mode": "cross",
+      "courier_id": "P4-2",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.9706507717628217
+    },
+    {
+      "parcel_id": "112251",
+      "mode": "cross",
+      "courier_id": "P4-3",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.0000792210901546
+    },
+    {
+      "parcel_id": "107059",
+      "mode": "cross",
+      "courier_id": "P1-41",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.0362760973580194
+    },
+    {
+      "parcel_id": "2724",
+      "mode": "cross",
+      "courier_id": "P3-7",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.4525952166939842
+    },
+    {
+      "parcel_id": "62343",
+      "mode": "cross",
+      "courier_id": "P3-6",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.181029653552554
+    },
+    {
+      "parcel_id": "150409",
+      "mode": "cross",
+      "courier_id": "P1-40",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.3427879942714274
+    },
+    {
+      "parcel_id": "175823",
+      "mode": "cross",
+      "courier_id": "P4-28",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.1371063862761224
+    },
+    {
+      "parcel_id": "31020",
+      "mode": "cross",
+      "courier_id": "P4-2",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.9876810992999738
+    },
+    {
+      "parcel_id": "73933",
+      "mode": "cross",
+      "courier_id": "P1-19",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.0944034790702153
+    },
+    {
+      "parcel_id": "48475",
+      "mode": "cross",
+      "courier_id": "P1-34",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.923720307795249
+    },
+    {
+      "parcel_id": "157167",
+      "mode": "cross",
+      "courier_id": "P2-21",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.4370553359683793
+    },
+    {
+      "parcel_id": "190579",
+      "mode": "cross",
+      "courier_id": "P1-40",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.8394806891160433
+    },
+    {
+      "parcel_id": "199035",
+      "mode": "cross",
+      "courier_id": "P2-38",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.9304430947065097
+    },
+    {
+      "parcel_id": "1891",
+      "mode": "cross",
+      "courier_id": "P3-18",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.7313546745541952
+    },
+    {
+      "parcel_id": "59603",
+      "mode": "cross",
+      "courier_id": "P4-28",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 3.005874085312638
+    },
+    {
+      "parcel_id": "144106",
+      "mode": "cross",
+      "courier_id": "P4-3",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.254029814121833
+    },
+    {
+      "parcel_id": "165136",
+      "mode": "cross",
+      "courier_id": "P4-28",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.7177621663689138
+    },
+    {
+      "parcel_id": "159407",
+      "mode": "cross",
+      "courier_id": "P3-6",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.1229335118953836
+    },
+    {
+      "parcel_id": "125615",
+      "mode": "cross",
+      "courier_id": "P4-3",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.432105645575067
+    },
+    {
+      "parcel_id": "136979",
+      "mode": "cross",
+      "courier_id": "P2-38",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.071624778099599
+    },
+    {
+      "parcel_id": "100673",
+      "mode": "cross",
+      "courier_id": "P2-38",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.134734342080061
+    },
+    {
+      "parcel_id": "139792",
+      "mode": "cross",
+      "courier_id": "P3-7",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 3.706914567784761
+    },
+    {
+      "parcel_id": "75079",
+      "mode": "cross",
+      "courier_id": "P3-6",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.7202983216940755
+    },
+    {
+      "parcel_id": "45712",
+      "mode": "cross",
+      "courier_id": "P3-6",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.779805661174482
+    },
+    {
+      "parcel_id": "169467",
+      "mode": "cross",
+      "courier_id": "P3-6",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.8080289708497137
+    },
+    {
+      "parcel_id": "76187",
+      "mode": "cross",
+      "courier_id": "P3-10",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 1.848235970395919
+    },
+    {
+      "parcel_id": "102215",
+      "mode": "cross",
+      "courier_id": "P3-6",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.1999999999999993
+    },
+    {
+      "parcel_id": "88504",
+      "mode": "cross",
+      "courier_id": "P3-10",
+      "delivered": true,
+      "on_time": true,
+      "local_platform_revenue": 2.8451503895381194
+    },
+    {
+      "parcel_id": "34513",
+      "mode": "cross",
+      "courier_id": "P4-12",
+      "delivered": false,
+      "on_time": false,
+      "local_platform_revenue": 2.349032567252701
+    },
+    {
+      "parcel_id": "171692",
+      "mode": "cross",
+      "courier_id": "P4-12",
+      "delivered": false,
+      "on_time": false,
+      "local_platform_revenue": 2.4166618883792044
+    },
+    {
+      "parcel_id": "183751",
+      "mode": "cross",
+      "courier_id": "P3-10",
+      "delivered": false,
+      "on_time": false,
+      "local_platform_revenue": 1.2703031031994225
+    },
+    {
+      "parcel_id": "82940",
+      "mode": "cross",
+      "courier_id": "P3-26",
+      "delivered": false,
+      "on_time": false,
+      "local_platform_revenue": 2.4879263884724168
+    },
+    {
+      "parcel_id": "57673",
+      "mode": "cross",
+      "courier_id": "P3-26",
+      "delivered": false,
+      "on_time": false,
+      "local_platform_revenue": 1.670290667062683
+    },
+    {
+      "parcel_id": "36061",
+      "mode": "cross",
+      "courier_id": "P3-10",
+      "delivered": false,
+      "on_time": false,
+      "local_platform_revenue": 1.2832612797575402
+    },
+    {
+      "parcel_id": "100615",
+      "mode": "cross",
+      "courier_id": "P3-10",
+      "delivered": false,
+      "on_time": false,
+      "local_platform_revenue": 2.3952860206644857
+    },
+    {
+      "parcel_id": "134525",
+      "mode": "cross",
+      "courier_id": "P4-39",
+      "delivered": false,
+      "on_time": false,
+      "local_platform_revenue": 1.716222610660875
+    },
+    {
+      "parcel_id": "137546",
+      "mode": "cross",
+      "courier_id": "P2-22",
+      "delivered": false,
+      "on_time": false,
+      "local_platform_revenue": 1.755517471818889
+    },
+    {
+      "parcel_id": "130281",
+      "mode": "cross",
+      "courier_id": "P4-39",
+      "delivered": false,
+      "on_time": false,
+      "local_platform_revenue": 2.351256780743082
+    },
+    {
+      "parcel_id": "131865",
+      "mode": "cross",
+      "courier_id": "P4-39",
+      "delivered": false,
+      "on_time": false,
+      "local_platform_revenue": 1.302296921379396
+    },
+    {
+      "parcel_id": "147502",
+      "mode": "cross",
+      "courier_id": "P1-11",
+      "delivered": false,
+      "on_time": false,
+      "local_platform_revenue": 1.2651533721444865
+    },
+    {
+      "parcel_id": "35336",
+      "mode": "cross",
+      "courier_id": "P2-24",
+      "delivered": false,
+      "on_time": false,
+      "local_platform_revenue": 1.3545507482293804
+    },
+    {
+      "parcel_id": "112923",
+      "mode": "cross",
+      "courier_id": "P4-39",
+      "delivered": false,
+      "on_time": false,
+      "local_platform_revenue": 1.3174304747381518
+    },
+    {
+      "parcel_id": "134920",
+      "mode": "cross",
+      "courier_id": "P2-30",
+      "delivered": false,
+      "on_time": false,
+      "local_platform_revenue": 1.2685585276634654
+    },
+    {
+      "parcel_id": "66531",
+      "mode": "cross",
+      "courier_id": "P2-21",
+      "delivered": false,
+      "on_time": false,
+      "local_platform_revenue": 1.728421540863195
+    },
+    {
+      "parcel_id": "172303",
+      "mode": "cross",
+      "courier_id": "P1-11",
+      "delivered": false,
+      "on_time": false,
+      "local_platform_revenue": 3.2585101391475195
+    },
+    {
+      "parcel_id": "123052",
+      "mode": "cross",
+      "courier_id": "P2-22",
+      "delivered": false,
+      "on_time": false,
+      "local_platform_revenue": 1.6611643436897072
+    },
+    {
+      "parcel_id": "95842",
+      "mode": "cross",
+      "courier_id": "P1-11",
+      "delivered": false,
+      "on_time": false,
+      "local_platform_revenue": 1.8401350006667965
+    },
+    {
+      "parcel_id": "191754",
+      "mode": "cross",
+      "courier_id": "P1-19",
+      "delivered": false,
+      "on_time": false,
+      "local_platform_revenue": 1.3004607349785013
+    },
+    {
+      "parcel_id": "82238",
+      "mode": "cross",
+      "courier_id": "P1-19",
+      "delivered": false,
+      "on_time": false,
+      "local_platform_revenue": 1.8344733990297453
+    },
+    {
+      "parcel_id": "132255",
+      "mode": "cross",
+      "courier_id": "P1-11",
+      "delivered": false,
+      "on_time": false,
+      "local_platform_revenue": 1.8616708217236155
+    },
+    {
+      "parcel_id": "32551",
+      "mode": "cross",
+      "courier_id": "P1-40",
+      "delivered": false,
+      "on_time": false,
+      "local_platform_revenue": 1.4874952991180077
+    },
+    {
+      "parcel_id": "40823",
+      "mode": "cross",
+      "courier_id": "P1-34",
+      "delivered": false,
+      "on_time": false,
+      "local_platform_revenue": 2.457263605959259
+    },
+    {
+      "parcel_id": "18432",
+      "mode": "cross",
+      "courier_id": "P1-41",
+      "delivered": false,
+      "on_time": false,
+      "local_platform_revenue": 1.273832948407863
+    },
+    {
+      "parcel_id": "89892",
+      "mode": "cross",
+      "courier_id": "P1-41",
+      "delivered": false,
+      "on_time": false,
+      "local_platform_revenue": 2.178791698921538
+    },
+    {
+      "parcel_id": "167973",
+      "mode": "cross",
+      "courier_id": "P1-34",
+      "delivered": false,
+      "on_time": false,
+      "local_platform_revenue": 1.8664638340888828
+    },
+    {
+      "parcel_id": "30964",
+      "mode": "cross",
+      "courier_id": "P1-34",
+      "delivered": false,
+      "on_time": false,
+      "local_platform_revenue": 1.8048511011926536
+    },
+    {
+      "parcel_id": "86994",
+      "mode": "cross",
+      "courier_id": "P4-28",
+      "delivered": false,
+      "on_time": false,
+      "local_platform_revenue": 2.154790121308542
+    },
+    {
+      "parcel_id": "159408",
+      "mode": "cross",
+      "courier_id": "P4-28",
+      "delivered": false,
+      "on_time": false,
+      "local_platform_revenue": 3.7911376562824337
+    },
+    {
+      "parcel_id": "39323",
+      "mode": "cross",
+      "courier_id": "P4-28",
+      "delivered": false,
+      "on_time": false,
+      "local_platform_revenue": 2.390847296891174
+    },
+    {
+      "parcel_id": "9757",
+      "mode": "cross",
+      "courier_id": "P4-2",
+      "delivered": false,
+      "on_time": false,
+      "local_platform_revenue": 2.0669234382339123
+    },
+    {
+      "parcel_id": "63507",
+      "mode": "cross",
+      "courier_id": "P4-2",
+      "delivered": false,
+      "on_time": false,
+      "local_platform_revenue": 1.9904471643042587
+    },
+    {
+      "parcel_id": "179952",
+      "mode": "cross",
+      "courier_id": "P4-2",
+      "delivered": false,
+      "on_time": false,
+      "local_platform_revenue": 1.9112138599520918
+    },
+    {
+      "parcel_id": "52350",
+      "mode": "cross",
+      "courier_id": "P4-2",
+      "delivered": false,
+      "on_time": false,
+      "local_platform_revenue": 2.1007338823228228
+    },
+    {
+      "parcel_id": "176285",
+      "mode": "cross",
+      "courier_id": "P4-2",
+      "delivered": false,
+      "on_time": false,
+      "local_platform_revenue": 2.4245026263722798
+    },
+    {
+      "parcel_id": "2023",
+      "mode": "cross",
+      "courier_id": "P2-38",
+      "delivered": false,
+      "on_time": false,
+      "local_platform_revenue": 2.5332131606196295
+    },
+    {
+      "parcel_id": "151450",
+      "mode": "cross",
+      "courier_id": "P2-38",
+      "delivered": false,
+      "on_time": false,
+      "local_platform_revenue": 2.121858327177214
+    },
+    {
+      "parcel_id": "123097",
+      "mode": "cross",
+      "courier_id": "P2-38",
+      "delivered": false,
+      "on_time": false,
+      "local_platform_revenue": 2.603823949489339
+    },
+    {
+      "parcel_id": "40218",
+      "mode": "cross",
+      "courier_id": "P3-7",
+      "delivered": false,
+      "on_time": false,
+      "local_platform_revenue": 1.7943522759863972
+    },
+    {
+      "parcel_id": "149204",
+      "mode": "cross",
+      "courier_id": "P3-7",
+      "delivered": false,
+      "on_time": false,
+      "local_platform_revenue": 2.7807273238644346
+    },
+    {
+      "parcel_id": "61149",
+      "mode": "cross",
+      "courier_id": "P3-7",
+      "delivered": false,
+      "on_time": false,
+      "local_platform_revenue": 3.4224910468606673
+    },
+    {
+      "parcel_id": "22951",
+      "mode": "cross",
+      "courier_id": "P3-7",
+      "delivered": false,
+      "on_time": false,
+      "local_platform_revenue": 2.325040614172762
+    },
+    {
+      "parcel_id": "141814",
+      "mode": "cross",
+      "courier_id": "P3-18",
+      "delivered": false,
+      "on_time": false,
+      "local_platform_revenue": 1.2000000000000002
+    },
+    {
+      "parcel_id": "186812",
+      "mode": "cross",
+      "courier_id": "P3-18",
+      "delivered": false,
+      "on_time": false,
+      "local_platform_revenue": 1.798027723236527
+    },
+    {
+      "parcel_id": "73559",
+      "mode": "cross",
+      "courier_id": "P4-3",
+      "delivered": false,
+      "on_time": false,
+      "local_platform_revenue": 1.6683694601684387
+    },
+    {
+      "parcel_id": "162828",
+      "mode": "cross",
+      "courier_id": "P3-6",
+      "delivered": false,
+      "on_time": false,
+      "local_platform_revenue": 1.737392925302916
+    },
+    {
+      "parcel_id": "24192",
+      "mode": "unmatched",
+      "courier_id": null,
+      "delivered": false,
+      "on_time": false,
+      "local_platform_revenue": 0.0
+    },
+    {
+      "parcel_id": "201682",
+      "mode": "unmatched",
+      "courier_id": null,
+      "delivered": false,
+      "on_time": false,
+      "local_platform_revenue": 0.0
+    },
+    {
+      "parcel_id": "133162",
+      "mode": "unmatched",
+      "courier_id": null,
+      "delivered": false,
+      "on_time": false,
+      "local_platform_revenue": 0.0
+    },
+    {
+      "parcel_id": "20809",
+      "mode": "unmatched",
+      "courier_id": null,
+      "delivered": false,
+      "on_time": false,
+      "local_platform_revenue": 0.0
+    },
+    {
+      "parcel_id": "39561",
+      "mode": "unmatched",
+      "courier_id": null,
+      "delivered": false,
+      "on_time": false,
+      "local_platform_revenue": 0.0
+    },
+    {
+      "parcel_id": "134932",
+      "mode": "unmatched",
+      "courier_id": null,
+      "delivered": false,
+      "on_time": false,
+      "local_platform_revenue": 0.0
+    },
+    {
+      "parcel_id": "136657",
+      "mode": "unmatched",
+      "courier_id": null,
+      "delivered": false,
+      "on_time": false,
+      "local_platform_revenue": 0.0
+    },
+    {
+      "parcel_id": "165393",
+      "mode": "unmatched",
+      "courier_id": null,
+      "delivered": false,
+      "on_time": false,
+      "local_platform_revenue": 0.0
+    },
+    {
+      "parcel_id": "158611",
+      "mode": "unmatched",
+      "courier_id": null,
+      "delivered": false,
+      "on_time": false,
+      "local_platform_revenue": 0.0
+    },
+    {
+      "parcel_id": "130569",
+      "mode": "unmatched",
+      "courier_id": null,
+      "delivered": false,
+      "on_time": false,
+      "local_platform_revenue": 0.0
+    },
+    {
+      "parcel_id": "164964",
+      "mode": "unmatched",
+      "courier_id": null,
+      "delivered": false,
+      "on_time": false,
+      "local_platform_revenue": 0.0
+    },
+    {
+      "parcel_id": "201464",
+      "mode": "unmatched",
+      "courier_id": null,
+      "delivered": false,
+      "on_time": false,
+      "local_platform_revenue": 0.0
+    },
+    {
+      "parcel_id": "4391",
+      "mode": "unmatched",
+      "courier_id": null,
+      "delivered": false,
+      "on_time": false,
+      "local_platform_revenue": 0.0
+    },
+    {
+      "parcel_id": "80137",
+      "mode": "unmatched",
+      "courier_id": null,
+      "delivered": false,
+      "on_time": false,
+      "local_platform_revenue": 0.0
+    },
+    {
+      "parcel_id": "60116",
+      "mode": "unmatched",
+      "courier_id": null,
+      "delivered": false,
+      "on_time": false,
+      "local_platform_revenue": 0.0
+    },
+    {
+      "parcel_id": "107299",
+      "mode": "unmatched",
+      "courier_id": null,
+      "delivered": false,
+      "on_time": false,
+      "local_platform_revenue": 0.0
+    },
+    {
+      "parcel_id": "125140",
+      "mode": "unmatched",
+      "courier_id": null,
+      "delivered": false,
+      "on_time": false,
+      "local_platform_revenue": 0.0
+    },
+    {
+      "parcel_id": "15060",
+      "mode": "unmatched",
+      "courier_id": null,
+      "delivered": false,
+      "on_time": false,
+      "local_platform_revenue": 0.0
+    },
+    {
+      "parcel_id": "168139",
+      "mode": "unmatched",
+      "courier_id": null,
+      "delivered": false,
+      "on_time": false,
+      "local_platform_revenue": 0.0
+    },
+    {
+      "parcel_id": "19339",
+      "mode": "unmatched",
+      "courier_id": null,
+      "delivered": false,
+      "on_time": false,
+      "local_platform_revenue": 0.0
+    }
+  ],
+  "plots": {
+    "TR": "outputs/plots/exp7_rl_train_randomized_300p/eval/tr_over_batches.png",
+    "CR": "outputs/plots/exp7_rl_train_randomized_300p/eval/cr_over_batches.png",
+    "BPT": "outputs/plots/exp7_rl_train_randomized_300p/eval/bpt_over_batches.png"
+  }
+}
