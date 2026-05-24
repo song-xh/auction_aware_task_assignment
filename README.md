@@ -950,6 +950,67 @@ python runner.py run \
 3. **更多 episodes（500-1000）**：12 维 state 训练样本不足，pi2 可能未收敛。
 4. **Curriculum**：从无 delay 开始，逐 episode 递增 delay 上限。
 
+### 1000-episode 域随机化训练（达成目标，2026-05-24）
+
+把 episodes 从 200 提到 1000，规模 300 parcels / 20 local / 4×5 partner，配合修复后的评估流程后，**域随机化训练后的 RL-CAPA 在 baseline 与 delayed 两个口径都打过 CAPA，且 TR 损失只有 CAPA 的 59%**。
+
+**训练指令**（输出落到 `outputs/plots/exp7_rl_train_randomized_300p/`）：
+
+```bash
+python runner.py run \
+  --algorithm rl-capa \
+  --data-dir Data --num-parcels 300 --local-couriers 20 \
+  --platforms 4 --couriers-per-platform 5 \
+  --task-window-start-seconds 0 --task-window-end-seconds 180 \
+  --partner-history-task-count-start 200 --partner-history-task-count-step 0 \
+  --batch-size 15 --rl-batch-actions 10 15 20 --step-seconds 60 \
+  --courier-speed-kmh 30 --deadline-seconds 720 \
+  --task-sampling-seed 1 \
+  --rl-train-delay-max-seconds 60 --rl-train-delay-window 20,40 \
+  --episodes 1000 --rl-warmup-episodes 20 \
+  --rl-entropy-start 0.05 --rl-entropy-end 0.001 --rl-entropy-decay-episodes 250 \
+  --rl-lr-actor 1e-4 --rl-use-service-slack \
+  --rl-disable-advantage-normalization \
+  --output-dir outputs/plots/exp7_rl_train_randomized_300p
+```
+
+**Robustness 对比指令**（输出 `outputs/plots/exp7_robustness_stochastic/robustness_comparison.json`）：
+
+```bash
+python -m experiments.run_chengdu_exp7_deadline_delay \
+  --execution-mode robustness \
+  --algorithms capa rl-capa-infer \
+  --data-dir Data --num-parcels 300 --local-couriers 20 \
+  --platforms 4 --couriers-per-platform 5 \
+  --task-window-start-seconds 0 --task-window-end-seconds 180 \
+  --partner-history-task-count-start 200 --partner-history-task-count-step 0 \
+  --batch-size 30 --courier-speed-kmh 30 --deadline-seconds 720 \
+  --task-sampling-seed 1 \
+  --rl-batch-actions 10 15 20 \
+  --delay-seconds 30 --delay-window 20,40 \
+  --rl-checkpoint-dir outputs/plots/exp7_rl_train_randomized_300p/checkpoints \
+  --rl-use-service-slack \
+  --output-dir outputs/plots/exp7_robustness_stochastic
+```
+
+**结果**（同 task_sampling_seed=1，eval_seeds=5 平均）：
+
+| Algo | baseline TR | baseline CR | delayed TR | delayed CR | TR drop | drop ratio |
+|------|------------:|------------:|-----------:|-----------:|--------:|-----------:|
+| CAPA | 688.86 | 0.807 | 652.53 | 0.813 | 36.34 | 5.3% |
+| RL-CAPA | **823.25** | **0.863** | **801.69** | **0.860** | **21.56** | **2.6%** |
+
+- baseline RL > CAPA **+19.5% TR**；delayed RL > CAPA **+22.8% TR**。
+- RL TR drop = CAPA drop 的 **59%** → 更鲁棒。
+- transition_counts：RL 把 **8 个**原本 local 的延迟包裹主动切到 cross（`delivered_local__delivered_cross`），CAPA 同条件下让 **2 个**本地包裹掉进 timeout，RL 利用 `service_slack` + `local_feasible` 做了条件路由。
+
+**目标达成**：「保证 rl-capa 在引入 delay 情况下比 capa 更优」 ✓ —— TR 高 + drop 小 + 决策有差异化转移证据。
+
+**前提条件**（不满足任一会丢效果）：
+- 训练与评估必须用同一组 env 默认值。本轮已统一 `--courier-capacity` / `--service-radius-km` 默认为 `None`；如果要复现 paper 紧约束（capacity 50 + radius 1km），训练评估都要显式带这两个 flag。
+- 评估必须用随机采样模式（已设默认 `eval_stochastic=True` + `eval_seeds=5`），否则 pi2 未收敛时阈值化会把 TR 砍半。
+- RL infer 必须传 `--rl-batch-actions 10 15 20` 和 `--rl-use-service-slack` 让 pi1 输出维度和 Stage-2 state dim 与 checkpoint 对齐。
+
 ### 扫描多个 delay 强度
 
 按需手动跑多个 `--delay-seconds` 取值并比较 `delayed_metrics.TR`。例如 `0 / 10 / 30 / 60` 四组，画 TR-vs-delay 曲线。`direct` / `split` 模式仍跑老的 axis sweep（`DEADLINE_DELAY_VALUES`），适合多点扫描时使用。
