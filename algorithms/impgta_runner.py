@@ -68,6 +68,7 @@ class ImpGTARunner(AlgorithmRunner):
             finished_at=finished_at,
             extra_fields={
                 "batch_size": self._batch_size,
+                "decision_trace": list(metrics.get("decision_trace", [])),
             },
         )
         if output_dir is not None:

@@ -69,6 +69,8 @@ class ChengduEnvironmentSeed:
     geo_index: Any | None = None
     travel_speed_m_per_s: float = 0.0
     partner_tasks_by_platform: Mapping[str, Sequence[Any]] = field(default_factory=dict)
+    deadline_seconds: int | None = None
+    courier_speed_kmh: float | None = None
 
     def __post_init__(self) -> None:
         """Validate and materialize derived courier preference weights."""
@@ -113,6 +115,8 @@ def build_environment_seed(environment: ChengduEnvironment) -> ChengduEnvironmen
         platform_quality_step=environment.platform_quality_step,
         geo_index=environment.geo_index,
         travel_speed_m_per_s=environment.travel_speed_m_per_s,
+        deadline_seconds=getattr(environment, "deadline_seconds", None),
+        courier_speed_kmh=getattr(environment, "courier_speed_kmh", None),
     )
 
 
@@ -151,6 +155,8 @@ def clone_environment_from_seed(seed: ChengduEnvironmentSeed) -> ChengduEnvironm
         platform_quality_step=seed.platform_quality_step,
         geo_index=seed.geo_index,
         travel_speed_m_per_s=seed.travel_speed_m_per_s,
+        deadline_seconds=seed.deadline_seconds,
+        courier_speed_kmh=seed.courier_speed_kmh,
     )
     _rebind_courier_station_references(environment)
     _rebind_station_member_references(environment)
@@ -195,6 +201,8 @@ def save_environment_seed(seed: ChengduEnvironmentSeed, output_path: Path) -> No
         "platform_quality_start": seed.platform_quality_start,
         "platform_quality_step": seed.platform_quality_step,
         "travel_speed_m_per_s": seed.travel_speed_m_per_s,
+        "deadline_seconds": seed.deadline_seconds,
+        "courier_speed_kmh": seed.courier_speed_kmh,
     }
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("wb") as handle:
@@ -248,6 +256,8 @@ def load_environment_seed(
         platform_quality_step=float(payload.get("platform_quality_step", DEFAULT_PLATFORM_QUALITY_STEP)),
         geo_index=build_geo_index_from_travel_model(travel_model),
         travel_speed_m_per_s=float(payload.get("travel_speed_m_per_s", get_travel_speed_m_per_s(travel_model))),
+        deadline_seconds=payload.get("deadline_seconds"),
+        courier_speed_kmh=payload.get("courier_speed_kmh"),
     )
 
 

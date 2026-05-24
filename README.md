@@ -798,6 +798,90 @@ python -m experiments.run_chengdu_exp7_deadline_delay \
 
 **步骤 3**：读 `robustness_comparison.json` 的 `transition_counts` 看哪类决策受 delay 冲击最大。期望 RL-CAPA 在 `delivered_local__delivered_cross` 项上多于 CAPA（成功识别 delayed 包裹切到 cross 保住交付），在 `delivered_local__timed_out` 项上少于 CAPA。
 
+### 固定初始数据版本：CAPA / ImpGTA / RamCOM
+
+当需要对 `capa`、`impgta`、`ramcom` 做**同一份固定初始状态**下的 Exp-7 delay 对比时，使用：
+
+```bash
+python -m experiments.run_chengdu_exp7_fixed_delay_compare \
+  --data-dir Data \
+  --num-parcels 100 \
+  --local-couriers 10 \
+  --platforms 2 \
+  --couriers-per-platform 5 \
+  --task-window-start-seconds 0 \
+  --task-window-end-seconds 30 \
+  --partner-history-task-count-start 200 \
+  --partner-history-task-count-step 0 \
+  --batch-size 15 \
+  --deadline-seconds 900 \
+  --task-sampling-seed 1 \
+  --delay-window 10,30 \
+  --delay-values 5 10 20 30 60 \
+  --algorithms capa impgta ramcom \
+  --data-cache-dir Data/delay \
+  --data-mode auto \
+  --output-dir outputs/plots/exp7_fixed_delay_compare
+```
+
+该脚本会先固定 local platform 的 pick-up parcels 和 cooperating platforms 的 own-task streams，再让每个算法执行 6 次仿真：
+
+- baseline（无 delay）
+- 5s
+- 10s
+- 20s
+- 30s
+- 60s
+
+#### 数据缓存参数
+
+- `--data-cache-dir DIR`：固定数据输出目录。默认 `Data/delay`。
+- `--data-mode auto|reuse|regenerate`：
+  - `auto`：若 `DIR/manifest.json` 已存在，则直接复用已有固定数据；否则重新生成。
+  - `reuse`：强制复用已有固定数据；若 `manifest.json` 不存在则报错。
+  - `regenerate`：忽略已有缓存，重新生成 canonical pick-up parcels、partner task streams、以及 5 个 delayed CSV。
+
+#### 固定数据输出
+
+在 `Data/delay` 下会生成：
+
+- `pick-up-parcels.csv`
+- `pick-up-parcels-delay-5s.csv`
+- `pick-up-parcels-delay-10s.csv`
+- `pick-up-parcels-delay-20s.csv`
+- `pick-up-parcels-delay-30s.csv`
+- `pick-up-parcels-delay-60s.csv`
+- `partner-tasks-P1.csv`, `partner-tasks-P2.csv`, ...
+- `canonical-environment-seed.pkl`
+- `manifest.json`
+
+其中 local CSV 同时保留：
+
+- `true_release_time`
+- `observed_release_time`
+- `true_deadline`
+- `observed_deadline`
+- `is_delayed`
+
+这样可以直接审计哪些包裹被 delay 扰动，以及扰动后平台实际“看到”的时间戳。
+
+#### 汇总输出
+
+聚合结果写到：
+
+- `outputs/plots/exp7_fixed_delay_compare/summary.json`
+
+按算法组织，每个 delay 都会记录：
+
+- `baseline_metrics`
+- `delayed_metrics`
+- `metric_deltas`
+- `affected_parcel_ids`
+- `transition_counts`
+- `affected_outcome_totals`
+
+这里的 compare 只针对 `delay_window` 内被标记为 `is_delayed=True` 的包裹，而不是全部包裹。
+
 ### 训练时 delay 域随机化（domain randomization）
 
 实测发现：

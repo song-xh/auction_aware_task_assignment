@@ -645,6 +645,7 @@ def _run_gta_environment(
     timed_out_task_ids: set[str] = set()
     accepted_revenues_by_task_id: dict[str, float] = {}
     assignment_modes_by_task_id: dict[str, str] = {}
+    accepted_courier_ids_by_task_id: dict[str, str] = {}
     partner_platform_by_task_id: dict[str, str] = {}
     partner_revenue_by_task_id: dict[str, float] = {}
     processing_time_seconds = 0.0
@@ -703,6 +704,7 @@ def _run_gta_environment(
                     local_payment_ratio=local_payment_ratio,
                 )
                 assignment_modes_by_task_id[task_id] = "local"
+                accepted_courier_ids_by_task_id[task_id] = _gta_courier_id(None, local_bid.courier)
                 processing_time_seconds += max(
                     0.0,
                     perf_counter() - started - (timing.routing_time_seconds - routing_before) - (timing.insertion_time_seconds - insertion_before),
@@ -758,6 +760,7 @@ def _run_gta_environment(
                     platform_payment=outcome.payment,
                 )
                 assignment_modes_by_task_id[task_id] = "cross"
+                accepted_courier_ids_by_task_id[task_id] = _gta_courier_id(outcome.platform_id, outcome.courier)
                 partner_platform_by_task_id[task_id] = outcome.platform_id
                 partner_revenue_by_task_id[task_id] = float(outcome.payment)
             processing_time_seconds += max(
@@ -796,6 +799,14 @@ def _run_gta_environment(
         partner_platform_by_task_id=partner_platform_by_task_id,
         partner_revenue_by_task_id=partner_revenue_by_task_id,
     )
+    decision_trace = _build_gta_decision_trace(
+        tasks=tasks,
+        delivered_task_ids=delivered_task_ids,
+        timed_out_task_ids=timed_out_task_ids,
+        assignment_modes_by_task_id=assignment_modes_by_task_id,
+        accepted_courier_ids_by_task_id=accepted_courier_ids_by_task_id,
+        accepted_revenues_by_task_id=accepted_revenues_by_task_id,
+    )
 
     return {
         "TR": total_profit,
@@ -809,6 +820,7 @@ def _run_gta_environment(
         "unresolved_parcel_count": max(0, total_task_count - delivered_parcels - len(timed_out_task_ids)),
         "partner_cross_assignment_counts": partner_cross_assignment_counts,
         "partner_cross_revenues": partner_cross_revenues,
+        "decision_trace": decision_trace,
     }
 
 
@@ -861,3 +873,62 @@ def run_impgta_baseline_environment(
         cross_platform_sharing_rate_mu2=cross_platform_sharing_rate_mu2,
         progress_callback=progress_callback,
     )
+
+
+def _gta_courier_id(platform_id: str | None, courier: Any) -> str:
+    """Return a stable comparison-friendly courier id for GTA baselines."""
+
+    raw_id = str(getattr(courier, "num", ""))
+    if platform_id is None:
+        return f"local-{raw_id}"
+    return f"{platform_id}-{raw_id}"
+
+
+def _build_gta_decision_trace(
+    tasks: Sequence[Any],
+    delivered_task_ids: set[str],
+    timed_out_task_ids: set[str],
+    assignment_modes_by_task_id: Mapping[str, str],
+    accepted_courier_ids_by_task_id: Mapping[str, str],
+    accepted_revenues_by_task_id: Mapping[str, float],
+) -> list[dict[str, Any]]:
+    """Build a CAPA-style per-parcel decision trace for GTA-family baselines."""
+
+    trace: list[dict[str, Any]] = []
+    for task in tasks:
+        task_id = str(getattr(task, "num"))
+        if task_id in delivered_task_ids:
+            trace.append(
+                {
+                    "parcel_id": task_id,
+                    "mode": assignment_modes_by_task_id.get(task_id, ""),
+                    "courier_id": accepted_courier_ids_by_task_id.get(task_id),
+                    "delivered": True,
+                    "on_time": True,
+                    "local_platform_revenue": float(accepted_revenues_by_task_id.get(task_id, 0.0)),
+                }
+            )
+            continue
+        if task_id in timed_out_task_ids:
+            trace.append(
+                {
+                    "parcel_id": task_id,
+                    "mode": assignment_modes_by_task_id.get(task_id, ""),
+                    "courier_id": accepted_courier_ids_by_task_id.get(task_id),
+                    "delivered": False,
+                    "on_time": False,
+                    "local_platform_revenue": float(accepted_revenues_by_task_id.get(task_id, 0.0)),
+                }
+            )
+            continue
+        trace.append(
+            {
+                "parcel_id": task_id,
+                "mode": "unmatched",
+                "courier_id": None,
+                "delivered": False,
+                "on_time": False,
+                "local_platform_revenue": 0.0,
+            }
+        )
+    return trace
