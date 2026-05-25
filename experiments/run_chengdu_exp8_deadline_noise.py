@@ -17,14 +17,16 @@ from experiments.paper_chengdu import (
     run_chengdu_paper_point,
     run_chengdu_paper_split_experiment,
 )
-from experiments.run_chengdu_exp7_deadline_delay import DEFAULT_DEADLINE_DISTURBANCE_ALGORITHMS
+
+
+DEFAULT_EXP8_ALGORITHMS = ("capa",)
 
 
 def main() -> int:
     """Parse CLI args and launch the deadline-noise robustness experiment."""
 
     parser = build_script_parser("Run Chengdu experiment 8: metrics versus perceived-deadline noise.")
-    parser.set_defaults(algorithms=list(DEFAULT_DEADLINE_DISTURBANCE_ALGORITHMS))
+    parser.set_defaults(algorithms=list(DEFAULT_EXP8_ALGORITHMS))
     args = parser.parse_args()
     fixed_config = build_fixed_config_from_args(args)
     runner_overrides = build_capa_runner_overrides_from_args(args)
