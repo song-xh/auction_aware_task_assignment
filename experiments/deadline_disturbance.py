@@ -58,6 +58,7 @@ def derive_deadline_delay_environment(
     seed: ChengduEnvironmentSeed,
     delay_seconds: int | float,
     window: tuple[float, float] | None = None,
+    delay_window: tuple[float, float] | None = None,
 ) -> ChengduEnvironment:
     """Clone a seed and apply Exp-7 processing-delay disturbance.
 
@@ -73,7 +74,8 @@ def derive_deadline_delay_environment(
     """
 
     environment = clone_environment_from_seed(seed)
-    apply_processing_delay(environment.tasks, delay_seconds, window=window)
+    effective_window = window if window is not None else delay_window
+    apply_processing_delay(environment.tasks, delay_seconds, window=effective_window)
     return environment
 
 

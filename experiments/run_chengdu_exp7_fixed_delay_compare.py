@@ -12,8 +12,11 @@ if __package__ in {None, ""}:
 
 from experiments.exp7_fixed_delay_compare import (
     DEFAULT_FIXED_DELAY_VALUES,
-    run_exp7_fixed_delay_compare,
+    run_exp7_fixed_delay_direct,
+    run_exp7_fixed_delay_point,
+    run_exp7_fixed_delay_split_experiment,
 )
+from experiments.paper_chengdu import PAPER_EXECUTION_MODES
 from experiments.paper_chengdu import (
     build_capa_runner_overrides_from_args,
     build_fixed_config_from_args,
@@ -66,7 +69,6 @@ def main() -> int:
     args = parser.parse_args()
     fixed_config = build_fixed_config_from_args(args)
     capa_overrides = build_capa_runner_overrides_from_args(args)
-    canonical_environment = _build_canonical_environment(fixed_config)
     delay_window = _parse_delay_window(args.delay_window)
     runner_kwargs = {
         "capa": {
@@ -80,16 +82,57 @@ def main() -> int:
             "batch_size": int(fixed_config.get("batch_size", 30)),
         },
     }
-    run_exp7_fixed_delay_compare(
-        canonical_environment=canonical_environment,
-        delay_values=list(args.delay_values),
-        delay_window=delay_window,
-        algorithms=list(args.algorithms or DEFAULT_FIXED_COMPARE_ALGORITHMS),
-        output_dir=Path(args.output_dir),
-        data_cache_dir=Path(args.data_cache_dir),
-        data_mode=str(args.data_mode),
-        runner_kwargs_by_algorithm=runner_kwargs,
-    )
+    algorithms = list(args.algorithms or DEFAULT_FIXED_COMPARE_ALGORITHMS)
+    if args.execution_mode == "direct":
+        canonical_environment = _build_canonical_environment(fixed_config)
+        run_exp7_fixed_delay_direct(
+            canonical_environment=canonical_environment,
+            delay_values=list(args.delay_values),
+            delay_window=delay_window,
+            algorithms=algorithms,
+            output_dir=Path(args.output_dir),
+            data_cache_dir=Path(args.data_cache_dir),
+            data_mode=str(args.data_mode),
+            runner_kwargs_by_algorithm=runner_kwargs,
+            max_workers=args.max_workers,
+        )
+    elif args.execution_mode == "point":
+        if args.point_value is None:
+            raise SystemExit("--point-value is required in point mode.")
+        if not args.seed_path:
+            raise SystemExit("--seed-path is required in point mode.")
+        run_exp7_fixed_delay_point(
+            seed_path=Path(args.seed_path),
+            delay_seconds=float(args.point_value),
+            delay_window=delay_window,
+            output_dir=Path(args.output_dir),
+            algorithms=algorithms,
+            batch_size=int(fixed_config.get("batch_size", 30)),
+            runner_kwargs_by_algorithm=runner_kwargs,
+        )
+    elif args.execution_mode == "split":
+        canonical_environment = _build_canonical_environment(fixed_config)
+        run_exp7_fixed_delay_split_experiment(
+            script_path=Path(__file__).resolve(),
+            canonical_environment=canonical_environment,
+            delay_values=list(args.delay_values),
+            delay_window=delay_window,
+            algorithms=algorithms,
+            output_dir=Path(args.output_dir),
+            data_cache_dir=Path(args.data_cache_dir),
+            tmp_root=Path(args.tmp_root or "/tmp/chengdu_exp7_fixed_delay_split"),
+            batch_size=int(fixed_config.get("batch_size", 30)),
+            data_mode=str(args.data_mode),
+            poll_seconds=args.poll_seconds,
+            progress_mode=str(args.progress_mode),
+            runner_kwargs_by_algorithm=runner_kwargs,
+            fixed_config=fixed_config,
+        )
+    else:
+        raise SystemExit(
+            f"Unsupported execution mode for fixed Exp-7: {args.execution_mode}. "
+            f"Supported: {', '.join(mode for mode in PAPER_EXECUTION_MODES if mode in {'direct', 'point', 'split'})}."
+        )
     return 0
 
 

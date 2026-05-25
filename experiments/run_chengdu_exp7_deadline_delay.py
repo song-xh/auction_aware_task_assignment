@@ -27,7 +27,12 @@ DEFAULT_ROBUSTNESS_ALGORITHMS = ("capa", "rl-capa-infer")
 
 
 def _add_robustness_arguments(parser: argparse.ArgumentParser) -> None:
-    """Register the robustness-mode CLI surface (delay-seconds + delay-window)."""
+    """Register the robustness-mode CLI surface (delay-seconds only).
+
+    ``--delay-window`` is already declared on the paper script parser so it
+    flows through to ``derive_deadline_delay_environment`` for split/point
+    delay sweeps; robustness mode reuses the same flag.
+    """
 
     parser.add_argument(
         "--delay-seconds",
@@ -35,17 +40,8 @@ def _add_robustness_arguments(parser: argparse.ArgumentParser) -> None:
         default=None,
         help="Robustness mode: delay duration in seconds applied to parcels inside --delay-window.",
     )
-    parser.add_argument(
-        "--delay-window",
-        type=str,
-        default=None,
-        help='Robustness mode: inclusive "start,end" true-arrival window receiving the delay.',
-    )
-    parser.add_argument(
-        "--rl-use-service-slack",
-        action="store_true",
-        help="Robustness mode: match checkpoint trained with --rl-use-service-slack so the Stage-2 dim aligns.",
-    )
+    # ``--rl-use-service-slack`` is registered on the paper script parser so
+    # split-mode subprocesses can re-receive it from the command builder.
 
 
 def main() -> int:

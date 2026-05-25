@@ -7,6 +7,8 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from algorithms.impgta_runner import ImpGTARunner
+import experiments.exp7_fixed_delay_compare as fixed_delay_compare
+import experiments.run_chengdu_exp7_fixed_delay_compare as fixed_delay_script
 from experiments.exp7_fixed_delay_compare import (
     export_exp7_delay_datasets,
     prepare_exp7_delay_datasets,
@@ -313,3 +315,94 @@ def test_impgta_runner_carries_decision_trace_into_summary(tmp_path: Path) -> No
             "local_platform_revenue": 8.0,
         }
     ]
+
+
+def test_run_exp7_fixed_delay_compare_builds_each_delay_seed_once(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """Delayed environment seeds should be built once per point, not once per algorithm."""
+
+    environment = SimpleNamespace(tasks=[_task("p1", 5.0, 100.0)])
+    build_calls: list[str] = []
+
+    def fake_prepare(**_: object) -> dict[str, object]:
+        return {"seed_path": None}
+
+    def fake_resolve(**_: object) -> SimpleNamespace:
+        return environment
+
+    def fake_build_seed(current_environment: object) -> dict[str, object]:
+        build_calls.append(str(id(current_environment)))
+        return {"environment": current_environment}
+
+    def fake_clone(seed: dict[str, object]) -> SimpleNamespace:
+        current_environment = seed["environment"]
+        return SimpleNamespace(tasks=list(getattr(current_environment, "tasks", [])))
+
+    def fake_run_one_algorithm(**_: object) -> dict[str, object]:
+        return {"metrics": {}, "decision_trace": []}
+
+    monkeypatch.setattr(fixed_delay_compare, "prepare_exp7_delay_datasets", fake_prepare)
+    monkeypatch.setattr(fixed_delay_compare, "resolve_canonical_environment", fake_resolve)
+    monkeypatch.setattr(fixed_delay_compare, "build_environment_seed", fake_build_seed)
+    monkeypatch.setattr(fixed_delay_compare, "clone_environment_from_seed", fake_clone)
+    monkeypatch.setattr(fixed_delay_compare, "apply_processing_delay", lambda *args, **kwargs: None)
+    monkeypatch.setattr(fixed_delay_compare, "_affected_parcel_ids", lambda *_args, **_kwargs: ["p1"])
+    monkeypatch.setattr(fixed_delay_compare, "_run_one_algorithm", fake_run_one_algorithm)
+
+    fixed_delay_compare.run_exp7_fixed_delay_compare(
+        canonical_environment=environment,
+        delay_values=[5, 10],
+        delay_window=(10.0, 20.0),
+        algorithms=["capa", "ramcom"],
+        output_dir=tmp_path / "outputs",
+        data_cache_dir=tmp_path / "data",
+    )
+
+    assert len(build_calls) == 3
+
+
+def test_fixed_delay_script_dispatches_split_execution_mode(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """The fixed Exp-7 CLI should honor split execution like the paper sweep scripts."""
+
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    def fake_split(**kwargs: object) -> dict[str, object]:
+        calls.append(("split", dict(kwargs)))
+        return {}
+
+    def fail_direct(**_: object) -> dict[str, object]:
+        raise AssertionError("direct runner should not be used in split mode")
+
+    monkeypatch.setattr(fixed_delay_script, "run_exp7_fixed_delay_split_experiment", fake_split)
+    monkeypatch.setattr(fixed_delay_script, "run_exp7_fixed_delay_direct", fail_direct)
+    monkeypatch.setattr(
+        fixed_delay_script,
+        "_build_canonical_environment",
+        lambda fixed_config: SimpleNamespace(tasks=[]),
+    )
+    monkeypatch.setattr(
+        fixed_delay_script.sys,
+        "argv",
+        [
+            "run_chengdu_exp7_fixed_delay_compare.py",
+            "--execution-mode",
+            "split",
+            "--output-dir",
+            str(tmp_path / "outputs"),
+            "--delay-window",
+            "10,20",
+            "--algorithms",
+            "capa",
+            "--data-cache-dir",
+            str(tmp_path / "data"),
+        ],
+    )
+
+    assert fixed_delay_script.main() == 0
+    assert calls
+    assert calls[0][0] == "split"

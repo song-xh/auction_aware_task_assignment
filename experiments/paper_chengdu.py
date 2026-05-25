@@ -200,7 +200,7 @@ def run_chengdu_paper_point(
         return run_seeded_comparison_point(
             seed_path=seed_path,
             point_spec=point_spec,
-            environment_deriver=lambda seed, value: _derive_paper_environment_for_axis(seed, axis, value),
+            environment_deriver=lambda seed, value, _dw=fixed_config.get("delay_window"): _derive_paper_environment_for_axis(seed, axis, value, delay_window=_dw),
             runner_builder=partial(_build_paper_runner, runner_overrides_by_algorithm=merged_runner_overrides),
         )
     point_config = apply_sweep_axis(
@@ -226,13 +226,20 @@ def run_chengdu_paper_point(
             courier_service_score=float(fixed_config["courier_service_score"]),
             platform_quality_start=float(fixed_config["platform_quality_start"]),
             platform_quality_step=float(fixed_config["platform_quality_step"]),
+            deadline_seconds=fixed_config.get("deadline_seconds"),
+            courier_speed_kmh=fixed_config.get("courier_speed_kmh"),
         ),
         axis,
         axis_value,
     )
     environment = ChengduEnvironment.build(**point_config.as_environment_kwargs())
     if axis in {DEADLINE_DELAY_AXIS, DEADLINE_NOISE_AXIS}:
-        environment = _derive_paper_environment_for_axis(build_environment_seed(environment), axis, axis_value)
+        environment = _derive_paper_environment_for_axis(
+            build_environment_seed(environment),
+            axis,
+            axis_value,
+            delay_window=fixed_config.get("delay_window"),
+        )
     point_spec = ExperimentPointSpec(
         axis_name=axis,
         axis_value=axis_value,
@@ -334,10 +341,6 @@ def run_chengdu_paper_split_experiment(
             str(fixed_config["platforms"]),
             "--couriers-per-platform",
             str(fixed_config["couriers_per_platform"]),
-            "--courier-capacity",
-            str(fixed_config["courier_capacity"]),
-            "--service-radius-km",
-            str(fixed_config["service_radius_km"]),
             "--batch-size",
             str(fixed_config["batch_size"]),
             "--prediction-window-seconds",
@@ -369,6 +372,25 @@ def run_chengdu_paper_split_experiment(
             command.extend(["--task-window-start-seconds", str(fixed_config["task_window_start_seconds"])])
         if fixed_config["task_window_end_seconds"] is not None:
             command.extend(["--task-window-end-seconds", str(fixed_config["task_window_end_seconds"])])
+        if fixed_config.get("courier_capacity") is not None:
+            command.extend(["--courier-capacity", str(fixed_config["courier_capacity"])])
+        if fixed_config.get("service_radius_km") is not None:
+            command.extend(["--service-radius-km", str(fixed_config["service_radius_km"])])
+        if fixed_config.get("courier_speed_kmh") is not None:
+            command.extend(["--courier-speed-kmh", str(fixed_config["courier_speed_kmh"])])
+        if fixed_config.get("deadline_seconds") is not None:
+            command.extend(["--deadline-seconds", str(int(fixed_config["deadline_seconds"]))])
+        if fixed_config.get("delay_window") is not None:
+            start, end = fixed_config["delay_window"]
+            command.extend(["--delay-window", f"{start},{end}"])
+        if fixed_config.get("rl_checkpoint_dir") is not None:
+            command.extend(["--rl-checkpoint-dir", str(fixed_config["rl_checkpoint_dir"])])
+        if fixed_config.get("rl_batch_actions"):
+            command.extend(["--rl-batch-actions", *[str(int(v)) for v in fixed_config["rl_batch_actions"]]])
+        if fixed_config.get("rl_step_seconds") is not None:
+            command.extend(["--rl-step-seconds", str(int(fixed_config["rl_step_seconds"]))])
+        if fixed_config.get("rl_use_service_slack"):
+            command.extend(["--rl-use-service-slack"])
         if seed_path is not None:
             command.extend(["--seed-path", str(seed_path)])
         for algorithm, overrides in merged_runner_overrides.items():
@@ -681,9 +703,12 @@ def build_script_parser(description: str) -> argparse.ArgumentParser:
     # runner.py's behavior (framework default ~75). Pass ``--courier-capacity``
     # explicitly to reproduce the paper-style 50.0 cap.
     parser.add_argument("--courier-capacity", type=float, default=None)
-    # ``--service-radius-km`` default ``None`` so robustness mode matches
-    # runner.py (no radius filter unless explicitly set).
-    parser.add_argument("--service-radius-km", type=float, default=None)
+    # ``--service-radius-km`` default 1.0 (km) restores paper behavior:
+    # CAMA shortlist filters out far-away couriers, otherwise 5000+ parcel
+    # runs balloon to multi-hour evaluations because every parcel evaluates
+    # against every courier. Pass ``--service-radius-km`` explicitly to
+    # disable (None) or change.
+    parser.add_argument("--service-radius-km", type=float, default=1.0)
     parser.add_argument("--batch-size", type=int, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["batch_size"])
     parser.add_argument("--prediction-window-seconds", type=int, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["prediction_window_seconds"])
     parser.add_argument("--task-window-start-seconds", type=float, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["task_window_start_seconds"])
@@ -705,6 +730,12 @@ def build_script_parser(description: str) -> argparse.ArgumentParser:
         default=30.0,
         help="Courier travel speed in km/h.",
     )
+    parser.add_argument(
+        "--delay-window",
+        type=str,
+        default=None,
+        help='Exp-7 sweep: "start,end" true-arrival window receiving the swept delay (passes through to derive_deadline_delay_environment).',
+    )
     parser.add_argument("--courier-alpha", type=float, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["courier_alpha"])
     parser.add_argument("--courier-beta", type=float, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["courier_beta"])
     parser.add_argument("--courier-service-score", type=float, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["courier_service_score"])
@@ -712,6 +743,11 @@ def build_script_parser(description: str) -> argparse.ArgumentParser:
     parser.add_argument("--platform-quality-step", type=float, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["platform_quality_step"])
     parser.add_argument("--rl-future-feature-window-seconds", type=int, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["rl_future_feature_window_seconds"])
     parser.add_argument("--rl-checkpoint-dir", default=str(DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["rl_checkpoint_dir"]))
+    parser.add_argument(
+        "--rl-use-service-slack",
+        action="store_true",
+        help="Forward to rl-capa-infer so the Stage-2 state dim matches a checkpoint trained with service slack.",
+    )
     parser.add_argument("--rl-batch-actions", type=int, nargs="+", default=list(DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["rl_batch_actions"]))
     parser.add_argument("--rl-step-seconds", type=int, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["rl_step_seconds"])
     parser.add_argument("--rl-episodes", type=int, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["rl_episodes"])
@@ -755,6 +791,12 @@ def build_fixed_config_from_args(args: argparse.Namespace) -> dict[str, Any]:
         "task_sampling_seed": args.task_sampling_seed,
         "deadline_seconds": getattr(args, "deadline_seconds", None),
         "courier_speed_kmh": getattr(args, "courier_speed_kmh", 30.0),
+        "delay_window": (
+            tuple(float(x) for x in str(getattr(args, "delay_window")).split(",", 1))
+            if getattr(args, "delay_window", None)
+            else None
+        ),
+        "rl_use_service_slack": bool(getattr(args, "rl_use_service_slack", False)),
         "partner_history_task_count_start": getattr(
             args,
             "partner_history_task_count_start",
@@ -989,6 +1031,7 @@ def _derive_paper_environment_for_axis(
     seed: Any,
     axis: str,
     value: int | float,
+    delay_window: tuple[float, float] | None = None,
 ) -> ChengduEnvironment:
     """Derive a point environment for a standard or supplemental paper axis.
 
@@ -996,13 +1039,16 @@ def _derive_paper_environment_for_axis(
         seed: Canonical Chengdu environment seed.
         axis: Paper sweep axis name.
         value: Concrete axis value.
+        delay_window: Optional ``(start, end)`` true-arrival window for the
+            Exp-7 processing-delay axis. When unset, the delay applies
+            uniformly to every parcel (legacy behavior).
 
     Returns:
         Fresh Chengdu environment for the point.
     """
 
     if axis == DEADLINE_DELAY_AXIS:
-        return derive_deadline_delay_environment(seed, value)
+        return derive_deadline_delay_environment(seed, value, window=delay_window)
     if axis == DEADLINE_NOISE_AXIS:
         return derive_deadline_noise_environment(seed, value)
     return derive_environment_for_axis(seed, axis, value)

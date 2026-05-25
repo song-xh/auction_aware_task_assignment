@@ -4,13 +4,16 @@ from __future__ import annotations
 
 import csv
 import json
+import sys
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 
 from algorithms.registry import build_algorithm_runner
 from env.chengdu import get_model_release_time, get_true_deadline, get_true_release_time
-from experiments.deadline_disturbance import apply_processing_delay
+from experiments.deadline_disturbance import apply_processing_delay, derive_deadline_delay_environment
 from experiments.exp7_robustness import _affected_parcel_ids, _diff_decision_states
+from experiments.framework import ExperimentPointSpec, ExperimentSplitSpec, run_seeded_comparison_point, run_seeded_split_experiment
 from experiments.seeding import (
     build_environment_seed,
     clone_environment_from_seed,
@@ -20,6 +23,7 @@ from experiments.seeding import (
 
 
 DEFAULT_FIXED_DELAY_VALUES = (5, 10, 20, 30, 60)
+FIXED_DELAY_AXIS = "fixed_delay_seconds"
 _SUMMARY_METRIC_KEYS = (
     "TR",
     "CR",
@@ -190,13 +194,13 @@ def run_exp7_fixed_delay_compare(
     )
     seed = build_environment_seed(canonical_environment)
     runner_kwargs_by_algorithm = dict(runner_kwargs_by_algorithm or {})
-    delayed_envs: dict[str, Any] = {}
+    delayed_seeds: dict[str, Any] = {}
     affected_ids_by_delay: dict[str, list[str]] = {}
     for delay_value in delay_values:
         delay_key = str(delay_value)
         delayed_env = clone_environment_from_seed(seed)
         apply_processing_delay(delayed_env.tasks, delay_seconds=float(delay_value), window=delay_window)
-        delayed_envs[delay_key] = delayed_env
+        delayed_seeds[delay_key] = build_environment_seed(delayed_env)
         affected_ids_by_delay[delay_key] = _affected_parcel_ids(delayed_env)
 
     per_algorithm: dict[str, Any] = {}
@@ -213,7 +217,7 @@ def run_exp7_fixed_delay_compare(
             delay_key = str(delay_value)
             delayed_summary = _run_one_algorithm(
                 algorithm=algorithm,
-                environment=clone_environment_from_seed(build_environment_seed(delayed_envs[delay_key])),
+                environment=clone_environment_from_seed(delayed_seeds[delay_key]),
                 runner_kwargs=runner_kwargs_by_algorithm.get(algorithm, {}),
                 output_dir=algorithm_dir / f"delay-{_delay_label(delay_value)}",
             )
@@ -249,6 +253,332 @@ def run_exp7_fixed_delay_compare(
         "affected_parcel_ids_by_delay": affected_ids_by_delay,
         "per_algorithm": per_algorithm,
     }
+    with (output_dir / "summary.json").open("w", encoding="utf-8") as handle:
+        json.dump(summary, handle, indent=2)
+    return summary
+
+
+def derive_fixed_delay_point_environment(
+    seed: Any,
+    delay_seconds: int | float,
+    delay_window: tuple[float, float],
+) -> Any:
+    """Clone one canonical seed and apply the requested fixed Exp-7 delay point."""
+
+    delay = float(delay_seconds)
+    if delay == 0.0:
+        return clone_environment_from_seed(seed)
+    return derive_deadline_delay_environment(seed, delay_seconds=delay, window=delay_window)
+
+
+def run_exp7_fixed_delay_point(
+    seed_path: Path,
+    delay_seconds: int | float,
+    delay_window: tuple[float, float],
+    output_dir: Path,
+    algorithms: Sequence[str],
+    batch_size: int,
+    runner_kwargs_by_algorithm: Mapping[str, Mapping[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Run one fixed Exp-7 baseline or delayed point from a persisted canonical seed."""
+
+    point_spec = ExperimentPointSpec(
+        axis_name=FIXED_DELAY_AXIS,
+        axis_value=float(delay_seconds),
+        output_dir=output_dir,
+        algorithms=tuple(algorithms),
+        batch_size=int(batch_size),
+        runner_overrides_by_algorithm=dict(runner_kwargs_by_algorithm or {}),
+    )
+    return run_seeded_comparison_point(
+        seed_path=seed_path,
+        point_spec=point_spec,
+        environment_deriver=lambda seed, value: derive_fixed_delay_point_environment(
+            seed=seed,
+            delay_seconds=value,
+            delay_window=delay_window,
+        ),
+    )
+
+
+def run_exp7_fixed_delay_direct(
+    canonical_environment: Any,
+    delay_values: Sequence[int | float],
+    delay_window: tuple[float, float],
+    algorithms: Sequence[str],
+    output_dir: Path,
+    data_cache_dir: Path,
+    data_mode: str = "auto",
+    runner_kwargs_by_algorithm: Mapping[str, Mapping[str, Any]] | None = None,
+    max_workers: int | None = None,
+) -> dict[str, Any]:
+    """Run fixed Exp-7 as per-point seeded executions and aggregate the comparison."""
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    data_manifest = prepare_exp7_delay_datasets(
+        canonical_environment=canonical_environment,
+        data_cache_dir=data_cache_dir,
+        delay_values=delay_values,
+        delay_window=delay_window,
+        data_mode=data_mode,
+    )
+    canonical_environment = resolve_canonical_environment(
+        canonical_environment=canonical_environment,
+        data_manifest=data_manifest,
+        data_mode=data_mode,
+    )
+    seed_path = _ensure_point_seed_path(
+        canonical_environment=canonical_environment,
+        data_manifest=data_manifest,
+        output_dir=output_dir,
+    )
+    batch_size = int((runner_kwargs_by_algorithm or {}).get("capa", {}).get("batch_size", 30))
+    point_output_dirs = {
+        float(delay_value): output_dir / _point_output_dir_name(delay_value)
+        for delay_value in [0.0, *[float(value) for value in delay_values]]
+    }
+    if max_workers is not None and max_workers > 1 and len(point_output_dirs) > 1:
+        with ProcessPoolExecutor(max_workers=max_workers) as executor:
+            futures = [
+                executor.submit(
+                    run_exp7_fixed_delay_point,
+                    seed_path=seed_path,
+                    delay_seconds=delay_value,
+                    delay_window=delay_window,
+                    output_dir=point_output_dirs[delay_value],
+                    algorithms=tuple(algorithms),
+                    batch_size=batch_size,
+                    runner_kwargs_by_algorithm=dict(runner_kwargs_by_algorithm or {}),
+                )
+                for delay_value in point_output_dirs
+            ]
+            for future in futures:
+                future.result()
+    else:
+        for delay_value, point_output_dir in point_output_dirs.items():
+            run_exp7_fixed_delay_point(
+                seed_path=seed_path,
+                delay_seconds=delay_value,
+                delay_window=delay_window,
+                output_dir=point_output_dir,
+                algorithms=algorithms,
+                batch_size=batch_size,
+                runner_kwargs_by_algorithm=runner_kwargs_by_algorithm,
+            )
+    return aggregate_exp7_fixed_delay_compare_points(
+        point_output_dirs=point_output_dirs,
+        delay_values=delay_values,
+        delay_window=delay_window,
+        algorithms=algorithms,
+        output_dir=output_dir,
+        data_manifest=data_manifest,
+        seed_path=seed_path,
+        data_mode=data_mode,
+    )
+
+
+def run_exp7_fixed_delay_split_experiment(
+    script_path: Path,
+    canonical_environment: Any,
+    delay_values: Sequence[int | float],
+    delay_window: tuple[float, float],
+    algorithms: Sequence[str],
+    output_dir: Path,
+    data_cache_dir: Path,
+    tmp_root: Path,
+    batch_size: int,
+    data_mode: str = "auto",
+    poll_seconds: int = 30,
+    progress_mode: str = "overwrite",
+    runner_kwargs_by_algorithm: Mapping[str, Mapping[str, Any]] | None = None,
+    fixed_config: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Run fixed Exp-7 as split point subprocesses and aggregate their summaries."""
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    data_manifest = prepare_exp7_delay_datasets(
+        canonical_environment=canonical_environment,
+        data_cache_dir=data_cache_dir,
+        delay_values=delay_values,
+        delay_window=delay_window,
+        data_mode=data_mode,
+    )
+    canonical_environment = resolve_canonical_environment(
+        canonical_environment=canonical_environment,
+        data_manifest=data_manifest,
+        data_mode=data_mode,
+    )
+    seed_path = _ensure_point_seed_path(
+        canonical_environment=canonical_environment,
+        data_manifest=data_manifest,
+        output_dir=tmp_root,
+    )
+    split_spec = ExperimentSplitSpec(
+        experiment_label="Chengdu Exp-7 Fixed Delay Compare",
+        axis_name=FIXED_DELAY_AXIS,
+        axis_values=tuple([0.0, *[float(value) for value in delay_values]]),
+        tmp_root=tmp_root,
+        output_dir=output_dir,
+        algorithms=tuple(algorithms),
+        batch_size=int(batch_size),
+        poll_seconds=int(poll_seconds),
+        progress_mode=progress_mode,
+        runner_overrides_by_algorithm=dict(runner_kwargs_by_algorithm or {}),
+    )
+    config = dict(fixed_config or {})
+
+    def point_command_builder(value: int | float, point_output_dir: Path) -> Sequence[str]:
+        """Build one fixed-delay point subprocess command."""
+
+        command: list[str] = [
+            sys.executable,
+            "-u",
+            str(script_path),
+            "--execution-mode",
+            "point",
+            "--point-value",
+            str(value),
+            "--output-dir",
+            str(point_output_dir),
+            "--delay-window",
+            f"{delay_window[0]},{delay_window[1]}",
+            "--data-cache-dir",
+            str(data_cache_dir),
+            "--data-mode",
+            "reuse",
+            "--seed-path",
+            str(seed_path),
+            "--batch-size",
+            str(batch_size),
+            "--algorithms",
+            *list(algorithms),
+            "--data-dir",
+            str(config.get("data_dir", "Data")),
+            "--num-parcels",
+            str(config.get("num_parcels", 100)),
+            "--local-couriers",
+            str(config.get("local_couriers", 10)),
+            "--platforms",
+            str(config.get("platforms", 2)),
+            "--couriers-per-platform",
+            str(config.get("couriers_per_platform", 5)),
+            "--task-sampling-seed",
+            str(config.get("task_sampling_seed", 1)),
+            "--partner-history-task-count-start",
+            str(config.get("partner_history_task_count_start", 0)),
+            "--partner-history-task-count-step",
+            str(config.get("partner_history_task_count_step", 0)),
+            "--courier-alpha",
+            str(config.get("courier_alpha", 0.5)),
+            "--courier-service-score",
+            str(config.get("courier_service_score", 1.0)),
+            "--platform-quality-start",
+            str(config.get("platform_quality_start", 1.0)),
+            "--platform-quality-step",
+            str(config.get("platform_quality_step", 0.1)),
+            "--courier-speed-kmh",
+            str(config.get("courier_speed_kmh", 30.0)),
+        ]
+        optional_values = (
+            ("--task-window-start-seconds", config.get("task_window_start_seconds")),
+            ("--task-window-end-seconds", config.get("task_window_end_seconds")),
+            ("--courier-capacity", config.get("courier_capacity")),
+            ("--service-radius-km", config.get("service_radius_km")),
+            ("--deadline-seconds", config.get("deadline_seconds")),
+            ("--courier-beta", config.get("courier_beta")),
+        )
+        for flag, value_item in optional_values:
+            if value_item is not None:
+                command.extend([flag, str(value_item)])
+        return command
+
+    def aggregate_summary_builder(point_output_dirs: dict[int | float, Path]) -> dict[str, Any]:
+        """Aggregate split point outputs into the fixed Exp-7 comparison summary."""
+
+        return aggregate_exp7_fixed_delay_compare_points(
+            point_output_dirs=point_output_dirs,
+            delay_values=delay_values,
+            delay_window=delay_window,
+            algorithms=algorithms,
+            output_dir=output_dir,
+            data_manifest=data_manifest,
+            seed_path=seed_path,
+            data_mode=data_mode,
+        )
+
+    return run_seeded_split_experiment(
+        split_spec=split_spec,
+        point_command_builder=point_command_builder,
+        aggregate_summary_builder=aggregate_summary_builder,
+    )
+
+
+def aggregate_exp7_fixed_delay_compare_points(
+    point_output_dirs: Mapping[int | float, Path],
+    delay_values: Sequence[int | float],
+    delay_window: tuple[float, float],
+    algorithms: Sequence[str],
+    output_dir: Path,
+    data_manifest: Mapping[str, Any],
+    seed_path: Path,
+    data_mode: str,
+) -> dict[str, Any]:
+    """Aggregate point-level fixed Exp-7 runs into the compare-style summary."""
+
+    normalized_dirs = {float(value): path for value, path in point_output_dirs.items()}
+    baseline_summary = _load_point_summary(normalized_dirs[0.0])
+    seed = load_environment_seed(seed_path)
+    affected_ids_by_delay: dict[str, list[str]] = {}
+    for delay_value in delay_values:
+        delay_key = str(delay_value)
+        delayed_environment = derive_fixed_delay_point_environment(
+            seed=seed,
+            delay_seconds=delay_value,
+            delay_window=delay_window,
+        )
+        affected_ids_by_delay[delay_key] = _affected_parcel_ids(delayed_environment)
+
+    per_algorithm: dict[str, Any] = {}
+    for algorithm in algorithms:
+        baseline_algo_summary = dict(baseline_summary.get(algorithm, {}))
+        per_delay: dict[str, Any] = {}
+        for delay_value in delay_values:
+            delay_key = str(delay_value)
+            delayed_summary = _load_point_summary(normalized_dirs[float(delay_value)])
+            delayed_algo_summary = dict(delayed_summary.get(algorithm, {}))
+            comparison = summarize_delay_run(
+                baseline_summary=baseline_algo_summary,
+                delayed_summary=delayed_algo_summary,
+                affected_parcel_ids=affected_ids_by_delay[delay_key],
+            )
+            comparison.update(
+                {
+                    "delay_seconds": float(delay_value),
+                    "baseline_metrics": dict(baseline_algo_summary.get("metrics", {})),
+                    "delayed_metrics": dict(delayed_algo_summary.get("metrics", {})),
+                    "summary_paths": {
+                        "baseline": str(normalized_dirs[0.0] / algorithm / "summary.json"),
+                        "delayed": str(normalized_dirs[float(delay_value)] / algorithm / "summary.json"),
+                    },
+                }
+            )
+            per_delay[delay_key] = comparison
+        per_algorithm[algorithm] = {
+            "baseline_metrics": dict(baseline_algo_summary.get("metrics", {})),
+            "baseline_summary_path": str(normalized_dirs[0.0] / algorithm / "summary.json"),
+            "delays": per_delay,
+        }
+
+    summary = {
+        "algorithms": list(algorithms),
+        "data_mode": str(data_mode),
+        "delay_window": [float(delay_window[0]), float(delay_window[1])],
+        "delay_values": [float(value) for value in delay_values],
+        "data_manifest": dict(data_manifest),
+        "affected_parcel_ids_by_delay": affected_ids_by_delay,
+        "per_algorithm": per_algorithm,
+    }
+    output_dir.mkdir(parents=True, exist_ok=True)
     with (output_dir / "summary.json").open("w", encoding="utf-8") as handle:
         json.dump(summary, handle, indent=2)
     return summary
@@ -424,3 +754,35 @@ def _run_one_algorithm(
     output_dir.mkdir(parents=True, exist_ok=True)
     runner = build_algorithm_runner(algorithm, **dict(runner_kwargs))
     return runner.run(environment=environment, output_dir=output_dir)
+
+
+def _ensure_point_seed_path(
+    canonical_environment: Any,
+    data_manifest: Mapping[str, Any],
+    output_dir: Path,
+) -> Path:
+    """Return a persisted canonical seed path for point-based Exp-7 execution."""
+
+    seed_path_value = data_manifest.get("seed_path")
+    if seed_path_value:
+        seed_path = Path(str(seed_path_value))
+        if seed_path.exists():
+            return seed_path
+    seed_path = output_dir / "canonical-environment-seed.pkl"
+    save_environment_seed(build_environment_seed(canonical_environment), seed_path)
+    return seed_path
+
+
+def _point_output_dir_name(delay_value: int | float) -> str:
+    """Return the stable output directory name for one fixed-delay point."""
+
+    if float(delay_value) == 0.0:
+        return "baseline"
+    return f"delay-{_delay_label(delay_value)}"
+
+
+def _load_point_summary(point_output_dir: Path) -> dict[str, Any]:
+    """Load one point-level summary produced by the seeded point runner."""
+
+    with (point_output_dir / "summary.json").open("r", encoding="utf-8") as handle:
+        return json.load(handle)

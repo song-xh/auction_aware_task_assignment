@@ -173,7 +173,7 @@ def format_split_progress_snapshot(snapshot: Mapping[str, Any]) -> str:
     updated_at = enriched.get("updated_at")
     if updated_at is not None:
         lines.append(f"Updated: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(float(updated_at)))}")
-    for point_value in sorted(enriched["points"], key=lambda value: int(value)):
+    for point_value in sorted(enriched["points"], key=lambda value: float(value)):
         point = enriched["points"][point_value]
         current_algorithm = point.get("current_algorithm") or "-"
         algorithm_index = point.get("algorithm_index") or max(0, len(point.get("completed_algorithms", [])))

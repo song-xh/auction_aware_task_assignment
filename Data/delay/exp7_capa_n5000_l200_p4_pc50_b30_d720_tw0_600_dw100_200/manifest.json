@@ -1,0 +1,22 @@
+{
+  "data_cache_dir": "Data/delay/exp7_capa_n5000_l200_p4_pc50_b30_d720_tw0_600_dw100_200",
+  "seed_path": "Data/delay/exp7_capa_n5000_l200_p4_pc50_b30_d720_tw0_600_dw100_200/canonical-environment-seed.pkl",
+  "canonical_pickup_path": "Data/delay/exp7_capa_n5000_l200_p4_pc50_b30_d720_tw0_600_dw100_200/pick-up-parcels.csv",
+  "partner_task_paths": {
+    "P1": "Data/delay/exp7_capa_n5000_l200_p4_pc50_b30_d720_tw0_600_dw100_200/partner-tasks-P1.csv",
+    "P2": "Data/delay/exp7_capa_n5000_l200_p4_pc50_b30_d720_tw0_600_dw100_200/partner-tasks-P2.csv",
+    "P3": "Data/delay/exp7_capa_n5000_l200_p4_pc50_b30_d720_tw0_600_dw100_200/partner-tasks-P3.csv",
+    "P4": "Data/delay/exp7_capa_n5000_l200_p4_pc50_b30_d720_tw0_600_dw100_200/partner-tasks-P4.csv"
+  },
+  "delayed_pickup_paths": {
+    "5.0": "Data/delay/exp7_capa_n5000_l200_p4_pc50_b30_d720_tw0_600_dw100_200/pick-up-parcels-delay-5s.csv",
+    "10.0": "Data/delay/exp7_capa_n5000_l200_p4_pc50_b30_d720_tw0_600_dw100_200/pick-up-parcels-delay-10s.csv",
+    "20.0": "Data/delay/exp7_capa_n5000_l200_p4_pc50_b30_d720_tw0_600_dw100_200/pick-up-parcels-delay-20s.csv",
+    "30.0": "Data/delay/exp7_capa_n5000_l200_p4_pc50_b30_d720_tw0_600_dw100_200/pick-up-parcels-delay-30s.csv",
+    "60.0": "Data/delay/exp7_capa_n5000_l200_p4_pc50_b30_d720_tw0_600_dw100_200/pick-up-parcels-delay-60s.csv"
+  },
+  "delay_window": [
+    100.0,
+    200.0
+  ]
+}

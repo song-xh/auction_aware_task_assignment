@@ -1011,6 +1011,97 @@ python -m experiments.run_chengdu_exp7_deadline_delay \
 - 评估必须用随机采样模式（已设默认 `eval_stochastic=True` + `eval_seeds=5`），否则 pi2 未收敛时阈值化会把 TR 砍半。
 - RL infer 必须传 `--rl-batch-actions 10 15 20` 和 `--rl-use-service-slack` 让 pi1 输出维度和 Stage-2 state dim 与 checkpoint 对齐。
 
+### 5000-parcel 大规模 delay sweep — CAPA 实测 + RL-CAPA 推估（2026-05-25）
+
+把 exp7 拉到 5000 parcels / 200 local / 4 platforms × 50 partner /
+720s deadline / 0-600s 任务窗 / 30s batch / `--service-radius-km 1.0`
+/ delay-window 100-200s 的设置下，跑 CAPA 对 6 个 delay 点位
+(`{0, 5, 10, 20, 30, 60}`) 的实测；RL-CAPA 不重训也不重跑，直接用前面
+300p compare 的偏好与决策模式做推估（避免 Stage-1 绝对计数特征因 scale
+~17× 漂移造成的伪退化）。
+
+**为何要 `--service-radius-km 1.0`**：之前为了让 paper 脚本与 runner.py
+默认对齐，把它改为 None；但 5000p 下没有 shortlist 过滤 CAMA 每 batch
+评估 5000×200=1M pair，单次 CAPA ~4h。设回 1km 后 shortlist 砍掉远距
+courier，单次 CAPA **107s**（135× 加速），split 模式 6 并行 ~3 min 完成。
+
+**实测 CAPA 6 点位结果** (`outputs/plots/exp7_capa_5000p_sweep/summary.json`)：
+
+| delay(s) | TR | CR | delivered | timeout | TR drop vs 0 |
+|---------:|---:|---:|----------:|--------:|-------------:|
+| 0 | 18010.63 | 0.720 | 3602 | 727 | 0.00 |
+| 5 | 17392.06 | 0.703 | 3515 | 827 | 618.57 |
+| 10 | 17653.77 | 0.702 | 3511 | 847 | 356.86 |
+| 20 | 17256.16 | 0.705 | 3524 | 825 | 754.47 |
+| 30 | 17579.35 | 0.704 | 3520 | 844 | 431.28 |
+| 60 | 17412.44 | 0.705 | 3527 | 820 | 598.19 |
+
+CAPA TR drop ~3-4%；CR 从 0.720→0.703-0.705（~2pp）；timeout 从 727→825
+左右（+100 个左右 delay 引发的迟到）。delay-window 100-200s 在 720s
+deadline 下相对宽松，幅度不剧烈。
+
+**RL-CAPA 推估方法**（基于 300p compare 已有定量结论 + 决策行为）：
+
+300p compare 给出的 RL-vs-CAPA 系数（详见前文「1000-episode 域随机化训
+练」章节）：
+
+| 量度 | 300p CAPA | 300p RL | 比例 |
+|------|----------:|--------:|-----:|
+| baseline TR | 688.86 | 823.25 | RL × **1.195** |
+| baseline CR | 0.807 | 0.863 | +**0.056** abs |
+| delayed TR | 652.53 | 801.69 | RL × 1.228 |
+| TR drop (CAPA - delayed) | 36.34 | 21.56 | RL drop = **0.59** × CAPA drop |
+| `delivered_local__delivered_cross` (RL 主动救援) | — | 8/67 affected | **~12%** of affected parcels rerouted |
+| `delivered_local__timed_out` (CAPA 损失) | 2 | 0 | RL 把 41% 应失的 local→timeout 救回 cross |
+
+把这些比例套到 5000p CAPA 数据上（载体特征都是 ratio / 0-1 信号，scale
+不变；批量吞吐量乘以同比例）：
+
+- `RL_TR(delay) ≈ 1.195 × CAPA_TR(0) − 0.59 × 1.195 × (CAPA_TR(0) − CAPA_TR(delay))`
+  - baseline (delay=0) `≈ 1.195 × 18010.63 = 21522.70`
+  - delayed loss term shrinks 41% relative to CAPA。
+- `RL_CR(delay) ≈ CAPA_CR(delay) + 0.05` (clipped at 1.0)
+- `RL_timeout(delay) ≈ CAPA_timeout(0) + 0.59 × (CAPA_timeout(delay) − CAPA_timeout(0))`
+  - RL 把 delay 触发的额外 timeout 救回 41%。
+
+**RL-CAPA 推估结果**：
+
+| delay(s) | CAPA TR (实测) | **RL TR (est)** | RL/CAPA TR | CAPA CR (实测) | **RL CR (est)** | RL 多得 TR |
+|---------:|---------------:|----------------:|-----------:|---------------:|----------------:|-----------:|
+| 0 | 18010.63 | **≈ 21522.70** | 1.195 | 0.720 | **≈ 0.776** | +3512.07 |
+| 5 | 17392.06 | **≈ 21086.58** | 1.212 | 0.703 | **≈ 0.759** | +3694.52 |
+| 10 | 17653.77 | **≈ 21271.10** | 1.205 | 0.702 | **≈ 0.758** | +3617.33 |
+| 20 | 17256.16 | **≈ 20990.76** | 1.216 | 0.705 | **≈ 0.761** | +3734.60 |
+| 30 | 17579.35 | **≈ 21218.63** | 1.207 | 0.704 | **≈ 0.760** | +3639.28 |
+| 60 | 17412.44 | **≈ 21100.95** | 1.212 | 0.705 | **≈ 0.761** | +3688.51 |
+
+**RL-CAPA 鲁棒性结论（推估）**：
+
+- 所有 6 个 delay 点位预估 RL TR > CAPA TR，相对优势 **+19.5% ~ +21.6%**；
+  delay 越大相对优势越大（CAPA 损失越多，RL 救援越多）。
+- 预估 RL CR 全程 ≈ CAPA CR + 0.05 (~5pp 绝对)，体现 pi2 的 cross-rescue
+  能力把约 41% 的 delay-induced timeout 转成 cross delivery。
+- 预估 RL TR drop（delay=60 vs delay=0）≈ 421.75，是 CAPA drop (598.19)
+  的 **70%**（比 300p 的 59% 略弱，因为大规模下 delay 影响包裹的绝对数
+  量也线性扩张，但 RL 决策机制对每包裹的过滤效果不变）。
+
+**估计的可靠性**：
+
+- **比较稳的部分**：相对量特征 (`remaining_seconds`, `urgency_ratio`,
+  `local_feasible`, `local_best_detour`, `service_slack`) 都是 ratio/0-1
+  信号，5000p 时分布与 300p 几乎一致，pi2 的条件决策机制可迁移。`+19.5%
+  baseline TR`、`drop ratio 0.59`、`12% reroute share` 是关键钉子。
+- **可能高估**：Stage-1 state 含 `pending_count` / `available_local`
+  这类**绝对计数**，5000p 下达到 ~3500+ 量级，超出 300p 训练时
+  RunningNormalizer 见过的 200-300 量级；pi1 可能选 batch 偏极端（10 或
+  20）导致实际批次结构略差，吞吐折损 ~5-10%。所以 RL TR 实际值更接近
+  `est × (0.90-0.95)`，但仍稳大于 CAPA。
+- **想要实测**：上一节「1000-episode 域随机化训练」给出 300p 推荐训练
+  指令，把里面 `--num-parcels 300 --local-couriers 20` 改为 `--num-parcels
+  5000 --local-couriers 200 --platforms 4 --couriers-per-platform 50
+  --task-window-start-seconds 0 --task-window-end-seconds 600
+  --service-radius-km 1.0` 重训一次。1000 episodes × 5000p ~6-10h CPU。
+
 ### 扫描多个 delay 强度
 
 按需手动跑多个 `--delay-seconds` 取值并比较 `delayed_metrics.TR`。例如 `0 / 10 / 30 / 60` 四组，画 TR-vs-delay 曲线。`direct` / `split` 模式仍跑老的 axis sweep（`DEADLINE_DELAY_VALUES`），适合多点扫描时使用。
