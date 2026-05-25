@@ -101,7 +101,11 @@ def parse_delay_window(spec: str) -> tuple[float, float]:
     return start, end
 
 
-def apply_deadline_noise(tasks: Sequence[Any], noise_percent: int | float) -> None:
+def apply_deadline_noise(
+    tasks: Sequence[Any],
+    noise_percent: int | float,
+    window: tuple[float, float] | None = None,
+) -> None:
     """Attach perceived-deadline noise to tasks without mutating ``d_time``.
 
     Args:
@@ -109,17 +113,39 @@ def apply_deadline_noise(tasks: Sequence[Any], noise_percent: int | float) -> No
         noise_percent: Percentage of each task's true release-to-deadline slack
             added to the model-facing deadline. Negative values make the
             observed deadline earlier.
+        window: Optional inclusive ``(start, end)`` true-arrival filter. When
+            present, only tasks whose true arrival falls inside the window
+            receive noise; remaining tasks get ``observed_d_time`` equal to
+            their true deadline. ``True`` is stored in ``is_noised`` for
+            affected tasks, ``False`` for the rest.
+
+    Raises:
+        ValueError: ``window`` has start greater than end.
     """
 
     ratio = float(noise_percent) / 100.0
+    if window is not None:
+        window_start, window_end = float(window[0]), float(window[1])
+        if window_start > window_end:
+            raise ValueError("noise window start must be <= end.")
+    else:
+        window_start = window_end = None
     for task in tasks:
-        slack = max(0.0, get_true_deadline(task) - get_true_release_time(task))
-        setattr(task, "observed_d_time", get_true_deadline(task) + round(slack * ratio))
+        true_release = get_true_release_time(task)
+        true_dl = get_true_deadline(task)
+        if window is None or (window_start <= true_release <= window_end):
+            slack = max(0.0, true_dl - true_release)
+            setattr(task, "observed_d_time", true_dl + round(slack * ratio))
+            setattr(task, "is_noised", True)
+        else:
+            setattr(task, "observed_d_time", true_dl)
+            setattr(task, "is_noised", False)
 
 
 def derive_deadline_noise_environment(
     seed: ChengduEnvironmentSeed,
     noise_percent: int | float,
+    noise_window: tuple[float, float] | None = None,
 ) -> ChengduEnvironment:
     """Clone a seed and apply Exp-8 perceived-deadline noise.
 
@@ -127,6 +153,9 @@ def derive_deadline_noise_environment(
         seed: Canonical Chengdu environment seed.
         noise_percent: Percent of true deadline slack added to the perceived
             deadline.
+        noise_window: Optional inclusive ``(start, end)`` true-arrival filter.
+            When present, only tasks whose true arrival falls inside the window
+            receive noise.
 
     Returns:
         Fresh Chengdu environment with `observed_d_time` attached to cloned
@@ -134,5 +163,5 @@ def derive_deadline_noise_environment(
     """
 
     environment = clone_environment_from_seed(seed)
-    apply_deadline_noise(environment.tasks, noise_percent)
+    apply_deadline_noise(environment.tasks, noise_percent, window=noise_window)
     return environment

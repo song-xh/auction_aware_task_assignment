@@ -172,6 +172,32 @@ def test_derive_deadline_noise_environment_mutates_only_clone() -> None:
     assert derived.tasks[0].d_time == 110.0
 
 
+def test_apply_deadline_noise_window_skips_out_of_window_tasks() -> None:
+    """Tasks outside the noise window should get observed_d_time == true deadline."""
+
+    in_window = SimpleNamespace(num="t1", s_time=400.0, d_time=700.0)
+    out_of_window = SimpleNamespace(num="t2", s_time=100.0, d_time=500.0)
+
+    apply_deadline_noise([in_window, out_of_window], noise_percent=20, window=(300.0, 600.0))
+
+    assert in_window.observed_d_time == 700.0 + round(300.0 * 0.2)  # 760
+    assert in_window.is_noised is True
+    assert out_of_window.observed_d_time == 500.0
+    assert out_of_window.is_noised is False
+
+
+def test_apply_deadline_noise_window_none_applies_to_all() -> None:
+    """When window is None, all tasks receive noise (original behavior)."""
+
+    t1 = SimpleNamespace(num="t1", s_time=10.0, d_time=110.0)
+    t2 = SimpleNamespace(num="t2", s_time=500.0, d_time=800.0)
+
+    apply_deadline_noise([t1, t2], noise_percent=10)
+
+    assert t1.observed_d_time == 110.0 + round(100.0 * 0.1)  # 120
+    assert t2.observed_d_time == 800.0 + round(300.0 * 0.1)  # 830
+
+
 def _runtime(tasks: Sequence[Any]) -> ChengduBatchRuntime:
     """Build a minimal batch runtime for deadline-disturbance tests."""
 
