@@ -1050,7 +1050,7 @@ def _derive_paper_environment_for_axis(
     if axis == DEADLINE_DELAY_AXIS:
         return derive_deadline_delay_environment(seed, value, window=delay_window)
     if axis == DEADLINE_NOISE_AXIS:
-        return derive_deadline_noise_environment(seed, value)
+        return derive_deadline_noise_environment(seed, value, noise_window=delay_window)
     return derive_environment_for_axis(seed, axis, value)
 
 
