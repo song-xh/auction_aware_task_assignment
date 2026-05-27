@@ -14,6 +14,18 @@ DEFAULT_CHENGDU_PAPER_ALGORITHMS = (
 )
 
 
+PAPER_FIXED_CONFIG_OVERRIDES: dict[str, dict[str, int]] = {
+    "formal": {
+        "deadline_seconds": 720,
+    },
+    "ny": {
+        "local_couriers": 300,
+        "couriers_per_platform": 50,
+        "deadline_seconds": 720,
+    },
+}
+
+
 PAPER_SUITE_PRESETS: dict[str, dict[str, dict[str, list[float]]]] = {
     "chengdu-paper": {
         "smoke": {

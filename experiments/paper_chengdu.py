@@ -37,7 +37,7 @@ from experiments.deadline_disturbance import (
 from experiments.framework import ExperimentPointSpec, ExperimentSplitSpec, ManagedRoundSpec, run_environment_comparison_point, run_managed_rounds, run_seeded_comparison_point, run_seeded_split_experiment
 from experiments.progress import build_point_progress_snapshot, write_point_progress
 from .compare import run_comparison_sweep
-from .paper_config import DEFAULT_CHENGDU_PAPER_ALGORITHMS, PAPER_SUITE_PRESETS
+from .paper_config import DEFAULT_CHENGDU_PAPER_ALGORITHMS, PAPER_FIXED_CONFIG_OVERRIDES, PAPER_SUITE_PRESETS
 from .plotting import save_default_comparison_plots
 from .progress import ProgressMode
 from .seeding import build_environment_seed, clone_environment_from_seed, derive_environment_for_axis, save_environment_seed
@@ -112,6 +112,27 @@ DEFAULT_EXP1_ROUNDS: tuple[Exp1RoundSpec, ...] = (
 PAPER_EXECUTION_MODES = ("direct", "split", "point", "managed", "robustness")
 
 
+def build_preset_fixed_config(
+    preset_name: str,
+    fixed_config_overrides: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build fixed paper-run configuration with named preset background values.
+
+    Args:
+        preset_name: Paper preset selecting fixed background overrides.
+        fixed_config_overrides: Optional explicit values that replace preset defaults.
+
+    Returns:
+        Merged fixed configuration for experiment point generation.
+    """
+
+    fixed_config = dict(DEFAULT_CHENGDU_PAPER_FIXED_CONFIG)
+    fixed_config.update(PAPER_FIXED_CONFIG_OVERRIDES.get(preset_name, {}))
+    if fixed_config_overrides:
+        fixed_config.update(fixed_config_overrides)
+    return fixed_config
+
+
 def run_chengdu_paper_experiment(
     axis: str,
     output_dir: Path,
@@ -121,9 +142,7 @@ def run_chengdu_paper_experiment(
     max_workers: int | None = None,
 ) -> dict[str, Any]:
     """Run one Chengdu paper-style comparison sweep and persist a manifest."""
-    fixed_config = dict(DEFAULT_CHENGDU_PAPER_FIXED_CONFIG)
-    if fixed_config_overrides:
-        fixed_config.update(fixed_config_overrides)
+    fixed_config = build_preset_fixed_config(preset_name, fixed_config_overrides)
     values = PAPER_SUITE_PRESETS["chengdu-paper"][preset_name][axis]
     summary = run_comparison_sweep(
         algorithms=algorithms,
@@ -287,9 +306,7 @@ def run_chengdu_paper_split_experiment(
         Aggregate sweep summary.
     """
 
-    fixed_config = dict(DEFAULT_CHENGDU_PAPER_FIXED_CONFIG)
-    if fixed_config_overrides:
-        fixed_config.update(fixed_config_overrides)
+    fixed_config = build_preset_fixed_config(preset_name, fixed_config_overrides)
     merged_runner_overrides = build_paper_runner_overrides_from_fixed_config(
         fixed_config=fixed_config,
         explicit_overrides=runner_overrides_by_algorithm,
@@ -602,9 +619,7 @@ def run_chengdu_paper_suite(
     max_workers: int | None = None,
 ) -> dict[str, Any]:
     """Run all supported Chengdu paper-style sweeps and persist a suite manifest."""
-    fixed_config = dict(DEFAULT_CHENGDU_PAPER_FIXED_CONFIG)
-    if fixed_config_overrides:
-        fixed_config.update(fixed_config_overrides)
+    fixed_config = build_preset_fixed_config(preset_name, fixed_config_overrides)
     return run_experiment_suite(
         suite_name="chengdu-paper",
         preset_name=preset_name,
@@ -696,9 +711,9 @@ def build_script_parser(description: str) -> argparse.ArgumentParser:
     )
     parser.add_argument("--max-workers", type=int, default=None, help="Optional process count for parallel sweep-point execution.")
     parser.add_argument("--num-parcels", type=int, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["num_parcels"])
-    parser.add_argument("--local-couriers", type=int, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["local_couriers"])
+    parser.add_argument("--local-couriers", type=int, default=None)
     parser.add_argument("--platforms", type=int, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["platforms"])
-    parser.add_argument("--couriers-per-platform", type=int, default=DEFAULT_CHENGDU_PAPER_FIXED_CONFIG["couriers_per_platform"])
+    parser.add_argument("--couriers-per-platform", type=int, default=None)
     # ``--courier-capacity`` default is ``None`` so callers that omit it match
     # runner.py's behavior (framework default ~75). Pass ``--courier-capacity``
     # explicitly to reproduce the paper-style 50.0 cap.
@@ -774,12 +789,17 @@ def build_script_parser(description: str) -> argparse.ArgumentParser:
 
 def build_fixed_config_from_args(args: argparse.Namespace) -> dict[str, Any]:
     """Translate shared script CLI arguments into a fixed Chengdu experiment config."""
+    preset_fixed = build_preset_fixed_config(getattr(args, "preset", "formal"))
     return {
         "data_dir": Path(args.data_dir),
         "num_parcels": args.num_parcels,
-        "local_couriers": args.local_couriers,
+        "local_couriers": preset_fixed["local_couriers"] if args.local_couriers is None else args.local_couriers,
         "platforms": args.platforms,
-        "couriers_per_platform": args.couriers_per_platform,
+        "couriers_per_platform": (
+            preset_fixed["couriers_per_platform"]
+            if args.couriers_per_platform is None
+            else args.couriers_per_platform
+        ),
         "courier_capacity": args.courier_capacity,
         "service_radius_km": args.service_radius_km,
         "batch_size": args.batch_size,
@@ -789,7 +809,11 @@ def build_fixed_config_from_args(args: argparse.Namespace) -> dict[str, Any]:
         "task_window_start_seconds": args.task_window_start_seconds,
         "task_window_end_seconds": args.task_window_end_seconds,
         "task_sampling_seed": args.task_sampling_seed,
-        "deadline_seconds": getattr(args, "deadline_seconds", None),
+        "deadline_seconds": (
+            preset_fixed.get("deadline_seconds")
+            if getattr(args, "deadline_seconds", None) is None
+            else args.deadline_seconds
+        ),
         "courier_speed_kmh": getattr(args, "courier_speed_kmh", 30.0),
         "delay_window": (
             tuple(float(x) for x in str(getattr(args, "delay_window")).split(",", 1))
