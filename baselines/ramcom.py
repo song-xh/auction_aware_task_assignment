@@ -38,6 +38,7 @@ from .common import (
     mean_decision_time,
     sum_delivered_assignment_revenue,
     summarize_realized_assignment_breakdown,
+    summarize_realized_revenue_breakdown,
 )
 
 
@@ -231,6 +232,8 @@ def run_ramcom_baseline_environment(
             "payment_search": "history_or_reservation_candidates",
             "batch_size": batch_size,
             "TR": 0.0,
+            "local_TR": 0.0,
+            "cross_TR": 0.0,
             "CR": 0.0,
             "BPT": 0.0,
             "delivered_parcels": 0,
@@ -490,6 +493,11 @@ def run_ramcom_baseline_environment(
         )
     delivered_parcels = len(delivered_task_ids)
     total_revenue = sum_delivered_assignment_revenue(accepted_revenues_by_task_id, delivered_task_ids)
+    local_revenue, cross_revenue = summarize_realized_revenue_breakdown(
+        accepted_revenues_by_task_id,
+        delivered_task_ids,
+        assignment_modes_by_task_id,
+    )
     local_assignment_count, cross_assignment_count, partner_cross_assignment_counts, partner_cross_revenues = summarize_realized_assignment_breakdown(
         delivered_task_ids,
         assignment_modes_by_task_id,
@@ -508,6 +516,8 @@ def run_ramcom_baseline_environment(
         "payment_search": "history_or_reservation_candidates",
         "batch_size": batch_size,
         "TR": total_revenue,
+        "local_TR": local_revenue,
+        "cross_TR": cross_revenue,
         "CR": delivered_parcels / total_tasks,
         "BPT": mean_decision_time(processing_time_seconds, total_tasks),
         "delivered_parcels": delivered_parcels,

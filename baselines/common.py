@@ -59,6 +59,33 @@ def sum_delivered_assignment_revenue(
     )
 
 
+def summarize_realized_revenue_breakdown(
+    accepted_revenues_by_task_id: Mapping[str, float],
+    delivered_task_ids: Iterable[str],
+    assignment_modes_by_task_id: Mapping[str, str],
+) -> tuple[float, float]:
+    """Split delivered local-platform revenue into local and cross assignments.
+
+    Args:
+        accepted_revenues_by_task_id: Realized local-platform revenue by accepted task.
+        delivered_task_ids: Accepted task identifiers completed on time.
+        assignment_modes_by_task_id: Accepted assignment mode per task id.
+
+    Returns:
+        ``(local_revenue, cross_revenue)`` over the delivered task set only.
+    """
+
+    local_revenue = 0.0
+    cross_revenue = 0.0
+    for task_id in delivered_task_ids:
+        revenue = float(accepted_revenues_by_task_id.get(task_id, 0.0))
+        if assignment_modes_by_task_id.get(task_id) == "local":
+            local_revenue += revenue
+        elif assignment_modes_by_task_id.get(task_id) == "cross":
+            cross_revenue += revenue
+    return local_revenue, cross_revenue
+
+
 def summarize_realized_assignment_breakdown(
     delivered_task_ids: Iterable[str],
     assignment_modes_by_task_id: Mapping[str, str],

@@ -38,7 +38,12 @@ from env.chengdu import (
     sort_legacy_tasks,
 )
 
-from .common import mean_decision_time, sum_delivered_assignment_revenue, summarize_realized_assignment_breakdown
+from .common import (
+    mean_decision_time,
+    sum_delivered_assignment_revenue,
+    summarize_realized_assignment_breakdown,
+    summarize_realized_revenue_breakdown,
+)
 
 DEFAULT_UNIT_PRICE_PER_KM = DEFAULT_GTA_UNIT_PRICE_PER_KM
 
@@ -601,6 +606,8 @@ def _run_gta_environment(
     if total_task_count == 0:
         return {
             "TR": 0.0,
+            "local_TR": 0.0,
+            "cross_TR": 0.0,
             "CR": 0.0,
             "BPT": 0.0,
             "delivered_parcels": 0,
@@ -793,6 +800,11 @@ def _run_gta_environment(
         )
     delivered_parcels = len(delivered_task_ids)
     total_profit = sum_delivered_assignment_revenue(accepted_revenues_by_task_id, delivered_task_ids)
+    local_revenue, cross_revenue = summarize_realized_revenue_breakdown(
+        accepted_revenues_by_task_id,
+        delivered_task_ids,
+        assignment_modes_by_task_id,
+    )
     local_assignment_count, cross_assignment_count, partner_cross_assignment_counts, partner_cross_revenues = summarize_realized_assignment_breakdown(
         delivered_task_ids,
         assignment_modes_by_task_id,
@@ -810,6 +822,8 @@ def _run_gta_environment(
 
     return {
         "TR": total_profit,
+        "local_TR": local_revenue,
+        "cross_TR": cross_revenue,
         "CR": delivered_parcels / total_task_count,
         "BPT": mean_decision_time(processing_time_seconds, processed_tasks),
         "delivered_parcels": delivered_parcels,

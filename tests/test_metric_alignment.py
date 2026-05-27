@@ -819,6 +819,10 @@ class MetricAlignmentTest(unittest.TestCase):
             result = run_basegta_baseline_environment(environment=environment, local_payment_ratio=0.3)
 
         self.assertAlmostEqual(result["TR"], 7.0)
+        self.assertAlmostEqual(result["local_TR"], 7.0)
+        self.assertEqual(result["cross_TR"], 0.0)
+        self.assertNotIn("AT_full", result)
+        self.assertNotIn("AT_single", result)
 
     def test_basegta_bpt_is_mean_assignment_time_per_task(self) -> None:
         """BaseGTA BPT should report mean assignment-decision time per task epoch."""
@@ -1006,7 +1010,10 @@ class MetricAlignmentTest(unittest.TestCase):
         ):
             result = run_basegta_baseline_environment(environment=environment)
 
-        self.assertAlmostEqual(result["TR"], 20.0 - (6.1 + DEFAULT_CROSS_PLATFORM_SHARING_RATE_MU2 * 20.0))
+        expected_tr = 20.0 - (6.1 + DEFAULT_CROSS_PLATFORM_SHARING_RATE_MU2 * 20.0)
+        self.assertAlmostEqual(result["TR"], expected_tr)
+        self.assertEqual(result["local_TR"], 0.0)
+        self.assertAlmostEqual(result["cross_TR"], expected_tr)
 
     def test_select_available_courier_uses_insertion_increment_dispatch_cost(self) -> None:
         """GTA dispatch cost should use incremental insertion distance under the CPUL route model."""
@@ -1099,6 +1106,8 @@ class MetricAlignmentTest(unittest.TestCase):
             result = run_greedy_baseline_environment(environment=environment, batch_size=30)
 
         self.assertEqual(result["BPT"], 3.0)
+        self.assertEqual(result["local_TR"], result["TR"])
+        self.assertEqual(result["cross_TR"], 0.0)
 
     def test_mra_uses_delivered_count_for_cr(self) -> None:
         """MRA should derive delivered count from post-drain route state, not accepts."""
@@ -1129,6 +1138,8 @@ class MetricAlignmentTest(unittest.TestCase):
 
         self.assertEqual(result["delivered_parcels"], 0)
         self.assertEqual(result["CR"], 0.0)
+        self.assertEqual(result["local_TR"], result["TR"])
+        self.assertEqual(result["cross_TR"], 0.0)
 
     def test_ramcom_uses_delivered_count_for_cr(self) -> None:
         """RamCOM should derive delivered count from post-drain route state, not accepts."""
@@ -1158,6 +1169,7 @@ class MetricAlignmentTest(unittest.TestCase):
 
         self.assertEqual(result["delivered_parcels"], 0)
         self.assertEqual(result["CR"], 0.0)
+        self.assertEqual(result["local_TR"] + result["cross_TR"], result["TR"])
 
     def test_ramcom_bpt_is_mean_assignment_time_per_task(self) -> None:
         """RamCOM BPT should report mean assignment-decision time per task epoch."""

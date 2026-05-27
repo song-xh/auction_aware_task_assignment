@@ -121,6 +121,8 @@ def run_mra_baseline_environment(
     if total_tasks == 0:
         return {
             "TR": 0.0,
+            "local_TR": 0.0,
+            "cross_TR": 0.0,
             "CR": 0.0,
             "BPT": 0.0,
             "delivered_parcels": 0,
@@ -298,6 +300,8 @@ def run_mra_baseline_environment(
 
     return {
         "TR": total_revenue,
+        "local_TR": total_revenue,
+        "cross_TR": 0.0,
         "CR": delivered_parcels / total_tasks,
         "BPT": mean_decision_time(timing.decision_time_seconds, decision_epoch_count),
         "delivered_parcels": delivered_parcels,

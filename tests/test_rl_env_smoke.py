@@ -415,3 +415,4 @@ def test_evaluate_bpt_matches_environment_batch_reports() -> None:
     result = evaluate(env=env, trainer=trainer, batch_action_values=[10], max_steps=5)
 
     assert result.batch_processing_time == compute_batch_processing_time(env.batch_reports())
+    assert result.total_revenue == result.local_revenue + result.cross_revenue

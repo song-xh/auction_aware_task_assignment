@@ -82,6 +82,8 @@ def evaluate_rl_capa(
     # the reported TR.
     result = per_seed_results[-1]
     averaged_total_revenue = sum(r.total_revenue for r in per_seed_results) / len(per_seed_results)
+    averaged_local_revenue = sum(r.local_revenue for r in per_seed_results) / len(per_seed_results)
+    averaged_cross_revenue = sum(r.cross_revenue for r in per_seed_results) / len(per_seed_results)
     averaged_completion_rate = sum(r.completion_rate for r in per_seed_results) / len(per_seed_results)
     averaged_bpt = sum(r.batch_processing_time for r in per_seed_results) / len(per_seed_results)
     delivered_assignments = list(env.delivered_assignments())
@@ -108,6 +110,8 @@ def evaluate_rl_capa(
         "use_service_slack": rl_config.use_service_slack,
         "metrics": {
             "TR": averaged_total_revenue,
+            "local_TR": averaged_local_revenue,
+            "cross_TR": averaged_cross_revenue,
             "CR": averaged_completion_rate,
             "BPT": averaged_bpt,
             "delivered_parcels": len(env.delivered_parcels()),

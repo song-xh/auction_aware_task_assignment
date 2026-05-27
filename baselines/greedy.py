@@ -61,6 +61,8 @@ def parse_greedy_metrics(output: str) -> dict[str, Any]:
     completed = int(float(match.group("completed")))
     return {
         "TR": float(match.group("tr")),
+        "local_TR": float(match.group("tr")),
+        "cross_TR": 0.0,
         "CR": float(match.group("cr")) / 100.0,
         "BPT": float(match.group("bpt")) / 1000.0,
         "delivered_parcels": completed,
@@ -136,6 +138,8 @@ def run_greedy_baseline_environment(
     if total_tasks == 0:
         return {
             "TR": 0.0,
+            "local_TR": 0.0,
+            "cross_TR": 0.0,
             "CR": 0.0,
             "BPT": 0.0,
             "delivered_parcels": 0,
@@ -255,6 +259,8 @@ def run_greedy_baseline_environment(
 
     return {
         "TR": total_revenue,
+        "local_TR": total_revenue,
+        "cross_TR": 0.0,
         "CR": delivered_parcels / total_tasks,
         "BPT": mean_decision_time(processing_time_seconds, processed_tasks),
         "delivered_parcels": delivered_parcels,

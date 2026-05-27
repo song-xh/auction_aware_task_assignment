@@ -15,7 +15,7 @@ from typing import List
 import numpy as np
 import torch
 
-from capa.metrics import compute_batch_processing_time
+from capa.metrics import compute_batch_processing_time, compute_cross_revenue, compute_local_revenue
 from rl_capa.state_builder import RunningNormalizer, aggregate_stage2_states
 
 
@@ -25,6 +25,8 @@ class EvalResult:
 
     Args:
         total_revenue: TR -- sum of local_platform_revenue over all assignments.
+        local_revenue: Portion of TR realized from local assignments.
+        cross_revenue: Portion of TR realized from cross assignments.
         completion_rate: CR -- fraction of parcels assigned.
         batch_processing_time: BPT -- total wall-clock decision time in seconds.
         total_parcels: Total parcels in the episode.
@@ -33,6 +35,8 @@ class EvalResult:
     """
 
     total_revenue: float
+    local_revenue: float
+    cross_revenue: float
     completion_rate: float
     batch_processing_time: float
     total_parcels: int
@@ -127,6 +131,8 @@ def evaluate(
 
     return EvalResult(
         total_revenue=total_revenue,
+        local_revenue=compute_local_revenue(delivered_assignments),
+        cross_revenue=compute_cross_revenue(delivered_assignments),
         completion_rate=completion_rate,
         batch_processing_time=compute_batch_processing_time(env.batch_reports()),
         total_parcels=total_parcels,
@@ -152,7 +158,6 @@ def run_capa_baseline(
     """
     from time import perf_counter
 
-    from capa.metrics import compute_total_revenue
     from experiments.seeding import clone_environment_from_seed
     from env.chengdu import (
         run_time_stepped_chengdu_batches,
@@ -180,6 +185,8 @@ def run_capa_baseline(
 
     return EvalResult(
         total_revenue=result.metrics.total_revenue,
+        local_revenue=result.metrics.local_revenue,
+        cross_revenue=result.metrics.cross_revenue,
         completion_rate=result.metrics.completion_rate,
         batch_processing_time=result.metrics.batch_processing_time,
         total_parcels=len(environment.tasks),
