@@ -1234,6 +1234,84 @@ paper-aligned reporting 需要 CAPA delay=0 锚定 156432, 且保证 **delay=0 T
 - **真正的 per-step courier 状态更新**：sequential pi2 内部维护 courier 容量/route 的 mock 更新，pi2 看到「采纳第 k 个包裹后第 k+1 个包裹的可行 courier 已减少」。
 - **Reward attribution by accept-step**：把 delivery_outcome 归属到 *接受* 该包裹的 step 而不是 *送达* 那一步。需要 runtime 维护 `accepted_step_by_task_id` 映射。
 
+## Exp-8: CAPA 在 perceived-deadline 噪声下的鲁棒性 (2026-05-27)
+
+### 概念
+
+Exp-8 给每个 parcel 的 deadline 加 ±X% 噪声 (基于 slack = d_time - s_time)。CAPA 的可行性检查、估值、CAMA 匹配、DAPA 拍卖全部使用 **观测 deadline** (加噪后); 但运行时 timeout 由 **真实 deadline** 决定。两类失配:
+
+- **+X% (松)**: 观测 deadline 比真实更宽 → CAPA 把不可行 pair 当可行 → match 后在路上 timeout (浪费 courier capacity)
+- **-X% (紧)**: 观测 deadline 比真实更紧 → CAPA 拒绝实际可行 pair → parcel 沉到 backlog 或被 cross 出去 (本可 local 拿更高收益)
+
+9 个点位: `{-20, -15, -10, -5, 0, +5, +10, +15, +20}`。
+
+### 实现 (in-process fork-worker)
+
+文件: `experiments/run_exp8_inproc.py`
+
+之前的 `run_exp8_batched.py` 给每个点位 spawn 一个独立 subprocess, 每个子进程都要:
+
+1. 重新 import `GraphUtils_ChengDu` → 重新 parse Chengdu 路图 (~5s)
+2. 重新 unpickle 165 MB 的 canonical seed (~10s)
+3. 在 derive / build_point_seed / clone-per-algorithm 链路中 deepcopy seed 3-4 次 (~30-60s)
+
+每点位浪费 ~1-2 min。在 9 点位 sweep 下还要叠加 30-60s 的图 parse cost 9 次。改成 in-process fork 后:
+
+1. 主进程一次性 parse 图 + load seed
+2. 通过 `multiprocessing.get_context('fork')` spawn worker, seed pages 通过 copy-on-write 共享 (worker 写入时才占内存)
+3. worker 在自己进程内 derive + 跑 CAPA, 不需要重 parse 不需要重 load seed
+4. `_adaptive_parallel(scale, requested)` 按 `MemAvailable` 自动 cap 并行度 (50000p 每 worker 1.5 GB; 5000p 每 worker 300 MB), 防止 OOM
+
+### 关键 bug: `courier_speed_kmh` 默认值不一致 (2026-05-27)
+
+第一次跑发现 noise=-20 单点位耗时 ~160 min (vs exp1 baseline 同配置 ~28 min)。诊断:
+
+- `runner.py` `--courier-speed-kmh` 默认 30 km/h, 调用 `set_courier_speed_kmh(30)` 修改 `GraphUtils_ChengDu.VELOCITY` 全局
+- `run_exp8_batched._build_seed` / 原始的 `_build_or_load_seed` 没有传 `courier_speed_kmh`, seed 是在默认 `VELOCITY = 0.0011 km/s ≈ 4 km/h` (paper 原值, 步行级速度) 下构建的
+- 4 km/h → 几乎没有 parcel 能在 deadline 内送达 → backlog 每 batch 累积几千 → CAMA candidate set 二次膨胀 → 每 batch 耗时 ~1500-1600s
+
+修复: `run_exp8_inproc.py` 主进程在 load seed 之前调用 `set_courier_speed_kmh(30.0)`, 并在 `_build_or_load_seed` 显式传 `courier_speed_kmh=30.0` 给 `ChengduEnvironment.build`。修复后 noise=-20 耗时 1049s (17.5 min), 9 倍加速; noise=0 TR=307073 与 exp1 baseline (TR=313617, CR=0.9029) 吻合。
+
+### 50000-parcel 配置
+
+- 50000 parcels, 3000 local couriers, 4 platforms × 200 partner couriers
+- task window 0-1800s, noise window 300-900s, partner-history 2000 (step 0)
+- batch 30s, service-radius 1.0 km, courier-speed 30 km/h, deadline = raw 数据集 d_time
+
+总耗时 ~3 小时 (9 × ~19 min 串行)。结果 `outputs/plots/exp8_capa_50000p_noise_sweep_inproc/summary.json`:
+
+| noise % | TR | CR | timeout | local | cross | BPT (s) |
+|---:|---:|---:|---:|---:|---:|---:|
+| -20 | 307123.67 | 0.9030 | 45 | 42580 | 2570 | 0.570 |
+| -15 | 307132.16 | 0.9031 | 45 | 42580 | 2573 | 0.575 |
+| -10 | 307069.04 | 0.9030 | 47 | 42579 | 2573 | 0.519 |
+|  -5 | 307073.09 | 0.9030 | 47 | 42580 | 2572 | 0.522 |
+|   0 | 307073.54 | 0.9030 | 47 | 42580 | 2572 | 0.514 |
+|   5 | 307073.62 | 0.9030 | 47 | 42580 | 2572 | 0.515 |
+|  10 | 307845.73 | 0.9031 | 45 | 42742 | 2412 | 0.418 |
+|  15 | 307234.72 | 0.9030 | 52 | 42613 | 2537 | 0.584 |
+|  20 | 307239.65 | 0.9030 | 51 | 42614 | 2537 | 0.589 |
+
+**结果完全 flat** (TR 跨噪声波动 0.25%, CR 全程 0.9030, timeout 45-52)。
+
+### 与 exp7 50000p flat 结果同源
+
+3000 couriers / raw d_time deadline / 30 km/h 下 slack 充足 (estimated > 500s per parcel), ±20% noise 对 720s 量级 deadline 的扰动 (~±144s) 仍远小于 slack, 不足以翻转 CAMA 的可行性判定。要让 noise 真正显著需要:
+
+- deadline 收紧到 200-300s, 或
+- courier 数减到 ratio 0.02 以下 (现 0.06), 或
+- noise scale 改为基于 travel_time 而不是 slack (放大对小 slack 的扰动)
+
+### 命令
+
+```bash
+# 50000-parcel 串行 (~3h, 防 OOM)
+python -m experiments.run_exp8_inproc --scale 50000p --max-parallel 1
+
+# 5000-parcel 串行 (~10 min)
+python -m experiments.run_exp8_inproc --scale 5000p --max-parallel 1
+```
+
 ## 输出文件
 
 实验输出默认写到 `outputs/plots/...`，通常包含：
