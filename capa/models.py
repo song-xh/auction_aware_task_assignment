@@ -24,6 +24,8 @@ class BatchTimingBreakdown:
     """Record decision and excluded timing components for one matching round."""
 
     decision_time_seconds: float = 0.0
+    auction_full_time_seconds: float = 0.0
+    auction_single_time_seconds: float = 0.0
     routing_time_seconds: float = 0.0
     insertion_time_seconds: float = 0.0
     movement_time_seconds: float = 0.0
@@ -226,6 +228,10 @@ class RunMetrics:
     total_revenue: float
     completion_rate: float
     batch_processing_time: float
+    local_revenue: float = 0.0
+    cross_revenue: float = 0.0
+    auction_full_time: float = 0.0
+    auction_single_time: float = 0.0
     delivered_parcel_count: int = 0
     accepted_parcel_count: int = 0
     timed_out_parcel_count: int = 0

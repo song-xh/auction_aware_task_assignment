@@ -103,8 +103,12 @@ class CAPAAlgorithmRunner(AlgorithmRunner):
                 partner_cross_revenues[assignment.platform_id] += float(assignment.cooperating_platform_revenue)
         metrics = {
             "TR": result.metrics.total_revenue,
+            "local_TR": result.metrics.local_revenue,
+            "cross_TR": result.metrics.cross_revenue,
             "CR": result.metrics.completion_rate,
             "BPT": result.metrics.batch_processing_time,
+            "AT_full": result.metrics.auction_full_time,
+            "AT_single": result.metrics.auction_single_time,
             "delivered_parcels": result.metrics.delivered_parcel_count,
             "accepted_assignments": result.metrics.accepted_parcel_count,
             "timed_out_parcels": result.metrics.timed_out_parcel_count,

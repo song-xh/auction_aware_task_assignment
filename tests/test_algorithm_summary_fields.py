@@ -8,7 +8,7 @@ from unittest.mock import patch
 from algorithms.basegta_runner import BaseGTARunner
 from algorithms.capa_runner import CAPAAlgorithmRunner
 from algorithms.greedy_runner import GreedyAlgorithmRunner
-from capa.models import Assignment, BatchReport, CAPAResult, CAPAConfig, Courier, Parcel, RunMetrics
+from capa.models import Assignment, BatchReport, BatchTimingBreakdown, CAPAResult, CAPAConfig, Courier, Parcel, RunMetrics
 
 
 def _task(task_id: str) -> SimpleNamespace:
@@ -75,6 +75,10 @@ def _capa_result() -> CAPAResult:
         cross_assignments=[cross_assignment],
         unresolved_parcels=[unresolved_parcel],
         processing_time_seconds=0.05,
+        timing=BatchTimingBreakdown(
+            auction_full_time_seconds=0.8,
+            auction_single_time_seconds=0.3,
+        ),
         delivered_parcel_count=2,
     )
     return CAPAResult(
@@ -83,8 +87,12 @@ def _capa_result() -> CAPAResult:
         batch_reports=[batch_report],
         metrics=RunMetrics(
             total_revenue=15.5,
+            local_revenue=8.0,
+            cross_revenue=7.5,
             completion_rate=2 / 3,
             batch_processing_time=0.05,
+            auction_full_time=0.8,
+            auction_single_time=0.3,
             delivered_parcel_count=2,
             accepted_parcel_count=2,
             timed_out_parcel_count=1,
@@ -104,6 +112,10 @@ def test_capa_runner_summary_exposes_assignment_and_partner_stats() -> None:
         summary = runner.run(environment=environment)
 
     assert summary["metrics"]["TR"] == 15.5
+    assert summary["metrics"]["local_TR"] == 8.0
+    assert summary["metrics"]["cross_TR"] == 7.5
+    assert summary["metrics"]["AT_full"] == 0.8
+    assert summary["metrics"]["AT_single"] == 0.3
     assert summary["metrics"]["timed_out_parcels"] == 1
     assert summary["assignment_stats"]["local_platform"]["local_matches"] == 1
     assert summary["assignment_stats"]["local_platform"]["cross_platform_matches"] == 1

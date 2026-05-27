@@ -12,6 +12,16 @@ def compute_total_revenue(assignments: Sequence[Assignment]) -> float:
     return sum(item.local_platform_revenue for item in assignments)
 
 
+def compute_local_revenue(assignments: Sequence[Assignment]) -> float:
+    """Compute realized local-assignment revenue for the local platform."""
+    return sum(item.local_platform_revenue for item in assignments if item.mode == "local")
+
+
+def compute_cross_revenue(assignments: Sequence[Assignment]) -> float:
+    """Compute realized cross-assignment revenue for the local platform."""
+    return sum(item.local_platform_revenue for item in assignments if item.mode == "cross")
+
+
 def compute_completion_rate(assignments: Sequence[Assignment], total_parcels: int) -> float:
     """Compute the paper's completion-rate metric CR."""
     if total_parcels <= 0:
@@ -24,6 +34,20 @@ def compute_batch_processing_time(batch_reports: Sequence[BatchReport]) -> float
     if not batch_reports:
         return 0.0
     return sum(report.timing.decision_time_seconds for report in batch_reports) / len(batch_reports)
+
+
+def compute_auction_full_time(batch_reports: Sequence[BatchReport]) -> float:
+    """Compute mean full DAPA auction wall-clock time per matching round."""
+    if not batch_reports:
+        return 0.0
+    return sum(report.timing.auction_full_time_seconds for report in batch_reports) / len(batch_reports)
+
+
+def compute_auction_single_time(batch_reports: Sequence[BatchReport]) -> float:
+    """Compute mean DAPA auction time excluding routing, insertion, and movement."""
+    if not batch_reports:
+        return 0.0
+    return sum(report.timing.auction_single_time_seconds for report in batch_reports) / len(batch_reports)
 
 
 def build_run_metrics(
@@ -39,8 +63,12 @@ def build_run_metrics(
     accepted_count = len(assignments) if accepted_parcel_count is None else accepted_parcel_count
     return RunMetrics(
         total_revenue=compute_total_revenue(assignments),
+        local_revenue=compute_local_revenue(assignments),
+        cross_revenue=compute_cross_revenue(assignments),
         completion_rate=0.0 if total_parcels <= 0 else delivered_count / total_parcels,
         batch_processing_time=compute_batch_processing_time(batch_reports),
+        auction_full_time=compute_auction_full_time(batch_reports),
+        auction_single_time=compute_auction_single_time(batch_reports),
         delivered_parcel_count=delivered_count,
         accepted_parcel_count=accepted_count,
         timed_out_parcel_count=int(timed_out_parcel_count),

@@ -6,6 +6,7 @@ import unittest
 
 from capa.dapa import build_cross_candidate_shortlist, run_dapa
 from capa.models import CAPAConfig, CooperatingPlatform, Courier, Parcel
+from capa.utility import TimingAccumulator
 
 from tests.capa_test_support import FakeGeoIndex, FakeTravelModel
 
@@ -87,6 +88,34 @@ class CrossShortlistTest(unittest.TestCase):
             [assignment.courier.courier_id for assignment in shortlisted_result.cross_assignments],
             [winning_courier_id],
         )
+
+    def test_run_dapa_tracks_full_and_single_auction_time(self) -> None:
+        """DAPA should track auction wall time and the routing-excluded portion separately."""
+
+        parcel = Parcel(parcel_id="p1", location="parcel", arrival_time=0, deadline=20, weight=1.0, fare=10.0)
+        platform = CooperatingPlatform(
+            platform_id="P1",
+            couriers=[
+                Courier(courier_id="winner", current_location="near", depot_location="depot", capacity=10.0),
+            ],
+            base_price=2.0,
+            sharing_rate_gamma=0.5,
+            historical_quality=1.0,
+        )
+        travel_model = FakeTravelModel(
+            distances={
+                ("near", "parcel"): 2.0,
+                ("parcel", "depot"): 4.0,
+                ("near", "depot"): 6.0,
+            }
+        )
+        timing = TimingAccumulator()
+
+        run_dapa([parcel], [platform], travel_model, CAPAConfig(), now=0, timing=timing)
+
+        self.assertGreater(timing.auction_full_time_seconds, 0.0)
+        self.assertGreaterEqual(timing.auction_full_time_seconds, timing.auction_single_time_seconds)
+        self.assertGreaterEqual(timing.auction_single_time_seconds, 0.0)
 
     def test_run_dapa_rejects_invalid_platform_base_price_constraint(self) -> None:
         """DAPA should fail when p_min violates the paper base-price constraint."""

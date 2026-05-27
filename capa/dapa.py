@@ -360,11 +360,14 @@ def run_dapa(
     )
     if timing is not None:
         elapsed = perf_counter() - started
-        timing.decision_time_seconds += max(
+        auction_single_time = max(
             0.0,
             elapsed
             - (timing.routing_time_seconds - routing_before)
             - (timing.insertion_time_seconds - insertion_before)
             - (timing.movement_time_seconds - movement_before),
         )
+        timing.auction_full_time_seconds += elapsed
+        timing.auction_single_time_seconds += auction_single_time
+        timing.decision_time_seconds += auction_single_time
     return result

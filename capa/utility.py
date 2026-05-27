@@ -154,6 +154,8 @@ class TimingAccumulator:
     """Collect mutable timing counters before freezing them into one batch report."""
 
     decision_time_seconds: float = 0.0
+    auction_full_time_seconds: float = 0.0
+    auction_single_time_seconds: float = 0.0
     routing_time_seconds: float = 0.0
     insertion_time_seconds: float = 0.0
     movement_time_seconds: float = 0.0
@@ -164,6 +166,8 @@ class TimingAccumulator:
 
         return BatchTimingBreakdown(
             decision_time_seconds=self.decision_time_seconds,
+            auction_full_time_seconds=self.auction_full_time_seconds,
+            auction_single_time_seconds=self.auction_single_time_seconds,
             routing_time_seconds=self.routing_time_seconds,
             insertion_time_seconds=self.insertion_time_seconds,
             movement_time_seconds=self.movement_time_seconds,

@@ -10,8 +10,8 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from capa.config import DEFAULT_CROSS_PLATFORM_SHARING_RATE_MU2
-from capa.metrics import compute_batch_processing_time
-from capa.models import BatchReport, BatchTimingBreakdown
+from capa.metrics import build_run_metrics, compute_batch_processing_time
+from capa.models import Assignment, BatchReport, BatchTimingBreakdown, Courier, Parcel
 from capa.utility import DistanceMatrixTravelModel, compute_local_platform_revenue_for_local_completion
 from baselines.greedy import run_greedy_baseline_environment
 from baselines.gta import (
@@ -221,6 +221,37 @@ class MetricAlignmentTest(unittest.TestCase):
         ]
 
         self.assertEqual(compute_batch_processing_time(reports), 3.0)
+
+    def test_capa_metrics_split_revenue_and_average_dapa_auction_time(self) -> None:
+        """CAPA metrics should split delivered revenue and average DAPA timing by batch."""
+
+        local_parcel = Parcel(parcel_id="local", location="A", arrival_time=0, deadline=300, weight=1.0, fare=10.0)
+        cross_parcel = Parcel(parcel_id="cross", location="B", arrival_time=0, deadline=300, weight=1.0, fare=12.0)
+        courier = Courier(courier_id="c1", current_location="A", depot_location="D", capacity=5.0)
+        assignments = [
+            Assignment(local_parcel, courier, "local", None, 2.0, 0.0, 8.0, 0.0, 2.0),
+            Assignment(cross_parcel, courier, "cross", "P1", 3.0, 4.5, 7.5, 4.5, 3.0),
+        ]
+        reports = [
+            BatchReport(
+                batch_index=1, batch_time=30, input_parcels=[], local_assignments=[],
+                cross_assignments=[], unresolved_parcels=[], processing_time_seconds=1.0,
+                timing=BatchTimingBreakdown(auction_full_time_seconds=0.8, auction_single_time_seconds=0.3),
+            ),
+            BatchReport(
+                batch_index=2, batch_time=60, input_parcels=[], local_assignments=[],
+                cross_assignments=[], unresolved_parcels=[], processing_time_seconds=1.0,
+                timing=BatchTimingBreakdown(auction_full_time_seconds=0.0, auction_single_time_seconds=0.0),
+            ),
+        ]
+
+        metrics = build_run_metrics(assignments, total_parcels=2, batch_reports=reports)
+
+        self.assertEqual(metrics.total_revenue, 15.5)
+        self.assertEqual(metrics.local_revenue, 8.0)
+        self.assertEqual(metrics.cross_revenue, 7.5)
+        self.assertEqual(metrics.auction_full_time, 0.4)
+        self.assertEqual(metrics.auction_single_time, 0.15)
 
     def test_impgta_prediction_success_rate_controls_future_window(self) -> None:
         """ImpGTA should preserve the full simplified future window when prediction success is 100%."""
