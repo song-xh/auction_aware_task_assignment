@@ -10,9 +10,11 @@ from typing import Any, Callable, Mapping
 
 from capa.config import (
     DEFAULT_CAPA_BATCH_SIZE,
+    DEFAULT_COURIER_EXPECTED_INCOME_LAMBDA_C,
     DEFAULT_CROSS_PLATFORM_SHARING_RATE_MU2,
     DEFAULT_LOCAL_PAYMENT_RATIO_ZETA,
     DEFAULT_LOCAL_SHARING_RATE_MU1,
+    DEFAULT_PLATFORM_EXPECTED_INCOME_LAMBDA_P,
     DEFAULT_THRESHOLD_OMEGA,
     DEFAULT_UTILITY_BALANCE_GAMMA,
 )
@@ -36,6 +38,8 @@ class CAPAAlgorithmRunner(AlgorithmRunner):
         local_sharing_rate_mu1: float = DEFAULT_LOCAL_SHARING_RATE_MU1,
         cross_platform_sharing_rate_mu2: float = DEFAULT_CROSS_PLATFORM_SHARING_RATE_MU2,
         fixed_local_revenue_threshold: float | None = None,
+        courier_expected_income_ratio_lambda_c: float | None = DEFAULT_COURIER_EXPECTED_INCOME_LAMBDA_C,
+        platform_expected_income_ratio_lambda_p: float | None = DEFAULT_PLATFORM_EXPECTED_INCOME_LAMBDA_P,
     ) -> None:
         """Store the CAPA configuration used by the environment-backed runner.
 
@@ -46,6 +50,9 @@ class CAPAAlgorithmRunner(AlgorithmRunner):
             local_payment_ratio_zeta: Local courier payment ratio.
             local_sharing_rate_mu1: Cross-platform first-layer sharing ratio.
             cross_platform_sharing_rate_mu2: Cross-platform second-layer sharing ratio.
+            fixed_local_revenue_threshold: Optional fixed CAMA threshold.
+            courier_expected_income_ratio_lambda_c: Optional fixed courier income ratio (mu-sensitivity lambda-mode).
+            platform_expected_income_ratio_lambda_p: Optional fixed platform income ratio (mu-sensitivity lambda-mode).
         """
 
         self._batch_size = batch_size
@@ -56,6 +63,12 @@ class CAPAAlgorithmRunner(AlgorithmRunner):
         self._cross_platform_sharing_rate_mu2 = cross_platform_sharing_rate_mu2
         self._fixed_local_revenue_threshold = (
             None if fixed_local_revenue_threshold is None else float(fixed_local_revenue_threshold)
+        )
+        self._courier_expected_income_ratio_lambda_c = (
+            None if courier_expected_income_ratio_lambda_c is None else float(courier_expected_income_ratio_lambda_c)
+        )
+        self._platform_expected_income_ratio_lambda_p = (
+            None if platform_expected_income_ratio_lambda_p is None else float(platform_expected_income_ratio_lambda_p)
         )
 
     def run(
@@ -74,6 +87,8 @@ class CAPAAlgorithmRunner(AlgorithmRunner):
             local_sharing_rate_mu1=self._local_sharing_rate_mu1,
             cross_platform_sharing_rate_mu2=self._cross_platform_sharing_rate_mu2,
             fixed_local_revenue_threshold=self._fixed_local_revenue_threshold,
+            courier_expected_income_ratio_lambda_c=self._courier_expected_income_ratio_lambda_c,
+            platform_expected_income_ratio_lambda_p=self._platform_expected_income_ratio_lambda_p,
         )
         result = run_time_stepped_chengdu_batches(
             tasks=environment.tasks,
@@ -139,6 +154,8 @@ class CAPAAlgorithmRunner(AlgorithmRunner):
                 "local_sharing_rate_mu1": self._local_sharing_rate_mu1,
                 "cross_platform_sharing_rate_mu2": self._cross_platform_sharing_rate_mu2,
                 "fixed_local_revenue_threshold": self._fixed_local_revenue_threshold,
+                "courier_expected_income_ratio_lambda_c": self._courier_expected_income_ratio_lambda_c,
+                "platform_expected_income_ratio_lambda_p": self._platform_expected_income_ratio_lambda_p,
             },
                 "decision_trace": build_decision_trace(
                     delivered_assignments=list(result.delivered_assignments),
@@ -166,6 +183,8 @@ def build_capa_runner(
     local_sharing_rate_mu1: float = DEFAULT_LOCAL_SHARING_RATE_MU1,
     cross_platform_sharing_rate_mu2: float = DEFAULT_CROSS_PLATFORM_SHARING_RATE_MU2,
     fixed_local_revenue_threshold: float | None = None,
+    courier_expected_income_ratio_lambda_c: float | None = DEFAULT_COURIER_EXPECTED_INCOME_LAMBDA_C,
+    platform_expected_income_ratio_lambda_p: float | None = DEFAULT_PLATFORM_EXPECTED_INCOME_LAMBDA_P,
 ) -> CAPAAlgorithmRunner:
     """Build the unified CAPA runner with the provided CAPA parameterization."""
 
@@ -177,4 +196,6 @@ def build_capa_runner(
         local_sharing_rate_mu1=local_sharing_rate_mu1,
         cross_platform_sharing_rate_mu2=cross_platform_sharing_rate_mu2,
         fixed_local_revenue_threshold=fixed_local_revenue_threshold,
+        courier_expected_income_ratio_lambda_c=courier_expected_income_ratio_lambda_c,
+        platform_expected_income_ratio_lambda_p=platform_expected_income_ratio_lambda_p,
     )

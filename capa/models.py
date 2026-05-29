@@ -7,9 +7,11 @@ from typing import Hashable, Iterable, List, Literal, Optional, Sequence
 
 from .config import (
     DEFAULT_CAPA_BATCH_SIZE,
+    DEFAULT_COURIER_EXPECTED_INCOME_LAMBDA_C,
     DEFAULT_CROSS_PLATFORM_SHARING_RATE_MU2,
     DEFAULT_LOCAL_PAYMENT_RATIO_ZETA,
     DEFAULT_LOCAL_SHARING_RATE_MU1,
+    DEFAULT_PLATFORM_EXPECTED_INCOME_LAMBDA_P,
     DEFAULT_THRESHOLD_OMEGA,
     DEFAULT_UTILITY_BALANCE_GAMMA,
     validate_sharing_rates,
@@ -44,6 +46,12 @@ class CAPAConfig:
     # Optional fixed local-revenue threshold. When set, CAMA bypasses the
     # dynamic Eq.(7) threshold and uses this constant for sensitivity studies.
     fixed_local_revenue_threshold: float | None = None
+    # Optional fixed courier/platform expected-income ratios. When BOTH are set,
+    # DAPA runs in lambda-mode for the mu sensitivity study: FPSA bids use
+    # lambda_c (validity capped at mu1), second-layer markup uses lambda_p
+    # (validity capped at mu=mu1+mu2). When None, DAPA keeps paper mu1/mu2 logic.
+    courier_expected_income_ratio_lambda_c: float | None = DEFAULT_COURIER_EXPECTED_INCOME_LAMBDA_C
+    platform_expected_income_ratio_lambda_p: float | None = DEFAULT_PLATFORM_EXPECTED_INCOME_LAMBDA_P
 
     def __post_init__(self) -> None:
         """Validate CAPA payment and sharing-rate constraints."""
@@ -54,6 +62,21 @@ class CAPAConfig:
             local_payment_ratio_zeta=self.local_payment_ratio_zeta,
             local_sharing_rate_mu1=self.local_sharing_rate_mu1,
             cross_platform_sharing_rate_mu2=self.cross_platform_sharing_rate_mu2,
+        )
+        for name, value in (
+            ("courier_expected_income_ratio_lambda_c", self.courier_expected_income_ratio_lambda_c),
+            ("platform_expected_income_ratio_lambda_p", self.platform_expected_income_ratio_lambda_p),
+        ):
+            if value is not None and (float(value) < 0.0 or float(value) > 1.0):
+                raise ValueError(f"{name} must be in [0, 1], got {value}.")
+
+    @property
+    def lambda_mode_active(self) -> bool:
+        """Return True when both expected-income ratios are set (mu sensitivity mode)."""
+
+        return (
+            self.courier_expected_income_ratio_lambda_c is not None
+            and self.platform_expected_income_ratio_lambda_p is not None
         )
 
 

@@ -6,7 +6,6 @@ from time import perf_counter
 from typing import Callable, List, Mapping, Sequence
 
 from .cama import is_courier_available
-from .config import validate_platform_base_price_constraint
 from .constraints import is_deadline_feasible_by_geo, is_within_service_radius, is_within_service_radius_by_geo
 from .models import (
     Assignment,
@@ -137,7 +136,13 @@ def compute_fpsa_bid(
         insertion_cache=insertion_cache,
         geo_index=geo_index,
     )
-    p_tau_prime = config.local_sharing_rate_mu1 * parcel.fare
+    # In lambda-mode the bid magnitude is intrinsic to the courier (lambda_c),
+    # decoupled from the local first-layer share mu1; mu1 only gates validity in
+    # run_dapa. Otherwise use the paper's mu1-scaled reference price.
+    if config.courier_expected_income_ratio_lambda_c is not None:
+        p_tau_prime = config.courier_expected_income_ratio_lambda_c * parcel.fare
+    else:
+        p_tau_prime = config.local_sharing_rate_mu1 * parcel.fare
     return platform.base_price + (
         (courier.alpha * detour_ratio) + (courier.beta * courier.service_score)
     ) * platform.sharing_rate_gamma * p_tau_prime
@@ -232,13 +237,6 @@ def run_dapa(
     progress_stride = max(1, len(parcels) // 100) if parcels else 1
 
     for parcel_index, parcel in enumerate(parcels, start=1):
-        for platform in platforms:
-            validate_platform_base_price_constraint(
-                base_price=platform.base_price,
-                platform_sharing_rate_gamma=platform.sharing_rate_gamma,
-                local_sharing_rate_mu1=config.local_sharing_rate_mu1,
-                parcel_fare=parcel.fare,
-            )
         platform_winners: List[PlatformBid] = []
         shortlisted_platforms = (
             None
@@ -273,6 +271,11 @@ def run_dapa(
                     insertion_cache=insertion_cache,
                     geo_index=geo_index,
                 )
+                # Lambda-mode courier validity: the local platform's first-layer
+                # willingness is mu1*fare. A bid above it is invalid and dropped.
+                if config.courier_expected_income_ratio_lambda_c is not None:
+                    if courier_bid > config.local_sharing_rate_mu1 * parcel.fare + 1e-9:
+                        continue
                 feasible_bids.append((courier, courier_bid))
             if not feasible_bids:
                 continue
@@ -292,14 +295,21 @@ def run_dapa(
             candidate_platforms = [
                 platform for platform in platforms if any(platform.platform_id == bid.platform_id for bid in platform_winners)
             ]
+            # In lambda-mode the platform adds its fixed expected profit lambda_p
+            # instead of mu2; mu only gates validity via the payment limit below.
+            markup_rate = (
+                config.platform_expected_income_ratio_lambda_p
+                if config.platform_expected_income_ratio_lambda_p is not None
+                else config.cross_platform_sharing_rate_mu2
+            )
             platform_bid_values: List[PlatformBid] = []
             for winner in platform_winners:
                 platform = next(item for item in candidate_platforms if item.platform_id == winner.platform_id)
                 quality_factor = compute_platform_quality_factor(platform, candidate_platforms)
                 if len(platform_winners) == 1:
-                    second_layer_bid = winner.courier_bid + config.cross_platform_sharing_rate_mu2 * parcel.fare
+                    second_layer_bid = winner.courier_bid + markup_rate * parcel.fare
                 else:
-                    second_layer_bid = winner.courier_bid + quality_factor * config.cross_platform_sharing_rate_mu2 * parcel.fare
+                    second_layer_bid = winner.courier_bid + quality_factor * markup_rate * parcel.fare
                 platform_bid_values.append(
                     PlatformBid(
                         platform_id=winner.platform_id,
@@ -320,7 +330,7 @@ def run_dapa(
                 if len(valid_platform_bids) >= 2:
                     platform_payment = valid_platform_bids[1].platform_bid
                 else:
-                    platform_payment = winner.courier_bid + config.cross_platform_sharing_rate_mu2 * parcel.fare
+                    platform_payment = winner.courier_bid + markup_rate * parcel.fare
                     if platform_payment > payment_limit:
                         unassigned_parcels.append(parcel)
                         platform_payment = None

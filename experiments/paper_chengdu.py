@@ -785,6 +785,20 @@ def build_script_parser(description: str) -> argparse.ArgumentParser:
     parser.add_argument("--local-sharing-rate-mu1", type=float, default=None)
     parser.add_argument("--cross-platform-sharing-rate-mu2", type=float, default=None)
     parser.add_argument("--fixed-local-revenue-threshold", type=float, default=None)
+    parser.add_argument("--courier-lambda-c", type=float, default=None)
+    parser.add_argument("--platform-lambda-p", type=float, default=None)
+    parser.add_argument(
+        "--total-sharing-rate-mu",
+        type=float,
+        default=None,
+        help="Total local->cooperating sharing rate mu. With --sharing-ratio-r derives mu1=r*mu, mu2=(1-r)*mu.",
+    )
+    parser.add_argument(
+        "--sharing-ratio-r",
+        type=float,
+        default=None,
+        help="Split ratio r of mu: mu1=r*mu (courier), mu2=(1-r)*mu (platform).",
+    )
     return parser
 
 
@@ -859,15 +873,25 @@ def build_fixed_config_from_args(args: argparse.Namespace) -> dict[str, Any]:
 def build_capa_runner_overrides_from_args(args: argparse.Namespace) -> dict[str, dict[str, Any]]:
     """Translate optional CLI CAPA parameter overrides into runner override payloads."""
 
+    mu1 = args.local_sharing_rate_mu1
+    mu2 = args.cross_platform_sharing_rate_mu2
+    total_mu = getattr(args, "total_sharing_rate_mu", None)
+    ratio_r = getattr(args, "sharing_ratio_r", None)
+    if total_mu is not None and ratio_r is not None:
+        # Derive mu1 (courier) and mu2 (platform) from total mu and split ratio r.
+        mu1 = float(ratio_r) * float(total_mu)
+        mu2 = (1.0 - float(ratio_r)) * float(total_mu)
     overrides = {
         key: value
         for key, value in {
             "utility_balance_gamma": args.utility_balance_gamma,
             "threshold_omega": args.threshold_omega,
             "local_payment_ratio_zeta": args.local_payment_ratio_zeta,
-            "local_sharing_rate_mu1": args.local_sharing_rate_mu1,
-            "cross_platform_sharing_rate_mu2": args.cross_platform_sharing_rate_mu2,
+            "local_sharing_rate_mu1": mu1,
+            "cross_platform_sharing_rate_mu2": mu2,
             "fixed_local_revenue_threshold": args.fixed_local_revenue_threshold,
+            "courier_expected_income_ratio_lambda_c": getattr(args, "courier_lambda_c", None),
+            "platform_expected_income_ratio_lambda_p": getattr(args, "platform_lambda_p", None),
         }.items()
         if value is not None
     }
@@ -989,6 +1013,8 @@ def _build_capa_override_cli_args(capa_runner_kwargs: dict[str, Any]) -> list[st
         "local_sharing_rate_mu1": "--local-sharing-rate-mu1",
         "cross_platform_sharing_rate_mu2": "--cross-platform-sharing-rate-mu2",
         "fixed_local_revenue_threshold": "--fixed-local-revenue-threshold",
+        "courier_expected_income_ratio_lambda_c": "--courier-lambda-c",
+        "platform_expected_income_ratio_lambda_p": "--platform-lambda-p",
     }
     args: list[str] = []
     for key, flag in mapping.items():

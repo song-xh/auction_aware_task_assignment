@@ -117,8 +117,8 @@ class CrossShortlistTest(unittest.TestCase):
         self.assertGreaterEqual(timing.auction_full_time_seconds, timing.auction_single_time_seconds)
         self.assertGreaterEqual(timing.auction_single_time_seconds, 0.0)
 
-    def test_run_dapa_rejects_invalid_platform_base_price_constraint(self) -> None:
-        """DAPA should fail when p_min violates the paper base-price constraint."""
+    def test_run_dapa_ignores_legacy_base_price_constraint(self) -> None:
+        """DAPA no longer enforces the obsolete p_min base-price constraint."""
 
         parcel = Parcel(parcel_id="p1", location="parcel", arrival_time=0, deadline=20, weight=1.0, fare=10.0)
         platform = CooperatingPlatform(
@@ -138,8 +138,72 @@ class CrossShortlistTest(unittest.TestCase):
             }
         )
 
-        with self.assertRaises(ValueError):
-            run_dapa([parcel], [platform], travel_model, CAPAConfig(), now=0)
+        # Base price 3.0 would have violated the removed constraint; run must not raise.
+        result = run_dapa([parcel], [platform], travel_model, CAPAConfig(), now=0)
+        self.assertEqual(len(result.cross_assignments) + len(result.unassigned_parcels), 1)
+
+    def _lambda_single_platform(self, base_price: float = 2.0) -> tuple[Parcel, CooperatingPlatform, FakeTravelModel]:
+        """Build a one-parcel, one-courier, one-platform fixture for lambda-mode tests."""
+
+        parcel = Parcel(parcel_id="p1", location="parcel", arrival_time=0, deadline=20, weight=1.0, fare=10.0)
+        platform = CooperatingPlatform(
+            platform_id="P1",
+            couriers=[Courier(courier_id="c1", current_location="near", depot_location="depot", capacity=10.0, alpha=0.5, beta=0.5, service_score=0.8)],
+            base_price=base_price,
+            sharing_rate_gamma=0.5,
+            historical_quality=1.0,
+        )
+        travel_model = FakeTravelModel(
+            distances={("near", "parcel"): 2.0, ("parcel", "depot"): 4.0, ("near", "depot"): 6.0}
+        )
+        return parcel, platform, travel_model
+
+    def test_lambda_mode_drops_courier_bid_above_mu1(self) -> None:
+        """Lambda-mode invalidates a courier bid that exceeds the mu1 willingness cap."""
+
+        parcel, platform, travel_model = self._lambda_single_platform(base_price=2.0)
+        # mu1 = 0.01 -> mu1*fare = 0.1; base_price 2.0 alone exceeds it, so bid is invalid.
+        config = CAPAConfig(
+            local_sharing_rate_mu1=0.01,
+            cross_platform_sharing_rate_mu2=0.5,
+            courier_expected_income_ratio_lambda_c=0.1,
+            platform_expected_income_ratio_lambda_p=0.3,
+        )
+        result = run_dapa([parcel], [platform], travel_model, config, now=0)
+        self.assertEqual(result.cross_assignments, [])
+        self.assertEqual([p.parcel_id for p in result.unassigned_parcels], ["p1"])
+
+    def test_lambda_mode_drops_platform_bid_above_mu(self) -> None:
+        """Lambda-mode invalidates a platform bid whose lambda_p markup exceeds mu*fare."""
+
+        parcel, platform, travel_model = self._lambda_single_platform(base_price=2.0)
+        # mu1=0.3 (cap 3.0) admits the courier bid; mu=0.4 (cap 4.0) but lambda_p=0.5
+        # markup adds 5.0 -> platform payment > 4.0 -> rejected.
+        config = CAPAConfig(
+            local_sharing_rate_mu1=0.3,
+            cross_platform_sharing_rate_mu2=0.1,
+            courier_expected_income_ratio_lambda_c=0.1,
+            platform_expected_income_ratio_lambda_p=0.5,
+        )
+        result = run_dapa([parcel], [platform], travel_model, config, now=0)
+        self.assertEqual(result.cross_assignments, [])
+        self.assertEqual([p.parcel_id for p in result.unassigned_parcels], ["p1"])
+
+    def test_lambda_mode_platform_revenue_equals_lambda_p_markup(self) -> None:
+        """When valid, single-winner cooperating revenue equals lambda_p*fare exactly."""
+
+        parcel, platform, travel_model = self._lambda_single_platform(base_price=2.0)
+        config = CAPAConfig(
+            local_sharing_rate_mu1=0.45,
+            cross_platform_sharing_rate_mu2=0.45,
+            courier_expected_income_ratio_lambda_c=0.1,
+            platform_expected_income_ratio_lambda_p=0.3,
+        )
+        result = run_dapa([parcel], [platform], travel_model, config, now=0)
+        self.assertEqual(len(result.cross_assignments), 1)
+        assignment = result.cross_assignments[0]
+        # cooperating revenue = platform_payment - courier_payment = lambda_p * fare.
+        self.assertAlmostEqual(assignment.cooperating_platform_revenue, 0.3 * parcel.fare, places=6)
 
 
     def test_run_dapa_rejects_insertion_that_delays_existing_partner_stop(self) -> None:

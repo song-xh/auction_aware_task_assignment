@@ -27,6 +27,14 @@ DEFAULT_LOCAL_SHARING_RATE_MU1 = 0.5
 DEFAULT_CROSS_PLATFORM_SHARING_RATE_MU2 = 0.5
 # Loc 的第二层共享比例 μ2，用于平台层拍卖奖励与支付上界；论文要求 μ1 + μ2 ≤ 1。
 
+DEFAULT_COURIER_EXPECTED_INCOME_LAMBDA_C: float | None = None
+# 跨平台骑手的固定预期收入比例 λ_c。仅在 μ 敏感性实验中启用：FPSA 报价用 λ_c·pτ 替代 μ1·pτ，
+# 报价若高于 μ1·pτ（本地一层愿付上界）则竞价无效。None 表示沿用论文原始 μ1 行为。
+
+DEFAULT_PLATFORM_EXPECTED_INCOME_LAMBDA_P: float | None = None
+# 合作平台的固定预期收益比例 λ_p。仅在 μ 敏感性实验中启用：二层报价加价用 λ_p·pτ 替代 μ2·pτ，
+# 报价若高于 (μ1+μ2)·pτ=μ·pτ（本地总愿付上界）则竞价无效，赋予合作平台自主拒绝权。None 表示沿用原始 μ2 行为。
+
 DEFAULT_PAPER_CAPA_RUNNER_KWARGS: dict[str, float] = {
     "utility_balance_gamma": DEFAULT_UTILITY_BALANCE_GAMMA,
     "threshold_omega": DEFAULT_THRESHOLD_OMEGA,
