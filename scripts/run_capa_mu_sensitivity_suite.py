@@ -27,6 +27,7 @@ from typing import Sequence
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from capa.config import DEFAULT_MU_SENSITIVITY_LAMBDA_C, DEFAULT_MU_SENSITIVITY_LAMBDA_P
 from scripts.run_capa_exp1_sensitivity_suite import (
     OUT_ROOT,
     build_point_command,
@@ -153,8 +154,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 
     parser = argparse.ArgumentParser(description="CAPA mu/ratio sensitivity suite.")
     parser.add_argument("--presets", type=str, default="ny,formal", help="Comma-separated presets to run.")
-    parser.add_argument("--courier-lambda-c", type=float, required=True)
-    parser.add_argument("--platform-lambda-p", type=float, required=True)
+    parser.add_argument("--courier-lambda-c", type=float, default=DEFAULT_MU_SENSITIVITY_LAMBDA_C)
+    parser.add_argument("--platform-lambda-p", type=float, default=DEFAULT_MU_SENSITIVITY_LAMBDA_P)
     parser.add_argument("--log-dir", type=str, default="outputs/plots/sens_mu_logs")
     return parser.parse_args(argv)
 

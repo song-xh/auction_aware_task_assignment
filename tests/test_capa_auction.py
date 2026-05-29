@@ -189,10 +189,11 @@ class CrossShortlistTest(unittest.TestCase):
         self.assertEqual(result.cross_assignments, [])
         self.assertEqual([p.parcel_id for p in result.unassigned_parcels], ["p1"])
 
-    def test_lambda_mode_platform_revenue_equals_lambda_p_markup(self) -> None:
-        """When valid, single-winner cooperating revenue equals lambda_p*fare exactly."""
+    def test_lambda_mode_local_revenue_equals_one_minus_mu(self) -> None:
+        """When valid, local keeps exactly (1-mu)*fare and the rest is shared as mu*fare."""
 
         parcel, platform, travel_model = self._lambda_single_platform(base_price=2.0)
+        # mu = mu1 + mu2 = 0.9.
         config = CAPAConfig(
             local_sharing_rate_mu1=0.45,
             cross_platform_sharing_rate_mu2=0.45,
@@ -202,8 +203,13 @@ class CrossShortlistTest(unittest.TestCase):
         result = run_dapa([parcel], [platform], travel_model, config, now=0)
         self.assertEqual(len(result.cross_assignments), 1)
         assignment = result.cross_assignments[0]
-        # cooperating revenue = platform_payment - courier_payment = lambda_p * fare.
-        self.assertAlmostEqual(assignment.cooperating_platform_revenue, 0.3 * parcel.fare, places=6)
+        # Local keeps (1-mu)*fare; cooperating side splits mu*fare.
+        self.assertAlmostEqual(assignment.local_platform_revenue, (1.0 - 0.9) * parcel.fare, places=6)
+        self.assertAlmostEqual(
+            assignment.cooperating_platform_revenue + assignment.courier_revenue,
+            0.9 * parcel.fare,
+            places=6,
+        )
 
 
     def test_run_dapa_rejects_insertion_that_delays_existing_partner_stop(self) -> None:

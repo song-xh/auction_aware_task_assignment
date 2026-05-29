@@ -327,7 +327,13 @@ def run_dapa(
             else:
                 valid_platform_bids.sort(key=lambda item: item.platform_bid)
                 winner = valid_platform_bids[0]
-                if len(valid_platform_bids) >= 2:
+                if config.lambda_mode_active:
+                    # In lambda-mode the local platform commits to sharing mu*fare
+                    # (= payment_limit) on every successful cross match, so it keeps
+                    # exactly (1-mu)*fare; the auction only decides the winner and
+                    # whether cooperation is feasible (validity <= mu*fare).
+                    platform_payment = payment_limit
+                elif len(valid_platform_bids) >= 2:
                     platform_payment = valid_platform_bids[1].platform_bid
                 else:
                     platform_payment = winner.courier_bid + markup_rate * parcel.fare

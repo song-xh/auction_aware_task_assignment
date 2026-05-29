@@ -28,12 +28,21 @@ DEFAULT_CROSS_PLATFORM_SHARING_RATE_MU2 = 0.5
 # Loc 的第二层共享比例 μ2，用于平台层拍卖奖励与支付上界；论文要求 μ1 + μ2 ≤ 1。
 
 DEFAULT_COURIER_EXPECTED_INCOME_LAMBDA_C: float | None = None
-# 跨平台骑手的固定预期收入比例 λ_c。仅在 μ 敏感性实验中启用：FPSA 报价用 λ_c·pτ 替代 μ1·pτ，
-# 报价若高于 μ1·pτ（本地一层愿付上界）则竞价无效。None 表示沿用论文原始 μ1 行为。
+# 跨平台骑手的固定预期收入比例 λ_c 的全局激活默认值。保持 None，使 lambda-mode 默认关闭，
+# 主实验与论文原始 μ1 行为不受影响；仅在 μ 敏感性实验中通过 CLI 显式传入才启用。
+# 启用后：FPSA 报价用 λ_c·pτ 替代 μ1·pτ，报价若高于 μ1·pτ（本地一层愿付上界）则竞价无效。
 
 DEFAULT_PLATFORM_EXPECTED_INCOME_LAMBDA_P: float | None = None
-# 合作平台的固定预期收益比例 λ_p。仅在 μ 敏感性实验中启用：二层报价加价用 λ_p·pτ 替代 μ2·pτ，
-# 报价若高于 (μ1+μ2)·pτ=μ·pτ（本地总愿付上界）则竞价无效，赋予合作平台自主拒绝权。None 表示沿用原始 μ2 行为。
+# 合作平台的固定预期收益比例 λ_p 的全局激活默认值。保持 None，lambda-mode 默认关闭。
+# 启用后：二层报价加价用 λ_p·pτ 替代 μ2·pτ，报价若高于 (μ1+μ2)·pτ=μ·pτ（本地总愿付上界）则竞价无效，
+# 赋予合作平台自主拒绝权；成交时 local 保留 (1-μ)·pτ，合作侧共享 μ·pτ。
+
+# μ 敏感性实验调参确定的 λ 取值（小样本 300 包裹 / 20 骑手 / 4 平台 / 5 骑手每平台，r=0.5 交叉扫参）。
+# 选取标准：默认 μ=0.7 处 TR 取内部峰值（μ 过低→合作平台拒绝→TR 降；μ 过高→local 仅留 (1-μ)→TR 降）。
+# 选中曲线 TR(μ=.5..​.9)=[34,113,291,203,118]，峰值在 μ=0.7。这两个常量仅供 μ 敏感性套件显式引用，
+# 不改变全局 lambda-mode 激活默认（仍为 None）。
+DEFAULT_MU_SENSITIVITY_LAMBDA_C: float = 0.4
+DEFAULT_MU_SENSITIVITY_LAMBDA_P: float = 0.4
 
 DEFAULT_PAPER_CAPA_RUNNER_KWARGS: dict[str, float] = {
     "utility_balance_gamma": DEFAULT_UTILITY_BALANCE_GAMMA,
