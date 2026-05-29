@@ -35,6 +35,7 @@ class CAPAAlgorithmRunner(AlgorithmRunner):
         local_payment_ratio_zeta: float = DEFAULT_LOCAL_PAYMENT_RATIO_ZETA,
         local_sharing_rate_mu1: float = DEFAULT_LOCAL_SHARING_RATE_MU1,
         cross_platform_sharing_rate_mu2: float = DEFAULT_CROSS_PLATFORM_SHARING_RATE_MU2,
+        fixed_local_revenue_threshold: float | None = None,
     ) -> None:
         """Store the CAPA configuration used by the environment-backed runner.
 
@@ -53,6 +54,9 @@ class CAPAAlgorithmRunner(AlgorithmRunner):
         self._local_payment_ratio_zeta = local_payment_ratio_zeta
         self._local_sharing_rate_mu1 = local_sharing_rate_mu1
         self._cross_platform_sharing_rate_mu2 = cross_platform_sharing_rate_mu2
+        self._fixed_local_revenue_threshold = (
+            None if fixed_local_revenue_threshold is None else float(fixed_local_revenue_threshold)
+        )
 
     def run(
         self,
@@ -69,6 +73,7 @@ class CAPAAlgorithmRunner(AlgorithmRunner):
             local_payment_ratio_zeta=self._local_payment_ratio_zeta,
             local_sharing_rate_mu1=self._local_sharing_rate_mu1,
             cross_platform_sharing_rate_mu2=self._cross_platform_sharing_rate_mu2,
+            fixed_local_revenue_threshold=self._fixed_local_revenue_threshold,
         )
         result = run_time_stepped_chengdu_batches(
             tasks=environment.tasks,
@@ -112,6 +117,7 @@ class CAPAAlgorithmRunner(AlgorithmRunner):
             "delivered_parcels": result.metrics.delivered_parcel_count,
             "accepted_assignments": result.metrics.accepted_parcel_count,
             "timed_out_parcels": result.metrics.timed_out_parcel_count,
+            "final_local_revenue_threshold": float(result.final_local_revenue_threshold),
         }
         summary = build_algorithm_summary(
             algorithm="capa",
@@ -132,6 +138,7 @@ class CAPAAlgorithmRunner(AlgorithmRunner):
                 "local_payment_ratio_zeta": self._local_payment_ratio_zeta,
                 "local_sharing_rate_mu1": self._local_sharing_rate_mu1,
                 "cross_platform_sharing_rate_mu2": self._cross_platform_sharing_rate_mu2,
+                "fixed_local_revenue_threshold": self._fixed_local_revenue_threshold,
             },
                 "decision_trace": build_decision_trace(
                     delivered_assignments=list(result.delivered_assignments),
@@ -158,6 +165,7 @@ def build_capa_runner(
     local_payment_ratio_zeta: float = DEFAULT_LOCAL_PAYMENT_RATIO_ZETA,
     local_sharing_rate_mu1: float = DEFAULT_LOCAL_SHARING_RATE_MU1,
     cross_platform_sharing_rate_mu2: float = DEFAULT_CROSS_PLATFORM_SHARING_RATE_MU2,
+    fixed_local_revenue_threshold: float | None = None,
 ) -> CAPAAlgorithmRunner:
     """Build the unified CAPA runner with the provided CAPA parameterization."""
 
@@ -168,4 +176,5 @@ def build_capa_runner(
         local_payment_ratio_zeta=local_payment_ratio_zeta,
         local_sharing_rate_mu1=local_sharing_rate_mu1,
         cross_platform_sharing_rate_mu2=cross_platform_sharing_rate_mu2,
+        fixed_local_revenue_threshold=fixed_local_revenue_threshold,
     )

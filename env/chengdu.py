@@ -2216,6 +2216,11 @@ def run_time_stepped_chengdu_batches(
     delivered_assignments = delivered_assignments_from_runtime(runtime)
     timed_out_assignments = timed_out_assignments_from_runtime(runtime)
 
+    final_threshold = (
+        float(config.fixed_local_revenue_threshold)
+        if config.fixed_local_revenue_threshold is not None
+        else runtime.threshold_history.calculate_threshold(config.threshold_omega)
+    )
     return CAPAResult(
         matching_plan=runtime.matching_plan,
         unassigned_parcels=[legacy_task_to_parcel(task) for task in runtime.terminal_unassigned],
@@ -2232,6 +2237,7 @@ def run_time_stepped_chengdu_batches(
         delivered_assignments=delivered_assignments,
         timed_out_parcels=[assignment.parcel for assignment in timed_out_assignments],
         timed_out_assignments=timed_out_assignments,
+        final_local_revenue_threshold=final_threshold,
     )
 
 

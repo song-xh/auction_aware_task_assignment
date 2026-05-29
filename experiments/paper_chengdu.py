@@ -59,8 +59,8 @@ DEFAULT_CHENGDU_PAPER_FIXED_CONFIG: dict[str, Any] = {
     "task_window_start_seconds": None,
     "task_window_end_seconds": None,
     "task_sampling_seed": 1,
-    "partner_history_task_count_start": 50000,
-    "partner_history_task_count_step": 2000,
+    "partner_history_task_count_start": 5000,
+    "partner_history_task_count_step": 200,
     "courier_alpha": DEFAULT_COURIER_ALPHA,
     "courier_beta": None,
     "courier_service_score": DEFAULT_COURIER_SERVICE_SCORE,
@@ -784,6 +784,7 @@ def build_script_parser(description: str) -> argparse.ArgumentParser:
     parser.add_argument("--local-payment-ratio-zeta", type=float, default=None)
     parser.add_argument("--local-sharing-rate-mu1", type=float, default=None)
     parser.add_argument("--cross-platform-sharing-rate-mu2", type=float, default=None)
+    parser.add_argument("--fixed-local-revenue-threshold", type=float, default=None)
     return parser
 
 
@@ -866,6 +867,7 @@ def build_capa_runner_overrides_from_args(args: argparse.Namespace) -> dict[str,
             "local_payment_ratio_zeta": args.local_payment_ratio_zeta,
             "local_sharing_rate_mu1": args.local_sharing_rate_mu1,
             "cross_platform_sharing_rate_mu2": args.cross_platform_sharing_rate_mu2,
+            "fixed_local_revenue_threshold": args.fixed_local_revenue_threshold,
         }.items()
         if value is not None
     }
@@ -986,6 +988,7 @@ def _build_capa_override_cli_args(capa_runner_kwargs: dict[str, Any]) -> list[st
         "local_payment_ratio_zeta": "--local-payment-ratio-zeta",
         "local_sharing_rate_mu1": "--local-sharing-rate-mu1",
         "cross_platform_sharing_rate_mu2": "--cross-platform-sharing-rate-mu2",
+        "fixed_local_revenue_threshold": "--fixed-local-revenue-threshold",
     }
     args: list[str] = []
     for key, flag in mapping.items():

@@ -17,11 +17,15 @@ DEFAULT_CHENGDU_PAPER_ALGORITHMS = (
 PAPER_FIXED_CONFIG_OVERRIDES: dict[str, dict[str, int]] = {
     "formal": {
         "deadline_seconds": 720,
+        "task_window_start_seconds": 0,
+        "task_window_end_seconds": 14398,
     },
     "ny": {
         "local_couriers": 300,
         "couriers_per_platform": 50,
         "deadline_seconds": 720,
+        "task_window_start_seconds": 0,
+        "task_window_end_seconds": 3600,
     },
 }
 

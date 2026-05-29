@@ -285,13 +285,16 @@ def run_cama(
                 }
             )
 
-    if threshold_history is None:
+    if threshold_history is not None:
+        threshold_history.add_values(pair.local_revenue_score for pair in all_feasible_pairs)
+    if config.fixed_local_revenue_threshold is not None:
+        threshold = float(config.fixed_local_revenue_threshold)
+    elif threshold_history is None:
         threshold = calculate_local_revenue_threshold(
             (pair.local_revenue_score for pair in all_feasible_pairs),
             config.threshold_omega,
         )
     else:
-        threshold_history.add_values(pair.local_revenue_score for pair in all_feasible_pairs)
         threshold = threshold_history.calculate_threshold(config.threshold_omega)
 
     local_assignments: List[Assignment] = []

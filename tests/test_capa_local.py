@@ -173,6 +173,52 @@ class LocalShortlistTest(unittest.TestCase):
         self.assertEqual([parcel.parcel_id for parcel in result.auction_pool], ["low"])
 
 
+    def test_run_cama_fixed_threshold_overrides_dynamic(self) -> None:
+        """Fixed local-revenue threshold bypasses Eq.(7) and stays constant across batches."""
+
+        travel_model = FakeTravelModel(
+            distances={
+                ("depot", "p-high"): 1.0,
+                ("p-high", "depot"): 1.0,
+                ("depot", "p-low"): 1.0,
+                ("p-low", "depot"): 1.0,
+            }
+        )
+        # Fixed threshold = 5 -> (1 - 0.2) * fare >= 5 -> fare >= 6.25.
+        config = CAPAConfig(
+            utility_balance_gamma=1.0,
+            threshold_omega=1.0,
+            local_payment_ratio_zeta=0.2,
+            fixed_local_revenue_threshold=5.0,
+        )
+        high = Parcel(parcel_id="high", location="p-high", arrival_time=0, deadline=20, weight=1.0, fare=10.0)
+        low = Parcel(parcel_id="low", location="p-low", arrival_time=20, deadline=40, weight=1.0, fare=2.0)
+        history = ThresholdHistory()
+
+        first = run_cama(
+            [high],
+            [Courier(courier_id="c-high", current_location="depot", depot_location="depot", capacity=10.0)],
+            travel_model,
+            config,
+            now=0,
+            threshold_history=history,
+        )
+        second = run_cama(
+            [low],
+            [Courier(courier_id="c-low", current_location="depot", depot_location="depot", capacity=10.0)],
+            travel_model,
+            config,
+            now=20,
+            threshold_history=history,
+        )
+
+        self.assertAlmostEqual(first.threshold, 5.0)
+        self.assertAlmostEqual(second.threshold, 5.0)
+        self.assertEqual([a.parcel.parcel_id for a in first.local_assignments], ["high"])
+        self.assertEqual(second.local_assignments, [])
+        # History still accumulated so it could be inspected post-run.
+        self.assertEqual(history.pair_count, 2)
+
     def test_feasibility_rejects_new_stop_when_it_delays_existing_route_past_deadline(self) -> None:
         """A new parcel must not be accepted when every insertion makes an existing stop late."""
 

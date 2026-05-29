@@ -41,6 +41,9 @@ class CAPAConfig:
     local_payment_ratio_zeta: float = DEFAULT_LOCAL_PAYMENT_RATIO_ZETA
     local_sharing_rate_mu1: float = DEFAULT_LOCAL_SHARING_RATE_MU1
     cross_platform_sharing_rate_mu2: float = DEFAULT_CROSS_PLATFORM_SHARING_RATE_MU2
+    # Optional fixed local-revenue threshold. When set, CAMA bypasses the
+    # dynamic Eq.(7) threshold and uses this constant for sensitivity studies.
+    fixed_local_revenue_threshold: float | None = None
 
     def __post_init__(self) -> None:
         """Validate CAPA payment and sharing-rate constraints."""
@@ -253,3 +256,4 @@ class CAPAResult:
     delivered_assignments: Sequence[Assignment] = field(default_factory=list)
     timed_out_parcels: Sequence[Parcel] = field(default_factory=list)
     timed_out_assignments: Sequence[Assignment] = field(default_factory=list)
+    final_local_revenue_threshold: float = 0.0

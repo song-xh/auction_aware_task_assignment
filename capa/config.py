@@ -15,7 +15,7 @@ DEFAULT_CAPA_BATCH_SIZE = 30
 DEFAULT_UTILITY_BALANCE_GAMMA = 0.5
 # Eq.(6) 中的平衡系数 γ，用于权衡容量比 Δwτ 与绕路比 Δdτ 对局部匹配效用 u(τ,c) 的影响。
 
-DEFAULT_THRESHOLD_OMEGA = 1.0
+DEFAULT_THRESHOLD_OMEGA = 0.8
 # Eq.(7) 中的敏感性调节因子 ω，用于把候选匹配对平均效用缩放成动态阈值 Th。
 
 DEFAULT_LOCAL_PAYMENT_RATIO_ZETA = 0.2
